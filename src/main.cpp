@@ -1,9 +1,12 @@
+// #include "client.cpp"
 #include "log.hpp"
 #include "routes.cpp"
 #include "server.hpp"
+#include "utils.hpp"
 #include <csignal>
 #include <memory.h>
 #include <memory>
+#include <ostream>
 #include <thread>
 
 extern std::atomic<bool> shouldShutdown;
@@ -17,33 +20,94 @@ extern std::atomic<bool> shouldShutdown;
 //   std::cout << "Deallocating " << size << "bytes\n";
 //   free(memory);
 // }
+// void RunClient(int argc, char *argv[]);
 
 static void signalHandler(int signal) {
   std::cout << "\nReceived signal " << signal << ". Shutting down server...\n";
   shouldShutdown = true;
 }
 
-int main() {
-  signal(SIGINT, signalHandler);  // Ctrl+C
-  signal(SIGTERM, signalHandler); // Termination signal
+// extern const QUIC_API_TABLE *MsQuic;
 
-  {
-    std::unique_ptr<HTTPServer> server = std::make_unique<HTTPServer>();
+int main(int argc, char *argv[]) {
 
-    // nice to have this as a function declared elsewhere
-    server->addRoute("GET", "/hello", helloHandler);
-    server->addRoute("GET", "/goodbye", goodbyeHandler);
+  // int QUIC_MAIN_EXPORT main(_In_ int argc,
+  //                           _In_reads_(argc) _Null_terminated_ char *argv[])
+  //                           {
 
-    std::thread([]() { periodicFlush(); }).detach();
+  QUIC_STATUS Status = QUIC_STATUS_SUCCESS;
 
-    std::cout << "Server started, press Ctrl+C to stop.\n";
+  // Open a handle to the library and get the API function table.
+  if (QUIC_FAILED(Status = MsQuicOpen2(&MsQuic))) {
+    printf("MsQuicOpen2 failed, 0x%x!\n", Status);
+    if (MsQuic != NULL) {
+      if (Configuration != NULL) {
+        MsQuic->ConfigurationClose(Configuration);
+      }
+      if (Registration != NULL) {
+        // This will block until all outstanding child objects have been
+        // closed.
+        MsQuic->RegistrationClose(Registration);
+      }
+      MsQuicClose(MsQuic);
+    }
 
-    server->run();
+    return (int)Status;
   }
 
-  std::cout << "Calling the shutdown flush" << std::endl;
-  std::thread t([]() { shutdownFlush(); });
-  t.join();
+  // Create a registration for the app's connections.
+  if (QUIC_FAILED(Status =
+                      MsQuic->RegistrationOpen(&RegConfig, &Registration))) {
+    printf("RegistrationOpen failed, 0x%x!\n", Status);
+    if (MsQuic != NULL) {
+      if (Configuration != NULL) {
+        MsQuic->ConfigurationClose(Configuration);
+      }
+      if (Registration != NULL) {
+        // This will block until all outstanding child objects have been
+        // closed.
+        MsQuic->RegistrationClose(Registration);
+      }
+      MsQuicClose(MsQuic);
+    }
+
+    return (int)Status;
+  }
+
+  if (GetFlag(argc, argv, "help") || GetFlag(argc, argv, "?")) {
+    // PrintUsage();
+  } 
+  // else if (GetFlag(argc, argv, "client")) {
+  //   RunClient(argc, argv);
+  // } 
+  else if (GetFlag(argc, argv, "server")) {
+
+    // RunServer(argc, argv);
+    signal(SIGINT, signalHandler);  // Ctrl+C
+    signal(SIGTERM, signalHandler); // Termination signal
+
+    {
+      std::unique_ptr<HTTPServer> server =
+          std::make_unique<HTTPServer>(argc, argv);
+
+      // nice to have this as a function declared elsewhere
+      server->addRoute("GET", "/hello", helloHandler);
+      server->addRoute("GET", "/goodbye", goodbyeHandler);
+
+      std::thread([]() { periodicFlush(); }).detach();
+
+      std::cout << "Server started, press Ctrl+C to stop.\n";
+
+      server->run();
+    }
+
+    std::cout << "Calling the shutdown flush" << std::endl;
+    std::thread t([]() { shutdownFlush(); });
+    t.join();
+
+  } else {
+    PrintUsage();
+  }
 
   return 0;
 }

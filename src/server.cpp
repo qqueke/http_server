@@ -1,6 +1,8 @@
 #include "server.hpp"
+#include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 #include "log.hpp"
 #include "router.hpp"
+#include "sCallbacks.hpp"
 #include <atomic>
 #include <cassert>
 #include <cerrno>
@@ -8,6 +10,8 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+// #include <msquic.h>
+#include "utils.hpp"
 #include <mutex>
 #include <netinet/in.h>
 #include <openssl/err.h>
@@ -20,61 +24,8 @@
 #include <thread>
 #include <unistd.h>
 
+
 std::atomic<bool> shouldShutdown(false);
-
-HTTPServer::HTTPServer()
-    : serverSock(socket(AF_INET, SOCK_STREAM, 0)), activeConnections(0),
-      serverAddr(), timeout() {
-
-  SSL_load_error_strings();
-  SSL_library_init();
-  OpenSSL_add_all_algorithms();
-
-  ctx = SSL_CTX_new(SSLv23_server_method());
-  if (!ctx) {
-    LogError("Failed to create SSL context");
-    exit(EXIT_FAILURE);
-  }
-
-  if (SSL_CTX_use_certificate_file(ctx, "certificates/server.crt",
-                                   SSL_FILETYPE_PEM) <= 0) {
-    LogError("Failed to load server certificate");
-    exit(EXIT_FAILURE);
-  }
-
-  if (SSL_CTX_use_PrivateKey_file(ctx, "certificates/server.key",
-                                  SSL_FILETYPE_PEM) <= 0) {
-    LogError("Failed to load server private key");
-    exit(EXIT_FAILURE);
-  }
-
-  if (!SSL_CTX_check_private_key(ctx)) {
-    LogError("Private key does not match the certificate");
-    exit(EXIT_FAILURE);
-  }
-
-  if (serverSock == -1) {
-    LogError(threadSafeStrerror(errno));
-    exit(EXIT_FAILURE);
-  }
-
-  serverAddr.sin_family = AF_INET;
-  serverAddr.sin_port = htons(HTTP_PORT);
-  serverAddr.sin_addr.s_addr = INADDR_ANY;
-
-  // For HTTPS since the port is 443 we need higher privileges ( Any port bellow
-  // 1024 requires that)
-  if (bind(serverSock, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) ==
-      -1) {
-    LogError(threadSafeStrerror(errno));
-    exit(EXIT_FAILURE);
-  }
-
-  timeout = {};
-  timeout.tv_sec = TIMEOUT_SECONDS;
-
-  router = std::make_unique<Router>();
-};
 
 std::string HTTPServer::threadSafeStrerror(int errnum) {
   std::lock_guard<std::mutex> lock(strerrorMutex);
@@ -294,46 +245,67 @@ void HTTPServer::addRoute(
 }
 
 void HTTPServer::run() {
-  if (listen(serverSock, MAX_PENDING_CONNECTIONS) == ERROR) {
-    LogError(threadSafeStrerror(errno));
+
+  // Starts listening for incoming connections.
+  if (QUIC_FAILED(Status =
+                      MsQuic->ListenerStart(Listener, &Alpn, 1, &Address))) {
+    printf("ListenerStart failed, 0x%x!\n", Status);
+    LogError("Server failed to load configuration.");
+    if (Listener != NULL) {
+      MsQuic->ListenerClose(Listener);
+    }
     return;
   }
 
-  struct pollfd pollFds(serverSock, POLLIN, 0);
-
-  while (!shouldShutdown) {
-    int polling = poll(&pollFds, 1, 1 * 1000);
-    if (polling == 0) {
-      continue;
-    } else if (polling == -1) {
-      LogError("Poll error on main thread");
-      continue;
-    }
-
-    sockaddr clientAddr{};
-    socklen_t len = sizeof(clientAddr);
-    int clientSock = accept(serverSock, &clientAddr, &len);
-    if (clientSock == -1) {
-      LogError(threadSafeStrerror(errno));
-      continue;
-    }
-
-    // Timer should start here
-
-    auto startTime = std::chrono::high_resolution_clock::now();
-
-    if (setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO, &timeout,
-                   sizeof timeout) == -1) {
-      LogError(threadSafeStrerror(errno));
-    }
-
-    if (setsockopt(clientSock, SOL_SOCKET, SO_SNDTIMEO, &timeout,
-                   sizeof timeout) == -1) {
-      LogError(threadSafeStrerror(errno));
-    }
-
-    std::thread([this, clientSock, startTime]() {
-      clientHandlerThread(clientSock, startTime);
-    }).detach();
-  }
+  // Continue listening for connections until the Enter key is pressed.
+  printf("Press Enter to exit.\n\n");
+  getchar();
 }
+
+void  HTTPServer::PrintFromServer() { std::cout << "Hello from server\n"; }
+
+HTTPServer::HTTPServer(int argc, char *argv[])
+    : Status(0), activeConnections(0), Listener(nullptr) {
+
+  // Configures the address used for the listener to listen on all IP
+  // addresses and the given UDP port.
+  Address = {0};
+  QuicAddrSetFamily(&Address, QUIC_ADDRESS_FAMILY_UNSPEC);
+  QuicAddrSetPort(&Address, UDP_PORT);
+
+  // Load the server configuration based on the command line.
+  if (!ServerLoadConfiguration(argc, argv)) {
+    LogError("Server failed to load configuration.");
+    if (Listener != NULL) {
+      MsQuic->ListenerClose(Listener);
+    }
+    return;
+  }
+
+  // Create/allocate a new listener object.
+  if (QUIC_FAILED(Status = MsQuic->ListenerOpen(
+                      Registration, ServerListenerCallback, this, &Listener))) {
+    printf("ListenerOpen failed, 0x%x!\n", Status);
+    LogError("Server failed to load configuration.");
+    if (Listener != NULL) {
+      MsQuic->ListenerClose(Listener);
+    }
+    return;
+  }
+
+  router = std::make_unique<Router>();
+};
+
+// if (setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+//                sizeof timeout) == -1) {
+//   LogError(threadSafeStrerror(errno));
+// }
+//
+// if (setsockopt(clientSock, SOL_SOCKET, SO_SNDTIMEO, &timeout,
+//                sizeof timeout) == -1) {
+//   LogError(threadSafeStrerror(errno));
+// }
+
+// std::thread([this, clientSock, startTime]() {
+//   clientHandlerThread(clientSock, startTime);
+// }).detach();

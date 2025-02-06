@@ -6,22 +6,8 @@
       "-g",
       "-std=c++20",
       "-Iinclude",
-      "-c",
-      "-o",
-      "build/routes.o",
-      "src/routes.cpp"
-    ],
-    "directory": "/home/QQueke/Documents/Repositories/http_server",
-    "file": "/home/QQueke/Documents/Repositories/http_server/src/routes.cpp",
-    "output": "/home/QQueke/Documents/Repositories/http_server/build/routes.o"
-  },
-  {
-    "arguments": [
-      "/usr/bin/g++",
-      "-O0",
-      "-g",
-      "-std=c++20",
-      "-Iinclude",
+      "-I/usr/include/openssl",
+      "-I/home/QQueke/Documents/Repositories/msquic/src/inc",
       "-c",
       "-o",
       "build/router.o",
@@ -38,6 +24,98 @@
       "-g",
       "-std=c++20",
       "-Iinclude",
+      "-I/usr/include/openssl",
+      "-I/home/QQueke/Documents/Repositories/msquic/src/inc",
+      "-c",
+      "-o",
+      "build/utils.o",
+      "src/utils.cpp"
+    ],
+    "directory": "/home/QQueke/Documents/Repositories/http_server",
+    "file": "/home/QQueke/Documents/Repositories/http_server/src/utils.cpp",
+    "output": "/home/QQueke/Documents/Repositories/http_server/build/utils.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-O0",
+      "-g",
+      "-std=c++20",
+      "-Iinclude",
+      "-I/usr/include/openssl",
+      "-I/home/QQueke/Documents/Repositories/msquic/src/inc",
+      "-c",
+      "-o",
+      "build/routes.o",
+      "src/routes.cpp"
+    ],
+    "directory": "/home/QQueke/Documents/Repositories/http_server",
+    "file": "/home/QQueke/Documents/Repositories/http_server/src/routes.cpp",
+    "output": "/home/QQueke/Documents/Repositories/http_server/build/routes.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-O0",
+      "-g",
+      "-std=c++20",
+      "-Iinclude",
+      "-I/usr/include/openssl",
+      "-I/home/QQueke/Documents/Repositories/msquic/src/inc",
+      "-c",
+      "-o",
+      "build/sCallbacks.o",
+      "src/sCallbacks.cpp"
+    ],
+    "directory": "/home/QQueke/Documents/Repositories/http_server",
+    "file": "/home/QQueke/Documents/Repositories/http_server/src/sCallbacks.cpp",
+    "output": "/home/QQueke/Documents/Repositories/http_server/build/sCallbacks.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-O0",
+      "-g",
+      "-std=c++20",
+      "-Iinclude",
+      "-I/usr/include/openssl",
+      "-I/home/QQueke/Documents/Repositories/msquic/src/inc",
+      "-c",
+      "-o",
+      "build/client.o",
+      "src/client.cpp"
+    ],
+    "directory": "/home/QQueke/Documents/Repositories/http_server",
+    "file": "/home/QQueke/Documents/Repositories/http_server/src/client.cpp",
+    "output": "/home/QQueke/Documents/Repositories/http_server/build/client.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-O0",
+      "-g",
+      "-std=c++20",
+      "-Iinclude",
+      "-I/usr/include/openssl",
+      "-I/home/QQueke/Documents/Repositories/msquic/src/inc",
+      "-c",
+      "-o",
+      "build/main.o",
+      "src/main.cpp"
+    ],
+    "directory": "/home/QQueke/Documents/Repositories/http_server",
+    "file": "/home/QQueke/Documents/Repositories/http_server/src/main.cpp",
+    "output": "/home/QQueke/Documents/Repositories/http_server/build/main.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-O0",
+      "-g",
+      "-std=c++20",
+      "-Iinclude",
+      "-I/usr/include/openssl",
+      "-I/home/QQueke/Documents/Repositories/msquic/src/inc",
       "-c",
       "-o",
       "build/server.o",
@@ -54,13 +132,15 @@
       "-g",
       "-std=c++20",
       "-Iinclude",
+      "-I/usr/include/openssl",
+      "-I/home/QQueke/Documents/Repositories/msquic/src/inc",
       "-c",
       "-o",
-      "build/main.o",
-      "src/main.cpp"
+      "build/log.o",
+      "src/log.cpp"
     ],
     "directory": "/home/QQueke/Documents/Repositories/http_server",
-    "file": "/home/QQueke/Documents/Repositories/http_server/src/main.cpp",
-    "output": "/home/QQueke/Documents/Repositories/http_server/build/main.o"
+    "file": "/home/QQueke/Documents/Repositories/http_server/src/log.cpp",
+    "output": "/home/QQueke/Documents/Repositories/http_server/build/log.o"
   }
 ]

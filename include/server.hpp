@@ -15,10 +15,11 @@
 #include <string>
 #include <sys/socket.h>
 #include <unistd.h>
-
+#include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 #include <openssl/ssl.h>
+
 enum : int {
-  BUFFER_SIZE = 10,
+  BUFFER_SIZE = 1024,
   ERROR = -1,
   TIMEOUT_SECONDS = 60,
   MAX_CONNECTIONS = 100,
@@ -36,6 +37,11 @@ private:
   std::mutex strerrorMutex;
   SSL_CTX *ctx;
 
+
+  QUIC_STATUS Status;
+  HQUIC Listener;
+  QUIC_ADDR Address;
+
   std::string threadSafeStrerror(int errnum);
   int validateRequest(const std::string &request, std::string &method,
                       std::string &path, SSL *clientSock, bool &acceptEncoding);
@@ -44,13 +50,14 @@ private:
                       std::chrono::high_resolution_clock::time_point startTime);
 
 public:
-  HTTPServer();
+  HTTPServer(int argc, char *argv[]);
   HTTPServer(const HTTPServer &) = delete;
   HTTPServer(HTTPServer &&) = delete;
   HTTPServer &operator=(const HTTPServer &) = delete;
   HTTPServer &operator=(HTTPServer &&) = delete;
   ~HTTPServer();
 
+  void PrintFromServer();
   void
   addRoute(const std::string &method, const std::string &path,
            const std::function<std::string(SSL *, const std::string)> &handler);
