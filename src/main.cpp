@@ -1,13 +1,15 @@
 // #include "client.cpp"
+#include <memory.h>
+
+#include <csignal>
+#include <memory>
+#include <ostream>
+#include <thread>
+
 #include "log.hpp"
 #include "routes.cpp"
 #include "server.hpp"
 #include "utils.hpp"
-#include <csignal>
-#include <memory.h>
-#include <memory>
-#include <ostream>
-#include <thread>
 
 extern std::atomic<bool> shouldShutdown;
 
@@ -30,7 +32,6 @@ static void signalHandler(int signal) {
 // extern const QUIC_API_TABLE *MsQuic;
 
 int main(int argc, char *argv[]) {
-
   // int QUIC_MAIN_EXPORT main(_In_ int argc,
   //                           _In_reads_(argc) _Null_terminated_ char *argv[])
   //                           {
@@ -76,12 +77,11 @@ int main(int argc, char *argv[]) {
 
   if (GetFlag(argc, argv, "help") || GetFlag(argc, argv, "?")) {
     // PrintUsage();
-  } 
+  }
   // else if (GetFlag(argc, argv, "client")) {
   //   RunClient(argc, argv);
-  // } 
+  // }
   else if (GetFlag(argc, argv, "server")) {
-
     // RunServer(argc, argv);
     signal(SIGINT, signalHandler);  // Ctrl+C
     signal(SIGTERM, signalHandler); // Termination signal
@@ -91,14 +91,14 @@ int main(int argc, char *argv[]) {
           std::make_unique<HTTPServer>(argc, argv);
 
       // nice to have this as a function declared elsewhere
-      server->addRoute("GET", "/hello", helloHandler);
-      server->addRoute("GET", "/goodbye", goodbyeHandler);
+      server->AddRoute("GET", "/hello", helloHandler);
+      server->AddRoute("GET", "/goodbye", goodbyeHandler);
 
       std::thread([]() { periodicFlush(); }).detach();
 
       std::cout << "Server started, press Ctrl+C to stop.\n";
 
-      server->run();
+      server->Run();
     }
 
     std::cout << "Calling the shutdown flush" << std::endl;

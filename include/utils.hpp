@@ -1,9 +1,11 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
+
 #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 
 #define _CRT_SECURE_NO_WARNINGS 1
@@ -32,7 +34,15 @@ extern QUIC_TLS_SECRETS ClientSecrets;
 
 extern const char *SslKeyLogEnvVar;
 
+
+uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
+                     const std::vector<uint8_t>::iterator &end);
 // typedef struct QUIC_CREDENTIAL_CONFIG_HELPER ;
+void EncodeVarint(std::vector<uint8_t> &buffer, uint64_t value);
+
+void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
+                       std::string &headers, std::string &data);
+
 
 // Helper function to provide program arguments
 void PrintUsage();
@@ -79,23 +89,15 @@ BOOLEAN
 ServerLoadConfiguration(_In_ int argc,
                         _In_reads_(argc) _Null_terminated_ char *argv[]);
 
-//
-// The clients's callback for stream events from MsQuic.
-//
-_IRQL_requires_max_(DISPATCH_LEVEL)
-    _Function_class_(QUIC_STREAM_CALLBACK) QUIC_STATUS QUIC_API
-    ClientStreamCallback(_In_ HQUIC Stream, _In_opt_ void *Context,
-                         _Inout_ QUIC_STREAM_EVENT *Event);
 
 int SendData(_In_ HQUIC Connection, HQUIC Stream, const std::string &response);
 
-void ClientSend(_In_ HQUIC Connection);
 
-// The clients's callback for connection events from MsQuic.
-_IRQL_requires_max_(DISPATCH_LEVEL)
-    _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API
-    ClientConnectionCallback(_In_ HQUIC Connection, _In_opt_ void *Context,
-                             _Inout_ QUIC_CONNECTION_EVENT *Event);
+int SendLastFrame(_In_ HQUIC Connection, HQUIC Stream, const std::vector<uint8_t>& frame);
+int SendFrame(_In_ HQUIC Connection, HQUIC Stream, const std::vector<uint8_t>& frame);
+int SendFrames(_In_ HQUIC Connection, HQUIC Stream,
+               const std::vector<std::vector<uint8_t>> &frames); 
+void ClientSend(_In_ HQUIC Connection);
 
 // Helper function to load a client configuration.
 BOOLEAN

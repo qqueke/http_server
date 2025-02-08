@@ -1,12 +1,14 @@
-#include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
-#include <cstdio>
-#include <cstdlib>
-#include <string>
-#include <cstdlib>
-#include <iostream>
-#include <array>
 #include "utils.hpp"
 
+#include <array>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <iostream>
+#include <string>
+#include <thread>
+
+#include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 // The (optional) registration configuration for the app. This sets a name for
 // the app (used for persistent storage and for debugging). It also configures
 // the execution profile, using the default "low latency" profile.
@@ -79,6 +81,125 @@ void PrintUsage() {
          "  quicsample.exe -server -cert_file:<...> -key_file:<...> "
          "[-password:<...>]\n");
 }
+
+
+void EncodeVarint(std::vector<uint8_t> &buffer, uint64_t value) {
+  if (value <= 63) { // Fit in 1 byte
+    buffer.push_back(static_cast<uint8_t>(value));
+  } else if (value <= 16383) { // Fit in 2 bytes
+    buffer.push_back(
+        static_cast<uint8_t>((value >> 8) | 0x40));       // Set prefix 01
+    buffer.push_back(static_cast<uint8_t>(value & 0xFF)); // Remaining 8 bits
+  } else if (value <= 1073741823) {                       // Fit in 4 bytes
+    buffer.push_back(
+        static_cast<uint8_t>((value >> 24) | 0x80)); // Set prefix 10
+    buffer.push_back(static_cast<uint8_t>((value >> 16) & 0xFF));
+    buffer.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+    buffer.push_back(static_cast<uint8_t>(value & 0xFF));
+  } else if (value <= 4611686018427387903) { // Fit in 8 bytes
+    buffer.push_back(
+        static_cast<uint8_t>((value >> 56) | 0xC0)); // Set prefix 11
+    buffer.push_back(static_cast<uint8_t>((value >> 48) & 0xFF));
+    buffer.push_back(static_cast<uint8_t>((value >> 40) & 0xFF));
+    buffer.push_back(static_cast<uint8_t>((value >> 32) & 0xFF));
+    buffer.push_back(static_cast<uint8_t>((value >> 24) & 0xFF));
+    buffer.push_back(static_cast<uint8_t>((value >> 16) & 0xFF));
+    buffer.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+    buffer.push_back(static_cast<uint8_t>(value & 0xFF));
+  }
+}
+
+
+uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
+                     const std::vector<uint8_t>::iterator &end) {
+  // Check if there's enough data for at least the first byte
+  if (iter + 1 >= end) {
+    std::cout << "Error: Buffer overflow in ReadVarint\n";
+    return -1; // or some error value
+  }
+
+  // Read the first byte
+  uint64_t value = *iter++;
+  uint8_t prefix =
+      value >> 6; // Get the prefix to determine the length of the varint
+  size_t length = 1 << prefix; // 1, 2, 4, or 8 bytes
+
+  value &= 0x3F; // Mask out the 2 most significant bits
+
+  // Check if we have enough data for the full varint
+  if (iter + length - 1 >= end) {
+    std::cout << "Error: Not enough data in buffer for full varint\n";
+    return -1; // or some error value
+  }
+
+  // Read the remaining bytes of the varint
+  for (size_t i = 1; i < length; ++i) {
+    value = (value << 8) | *iter++;
+  }
+
+  return value;
+}
+
+
+// Parses stream buffer to retrieve headers payload and data payload
+void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
+                       std::string &headers, std::string &data) {
+  auto iter = streamBuffer.begin();
+
+  while (iter < streamBuffer.end()) {
+    // Ensure we have enough data for a frame (frameType + frameLength)
+    if (std::distance(iter, streamBuffer.end()) < 3) {
+      std::cout << "Error: Bad frame format (Not enough data)\n";
+      break;
+    }
+
+    // Read the frame type
+    uint64_t frameType = ReadVarint(iter, streamBuffer.end());
+
+    // Read the frame length
+    uint64_t frameLength = ReadVarint(iter, streamBuffer.end());
+
+    // Ensure the payload doesn't exceed the bounds of the buffer
+    if (std::distance(iter, streamBuffer.end()) < frameLength) {
+      std::cout << "Error: Payload exceeds buffer bounds\n";
+      break;
+    }
+
+    // Handle the frame based on the type
+    switch (frameType) {
+    case 0x01: // HEADERS frame
+      std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
+      headers = std::string(iter, iter + frameLength);
+      break;
+
+    case 0x00: // DATA frame
+      std::cout << "[strm][" << Stream << "] Received DATA frame\n";
+      // Data might have been transmitted over multiple frames
+      data += std::string(iter, iter + frameLength);
+      break;
+
+    default: // Unknown frame type
+      std::cout << "[strm][" << Stream << "] Unknown frame type: 0x" << std::hex
+                << frameType << std::dec << "\n";
+      break;
+    }
+
+    iter += frameLength;
+  }
+  std::cout << "Headers:\n" << headers << "\n";
+  std::cout << "Data:\n" << data << "\n";
+
+  // Optionally, print any remaining unprocessed data in the buffer
+  if (iter < streamBuffer.end()) {
+    std::cout << "Error: Remaining data for in Buffer from Stream: " << Stream
+              << "-------\n";
+    std::cout.write(reinterpret_cast<const char *>(&(*iter)),
+                    streamBuffer.end() - iter);
+    std::cout << std::endl;
+  }
+}
+
+
 
 //
 // Helper functions to look up a command line arguments.
@@ -220,7 +341,6 @@ void WriteSslKeyLogFile(_In_z_ const char *FileName,
   fclose(File);
 }
 
-
 //
 // Helper function to load a server configuration. Uses the command line
 // arguments to load the credential part of the configuration.
@@ -237,7 +357,6 @@ ServerLoadConfiguration(_In_ int argc,
   //
   // Configures the server's resumption level to allow for resumption and
   // 0-RTT.
-  //
   Settings.ServerResumptionLevel = QUIC_SERVER_RESUME_AND_ZERORTT;
   Settings.IsSet.ServerResumptionLevel = TRUE;
   //
@@ -245,8 +364,11 @@ ServerLoadConfiguration(_In_ int argc,
   // bidirectional stream. By default connections are not configured to allow
   // any streams from the peer.
   //
-  Settings.PeerBidiStreamCount = 1;
+  Settings.PeerBidiStreamCount = 2;
   Settings.IsSet.PeerBidiStreamCount = TRUE;
+  Settings.PeerUnidiStreamCount = 2;
+  Settings.IsSet.PeerUnidiStreamCount = TRUE;
+  // Settings.StreamMultiReceiveEnabled = TRUE;
 
   QUIC_CREDENTIAL_CONFIG_HELPER Config;
   memset(&Config, 0, sizeof(Config));
@@ -269,7 +391,6 @@ ServerLoadConfiguration(_In_ int argc,
 
   } else if ((Cert = GetValue(argc, argv, "cert_file")) != NULL &&
              (KeyFile = GetValue(argc, argv, "key_file")) != NULL) {
-
     // Loads the server's certificate from the file.
     const char *Password = GetValue(argc, argv, "password");
     if (Password != NULL) {
@@ -315,86 +436,19 @@ ServerLoadConfiguration(_In_ int argc,
   return TRUE;
 }
 
-//
-// The clients's callback for stream events from MsQuic.
-//
-_IRQL_requires_max_(DISPATCH_LEVEL)
-    _Function_class_(QUIC_STREAM_CALLBACK) QUIC_STATUS QUIC_API
-    ClientStreamCallback(_In_ HQUIC Stream, _In_opt_ void *Context,
-                         _Inout_ QUIC_STREAM_EVENT *Event) {
-  UNREFERENCED_PARAMETER(Context);
-  switch (Event->Type) {
-  case QUIC_STREAM_EVENT_SEND_COMPLETE:
-    //
-    // A previous StreamSend call has completed, and the context is being
-    // returned back to the app.
-    //
-
-    free(Event->SEND_COMPLETE.ClientContext);
-    printf("[strm][%p] Data sent\n", Stream);
-    break;
-  case QUIC_STREAM_EVENT_RECEIVE:
-    //
-    // Data was received from the peer on the stream.
-    //
-    printf("[strm][%p] Data received\n", Stream);
-
-    for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++) {
-      const QUIC_BUFFER *buffer = &Event->RECEIVE.Buffers[i];
-
-      // Print received data (assuming text)
-      fwrite(buffer->Buffer, 1, buffer->Length, stdout);
-      printf("\n");
-    }
-    printf("\n");
-
-    // RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength);
-
-    // for (uint32_t i = 0;
-    //      i < Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength; i++) {
-    //   printf("%.2X",
-    //          (uint8_t)Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket[i]);
-    // }
-    break;
-  case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
-    //
-    // The peer gracefully shut down its send direction of the stream.
-    //
-    printf("[strm][%p] Peer aborted\n", Stream);
-    break;
-  case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
-    //
-    // The peer aborted its send direction of the stream.
-    //
-    printf("[strm][%p] Peer shut down\n", Stream);
-    break;
-  case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
-    //
-    // Both directions of the stream have been shut down and MsQuic is done
-    // with the stream. It can now be safely cleaned up.
-    //
-    printf("[strm][%p] All done\n", Stream);
-    if (!Event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
-      MsQuic->StreamClose(Stream);
-    }
-    break;
-  default:
-    break;
-  }
-  return QUIC_STATUS_SUCCESS;
-}
-
-int SendData(_In_ HQUIC Connection, HQUIC Stream, const std::string &response) {
+int SendLastFrame(_In_ HQUIC Connection, HQUIC Stream,
+                  const std::vector<uint8_t> &frame) {
   QUIC_STATUS Status;
   uint8_t *SendBufferRaw;
   QUIC_BUFFER *SendBuffer;
 
-  SendBufferRaw = (uint8_t *)malloc(sizeof(QUIC_BUFFER) + response.size());
+  SendBufferRaw = (uint8_t *)malloc(sizeof(QUIC_BUFFER) + frame.size());
 
   if (SendBufferRaw == NULL) {
     printf("SendBuffer allocation failed!\n");
     Status = QUIC_STATUS_OUT_OF_MEMORY;
     if (QUIC_FAILED(Status)) {
+      std::cout << "Shutting down connection..." << std::endl;
       MsQuic->ConnectionShutdown(Connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE,
                                  0);
       return -1;
@@ -402,10 +456,11 @@ int SendData(_In_ HQUIC Connection, HQUIC Stream, const std::string &response) {
   }
   SendBuffer = (QUIC_BUFFER *)SendBufferRaw;
   SendBuffer->Buffer = SendBufferRaw + sizeof(QUIC_BUFFER);
-  SendBuffer->Length = response.size();
+  SendBuffer->Length = frame.size();
 
-  memcpy(SendBuffer->Buffer, response.c_str(), response.size());
+  memcpy(SendBuffer->Buffer, frame.data(), frame.size());
 
+  // std::this_thread::sleep_for(std::chrono::milliseconds(10000));
   printf("[strm][%p] Sending data...\n", Stream);
 
   // Sends the buffer over the stream. Note the FIN flag is passed along with
@@ -416,136 +471,115 @@ int SendData(_In_ HQUIC Connection, HQUIC Stream, const std::string &response) {
     printf("StreamSend failed, 0x%x!\n", Status);
     free(SendBufferRaw);
     if (QUIC_FAILED(Status)) {
+      std::cout << "Shutting down connection..." << std::endl;
       MsQuic->ConnectionShutdown(Connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE,
                                  0);
       return -1;
     }
   }
-  return response.size();
+  return frame.size();
 }
 
-void ClientSend(_In_ HQUIC Connection) {
+int SendFrames(_In_ HQUIC Connection, HQUIC Stream,
+               const std::vector<std::vector<uint8_t>> &frames) {
   QUIC_STATUS Status;
-  // uint8_t *SendBufferRaw;
-  // QUIC_BUFFER *SendBuffer;
+  uint8_t *SendBufferRaw;
+  QUIC_BUFFER *SendBuffer;
 
-  //
-  // Create/allocate a new bidirectional stream. The stream is just allocated
-  // and no QUIC stream identifier is assigned until it's started.
-  //
+  for (auto &frame : frames) {
+    // const std::vector<uint8_t>& frame = frames[i];
 
-  std::array<HQUIC, 5> Streams{};
-  int i = 0;
-  for (HQUIC &Stream : Streams) {
+    SendBufferRaw = (uint8_t *)malloc(sizeof(QUIC_BUFFER) + frame.size());
 
-    std::cout << "Stream: " << i++ << "\n";
-    if (QUIC_FAILED(
-            Status = MsQuic->StreamOpen(Connection, QUIC_STREAM_OPEN_FLAG_NONE,
-                                        ClientStreamCallback, NULL, &Stream))) {
-      printf("StreamOpen failed, 0x%x!\n", Status);
+    if (SendBufferRaw == NULL) {
+      printf("SendBuffer allocation failed!\n");
+      Status = QUIC_STATUS_OUT_OF_MEMORY;
       if (QUIC_FAILED(Status)) {
+        std::cout << "Shutting down connection..." << std::endl;
         MsQuic->ConnectionShutdown(Connection,
                                    QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
-        return;
+        return -1;
       }
     }
 
-    printf("[strm][%p] Starting Stream...\n", Stream);
+    SendBuffer = (QUIC_BUFFER *)SendBufferRaw;
+    SendBuffer->Buffer = SendBufferRaw + sizeof(QUIC_BUFFER);
+    SendBuffer->Length = frame.size();
 
-    // Starts the bidirectional stream. By default, the peer is not notified of
-    // the stream being started until data is sent on the stream.
-    if (QUIC_FAILED(Status = MsQuic->StreamStart(
-                        Stream, QUIC_STREAM_START_FLAG_NONE))) {
-      printf("StreamStart failed, 0x%x!\n", Status);
-      MsQuic->StreamClose(Stream);
-      if (QUIC_FAILED(Status)) {
-        MsQuic->ConnectionShutdown(Connection,
-                                   QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
-        return;
-      }
-    }
+    memcpy(SendBuffer->Buffer, frame.data(), frame.size());
 
-    std::string response = "HTTP/1.1 200 OK\r\n";
-    response += std::to_string(i);
-    if (SendData(Connection, Stream, response) == -1) {
-      return;
-    }
-  }
-}
+    printf("[strm][%p] Sending data...\n", Stream);
 
-//
-// The clients's callback for connection events from MsQuic.
-//
-_IRQL_requires_max_(DISPATCH_LEVEL)
-    _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API
-    ClientConnectionCallback(_In_ HQUIC Connection, _In_opt_ void *Context,
-                             _Inout_ QUIC_CONNECTION_EVENT *Event) {
-  UNREFERENCED_PARAMETER(Context);
+    std::cout << "Attempting to send without closing\n";
 
-  if (Event->Type == QUIC_CONNECTION_EVENT_CONNECTED) {
-    const char *SslKeyLogFile = getenv(SslKeyLogEnvVar);
-    if (SslKeyLogFile != NULL) {
-      WriteSslKeyLogFile(SslKeyLogFile, &ClientSecrets);
-    }
-  }
-
-  switch (Event->Type) {
-  case QUIC_CONNECTION_EVENT_CONNECTED:
-    //
-    // The handshake has completed for the connection.
-    //
-    printf("[conn][%p] Connected\n", Connection);
-    ClientSend(Connection);
-    break;
-  case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT:
-    //
-    // The connection has been shut down by the transport. Generally, this
-    // is the expected way for the connection to shut down with this
-    // protocol, since we let idle timeout kill the connection.
-    //
-    if (Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status ==
-        QUIC_STATUS_CONNECTION_IDLE) {
-      printf("[conn][%p] Successfully shut down on idle.\n", Connection);
-    } else {
-      printf("[conn][%p] Shut down by transport, 0x%x\n", Connection,
-             Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status);
-    }
-    break;
-  case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
-    //
-    // The connection was explicitly shut down by the peer.
-    //
-    printf("[conn][%p] Shut down by peer, 0x%llu\n", Connection,
-           (unsigned long long)Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
-    break;
-  case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
-    //
-    // The connection has completed the shutdown process and is ready to be
-    // safely cleaned up.
-    //
-    printf("[conn][%p] All done\n", Connection);
-    if (!Event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
-      MsQuic->ConnectionClose(Connection);
-    }
-    break;
-  case QUIC_CONNECTION_EVENT_RESUMPTION_TICKET_RECEIVED:
-    //
-    // A resumption ticket (also called New Session Ticket or NST) was
-    // received from the server.
-    //
-    printf("[conn][%p] Resumption ticket received (%u bytes):\n", Connection,
-           Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength);
-    // for (uint32_t i = 0;
-    //      i < Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength; i++) {
-    //   printf("%.2X",
-    //          (uint8_t)Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket[i]);
+    // Delay on sending the last frame
+    // if (&frame == &frames.back()) {
+    //   std::this_thread::sleep_for(std::chrono::milliseconds(3000));
     // }
-    // printf("\n");
-    break;
-  default:
-    break;
+
+    if (QUIC_FAILED(Status = MsQuic->StreamSend(Stream, SendBuffer, 1,
+                                                (&frame == &frames.back())
+                                                    ? QUIC_SEND_FLAG_FIN
+                                                    : QUIC_SEND_FLAG_DELAY_SEND,
+                                                SendBuffer))) {
+      printf("StreamSend failed, 0x%x!\n", Status);
+      free(SendBufferRaw);
+      if (QUIC_FAILED(Status)) {
+        std::cout << "Shutting down connection..." << std::endl;
+        MsQuic->ConnectionShutdown(Connection,
+                                   QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+        return -1;
+      }
+    }
   }
-  return QUIC_STATUS_SUCCESS;
+
+  // if (QUIC_FAILED(Status = MsQuic->StreamSend(Stream, SendBuffer, 1,
+  //                                             QUIC_SEND_FLAG_FIN, NULL))) {
+  //   printf("StreamSend failed, 0x%x!\n", Status);
+  //   free(SendBufferRaw);
+  //   if (QUIC_FAILED(Status)) {
+  //     std::cout << "Shutting down connection..." << std::endl;
+  //     MsQuic->ConnectionShutdown(Connection,
+  //     QUIC_CONNECTION_SHUTDOWN_FLAG_NONE,
+  //                                0);
+  //     return -1;
+  //   }
+  // }
+
+  //  std::string message = "Hello from client!";
+  //
+  //  void *SendBufferRaw2 = malloc(sizeof(QUIC_BUFFER) + message.size());
+  //
+  //  // void *SendBufferRaw = malloc(sizeof(QUIC_BUFFER) +SendBufferLength);
+  //  if (SendBufferRaw2 == nullptr) {
+  //    printf("SendBuffer allocation failed!\n");
+  //    MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
+  //    return -1;
+  //  }
+  //
+  // QUIC_BUFFER *SendBuffer2 = (QUIC_BUFFER *)SendBufferRaw2;
+  //  SendBuffer2->Buffer = (uint8_t *)SendBufferRaw2 + sizeof(QUIC_BUFFER);
+  //  SendBuffer2->Length = message.size();
+  //
+  //  memcpy(SendBuffer2->Buffer, message.c_str(), message.size());
+  //
+  //  printf("[strm][%p] Sending data...\n", Stream);
+  //
+  //  // Sends the buffer over the stream. Note the FIN flag is passed along
+  //  with
+  //  // the buffer. This indicates this is the last buffer on the stream and
+  //  the
+  //  // the stream is shut down (in the send direction) immediately after.
+  //  Status = 0;
+  //  if (QUIC_FAILED(Status = MsQuic->StreamSend(
+  //                      Stream, SendBuffer2, 1, QUIC_SEND_FLAG_FIN, NULL))) {
+  //    printf("StreamSend failed, 0x%x!\n", Status);
+  //    free(SendBufferRaw);
+  //    MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
+  //    return -1;
+  //  }
+
+  return frames.size();
 }
 
 //
@@ -554,16 +588,13 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 BOOLEAN
 ClientLoadConfiguration(BOOLEAN Unsecure) {
   QUIC_SETTINGS Settings = {0};
-  //
   // Configures the client's idle timeout.
-  //
   Settings.IdleTimeoutMs = IdleTimeoutMs;
   Settings.IsSet.IdleTimeoutMs = TRUE;
+  Settings.StreamMultiReceiveEnabled = TRUE;
 
-  //
   // Configures a default client configuration, optionally disabling
   // server certificate validation.
-  //
   QUIC_CREDENTIAL_CONFIG CredConfig;
   memset(&CredConfig, 0, sizeof(CredConfig));
   CredConfig.Type = QUIC_CREDENTIAL_TYPE_NONE;

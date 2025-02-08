@@ -2,21 +2,24 @@
 #ifndef HTTPSERVER_HPP
 #define HTTPSERVER_HPP
 
-#include "router.hpp"
+#include <netinet/in.h>
+#include <openssl/ssl.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include <atomic>
 #include <cassert>
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <netinet/in.h>
-#include <poll.h>
 #include <string>
-#include <sys/socket.h>
-#include <unistd.h>
+
 #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
-#include <openssl/ssl.h>
+#include "router.hpp"
 
 enum : int {
   BUFFER_SIZE = 1024,
@@ -37,19 +40,18 @@ private:
   std::mutex strerrorMutex;
   SSL_CTX *ctx;
 
-
   QUIC_STATUS Status;
   HQUIC Listener;
   QUIC_ADDR Address;
 
   std::string threadSafeStrerror(int errnum);
-  int validateRequest(const std::string &request, std::string &method,
-                      std::string &path, SSL *clientSock, bool &acceptEncoding);
+
   void
   clientHandlerThread(int clientSock,
                       std::chrono::high_resolution_clock::time_point startTime);
 
 public:
+  std::unordered_map<HQUIC, std::vector<uint8_t>> BufferMap;
   HTTPServer(int argc, char *argv[]);
   HTTPServer(const HTTPServer &) = delete;
   HTTPServer(HTTPServer &&) = delete;
@@ -59,9 +61,17 @@ public:
 
   void PrintFromServer();
   void
-  addRoute(const std::string &method, const std::string &path,
+  AddRoute(const std::string &method, const std::string &path,
            const std::function<std::string(SSL *, const std::string)> &handler);
-  void run();
+  void Run();
+
+  static int ValidateRequestsHTTP1(const std::string &request,
+                                   std::string &method, std::string &path,
+                                   bool &acceptEncoding);
+
+  static int ValidateRequestsHTTP3(const std::string &request,
+                                   std::string &method, std::string &path,
+                                   SSL *clientSock, bool &acceptEncoding);
 };
 
 #endif // HTTPSERVER_HPP

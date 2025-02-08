@@ -1,8 +1,5 @@
 #include "server.hpp"
-#include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
-#include "log.hpp"
-#include "router.hpp"
-#include "sCallbacks.hpp"
+
 #include <atomic>
 #include <cassert>
 #include <cerrno>
@@ -10,20 +7,26 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+
+#include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
+#include "log.hpp"
+#include "router.hpp"
+#include "sCallbacks.hpp"
 // #include <msquic.h>
-#include "utils.hpp"
-#include <mutex>
 #include <netinet/in.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
 #include <poll.h>
-#include <sstream>
-#include <string>
 #include <sys/socket.h>
-#include <thread>
 #include <unistd.h>
 
+#include <mutex>
+#include <sstream>
+#include <string>
+#include <thread>
+
+#include "utils.hpp"
 
 std::atomic<bool> shouldShutdown(false);
 
@@ -32,10 +35,9 @@ std::string HTTPServer::threadSafeStrerror(int errnum) {
   return {strerror(errnum)};
 }
 
-int HTTPServer::validateRequest(const std::string &request, std::string &method,
-                                std::string &path, SSL *clientSock,
-                                bool &acceptEncoding) {
-
+int HTTPServer::ValidateRequestsHTTP1(const std::string &request,
+                                      std::string &method, std::string &path,
+                                      bool &acceptEncoding) {
   std::istringstream requestStream(request);
   std::string line;
 
@@ -45,32 +47,26 @@ int HTTPServer::validateRequest(const std::string &request, std::string &method,
   requestLine >> method >> path >> protocol;
 
   if (method != "GET" && method != "POST" && method != "PUT") {
-    router->routeRequest("NA", "", clientSock);
     return ERROR;
   }
 
   if (path.empty() || path[0] != '/' || path.find("../") != std::string::npos) {
-    router->routeRequest("BR", "", clientSock);
     return ERROR;
   }
 
   if (protocol != "HTTP/1.1" && protocol != "HTTP/2") {
-    router->routeRequest("UP", "", clientSock);
     return ERROR;
   }
 
   // header, value
   std::unordered_map<std::string, std::string> headers;
   while (std::getline(requestStream, line) && !line.empty()) {
-
     if (line.size() == 1) {
       continue;
     }
 
     auto colonPos = line.find(": ");
     if (colonPos == std::string::npos) {
-      std::cout << "WhatThisIs\n";
-      router->routeRequest("BR", "", clientSock);
       return ERROR;
     }
 
@@ -84,13 +80,11 @@ int HTTPServer::validateRequest(const std::string &request, std::string &method,
 
   // If we don't  find  host then it is a bad request
   if (headers.find("Host") == headers.end()) {
-    router->routeRequest("BR", "", clientSock);
     return ERROR;
   }
 
   // If is a POST and has  no content length it is a bad request
   if (method == "POST" && headers.find("Content-Length") == headers.end()) {
-    router->routeRequest("LR", "", clientSock);
     return ERROR;
   }
 
@@ -104,7 +98,6 @@ int HTTPServer::validateRequest(const std::string &request, std::string &method,
 
     // If body size  doesnt match the content length defined then bad request
     if (body.size() != contentLength) {
-      router->routeRequest("BR", "", clientSock);
       return ERROR;
     }
   }
@@ -120,9 +113,16 @@ int HTTPServer::validateRequest(const std::string &request, std::string &method,
   return 0;
 }
 
+int HTTPServer::ValidateRequestsHTTP3(const std::string &request,
+                                      std::string &method, std::string &path,
+                                      SSL *clientSock, bool &acceptEncoding) {
+  // If all validations pass
+  std::cout << "Request successfully validated for HTTP/3!\n";
+  return 0;
+}
+
 void HTTPServer::clientHandlerThread(
     int clientSock, std::chrono::high_resolution_clock::time_point startTime) {
-
   std::array<char, BUFFER_SIZE> buffer{};
   std::string request;
 
@@ -195,7 +195,8 @@ void HTTPServer::clientHandlerThread(
 
     std::cout << "Raw request: " << request << std::endl;
     bool acceptEncoding = false;
-    if (validateRequest(request, method, path, ssl, acceptEncoding) == ERROR) {
+    if (ValidateRequestsHTTP1(request, method, path, acceptEncoding) ==
+        ERROR) {
       LogError("Request validation was unsuccessful");
       continue;
     }
@@ -238,14 +239,13 @@ HTTPServer::~HTTPServer() {
   std::cout << "Server shutdown gracefully" << std::endl;
 }
 
-void HTTPServer::addRoute(
+void HTTPServer::AddRoute(
     const std::string &method, const std::string &path,
     const std::function<std::string(SSL *, const std::string)> &handler) {
   router->addRoute(method, path, handler);
 }
 
-void HTTPServer::run() {
-
+void HTTPServer::Run() {
   // Starts listening for incoming connections.
   if (QUIC_FAILED(Status =
                       MsQuic->ListenerStart(Listener, &Alpn, 1, &Address))) {
@@ -262,11 +262,10 @@ void HTTPServer::run() {
   getchar();
 }
 
-void  HTTPServer::PrintFromServer() { std::cout << "Hello from server\n"; }
+void HTTPServer::PrintFromServer() { std::cout << "Hello from server\n"; }
 
 HTTPServer::HTTPServer(int argc, char *argv[])
     : Status(0), activeConnections(0), Listener(nullptr) {
-
   // Configures the address used for the listener to listen on all IP
   // addresses and the given UDP port.
   Address = {0};

@@ -1,48 +1,13 @@
 #include "sCallbacks.hpp"
-#include "utils.hpp"
-#include "server.hpp"
+
+#include <cstdint>
+#include <iostream>
 #include <string>
-// #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 
-// Allocates and sends some data over a QUIC stream.
-void ServerSend(_In_ HQUIC Stream) {
-  // Allocates and builds the buffer to send over the stream.
+#include "server.hpp"
+#include "utils.hpp"
 
-  std::string message("Hello!");
 
-  void *SendBufferRaw = malloc(sizeof(QUIC_BUFFER) + message.size());
-
-  // void *SendBufferRaw = malloc(sizeof(QUIC_BUFFER) +SendBufferLength);
-  if (SendBufferRaw == nullptr) {
-    printf("SendBuffer allocation failed!\n");
-    MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
-    return;
-  }
-
-  QUIC_BUFFER *SendBuffer = (QUIC_BUFFER *)SendBufferRaw;
-  SendBuffer->Buffer = (uint8_t *)SendBufferRaw + sizeof(QUIC_BUFFER);
-  SendBuffer->Length = message.size();
-
-  memcpy(SendBuffer->Buffer, message.c_str(), message.size());
-
-  printf("[strm][%p] Sending data...\n", Stream);
-
-  // Sends the buffer over the stream. Note the FIN flag is passed along with
-  // the buffer. This indicates this is the last buffer on the stream and the
-  // the stream is shut down (in the send direction) immediately after.
-  QUIC_STATUS Status = 0;
-  if (QUIC_FAILED(Status = MsQuic->StreamSend(
-                      Stream, SendBuffer, 1, QUIC_SEND_FLAG_FIN, SendBuffer))) {
-    printf("StreamSend failed, 0x%x!\n", Status);
-    free(SendBufferRaw);
-    MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
-    return;
-  }
-}
-
-//
-// The server's callback for stream events from MsQuic.
-//
 _IRQL_requires_max_(DISPATCH_LEVEL)
     _Function_class_(QUIC_STREAM_CALLBACK) QUIC_STATUS QUIC_API
     ServerStreamCallback(_In_ HQUIC Stream, _In_opt_ void *Context,
@@ -52,51 +17,70 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 
   switch (Event->Type) {
   case QUIC_STREAM_EVENT_SEND_COMPLETE:
-    //
+
     // A previous StreamSend call has completed, and the context is being
     // returned back to the app.
-    //
-
     free(Event->SEND_COMPLETE.ClientContext);
     printf("[strm][%p] Data sent\n", Stream);
     break;
   case QUIC_STREAM_EVENT_RECEIVE:
 
-    // Data was received from the peer on the stream.
+    // If no previous allocated Buffer let's allocate one for this Stream
+    if (server->BufferMap.find(Stream) == server->BufferMap.end()) {
+      server->BufferMap[Stream].reserve(256);
+    }
 
+    // Data was received from the peer on Stream.
     printf("[strm][%p] Data received\n", Stream);
 
     for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++) {
       const QUIC_BUFFER *buffer = &Event->RECEIVE.Buffers[i];
 
-      // Print received data (assuming text)
-      fwrite(buffer->Buffer, 1, buffer->Length, stdout);
-      printf("\n");
-    }
-    printf("\n");
+      uint8_t *bufferPointer = buffer->Buffer;
+      uint8_t *bufferEnd = buffer->Buffer + buffer->Length;
 
-      server->PrintFromServer();
+      if (buffer->Length > 0) {
+        auto &streamBuffer = server->BufferMap[Stream];
+        streamBuffer.insert(streamBuffer.end(), bufferPointer, bufferEnd);
+      }
+    }
     break;
   case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
-    //
+
     // The peer gracefully shut down its send direction of the stream.
-    //
     printf("[strm][%p] Peer shut down\n", Stream);
-    ServerSend(Stream);
+
+    if (server->BufferMap.find(Stream) == server->BufferMap.end()) {
+      std::cout << "Error: no buffer found for Stream:" << Stream << "\n";
+      break;
+    }
+
+    // Here we send the response to the request. (since by now the
+    // request should be fully processed)
+    {
+      std::string headers;
+      std::string data;
+
+      ParseStreamBuffer(Stream, server->BufferMap[Stream], headers, data);
+
+      // Validate Request
+
+      // Send Asnwer to request (Route it)
+      // Add protocol to routes so that we can choose to send with TCP or
+      // QUIC, deppending if the request is in HTTP1/2 or 3
+    }
     break;
   case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
-    //
+    
     // The peer aborted its send direction of the stream.
-    //
+    
     printf("[strm][%p] Peer aborted\n", Stream);
     MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
     break;
   case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
-    //
     // Both directions of the stream have been shut down and MsQuic is done
     // with the stream. It can now be safely cleaned up.
-    //
-    printf("[strm][%p] All done\n", Stream);
+    printf("[strm][%p] Stream officialy closed\n", Stream);
     MsQuic->StreamClose(Stream);
     break;
   default:
@@ -105,22 +89,25 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
   return QUIC_STATUS_SUCCESS;
 }
 
-//
 // The server's callback for connection events from MsQuic.
-//
 _IRQL_requires_max_(DISPATCH_LEVEL)
     _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API
     ServerConnectionCallback(_In_ HQUIC Connection, _In_opt_ void *Context,
                              _Inout_ QUIC_CONNECTION_EVENT *Event) {
   UNREFERENCED_PARAMETER(Context);
+
+  // HTTPServer *server = (HTTPServer *)Context;
+
   switch (Event->Type) {
   case QUIC_CONNECTION_EVENT_CONNECTED:
 
     // The handshake has completed for the connection.
-
     printf("[conn][%p] Connected\n", Connection);
-    MsQuic->ConnectionSendResumptionTicket(
-        Connection, QUIC_SEND_RESUMPTION_FLAG_NONE, 0, NULL);
+
+    // Send  resumption ticket for future interactions
+    // MsQuic->ConnectionSendResumptionTicket(
+    //     Connection, QUIC_SEND_RESUMPTION_FLAG_NONE, 0, NULL);
+
     break;
   case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT:
 
@@ -137,9 +124,9 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     }
     break;
   case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
-    //
+
     // The connection was explicitly shut down by the peer.
-    //
+
     printf("[conn][%p] Shut down by peer, 0x%llu\n", Connection,
            (unsigned long long)Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
     break;
@@ -148,7 +135,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     // The connection has completed the shutdown process and is ready to be
     // safely cleaned up.
 
-    printf("[conn][%p] All done\n", Connection);
+    printf("[conn][%p] Connection officialy closed\n", Connection);
     MsQuic->ConnectionClose(Connection);
     break;
   case QUIC_CONNECTION_EVENT_PEER_STREAM_STARTED:
@@ -197,4 +184,3 @@ _IRQL_requires_max_(PASSIVE_LEVEL)
   }
   return Status;
 }
-

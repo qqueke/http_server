@@ -8,6 +8,7 @@ LIB_PATH = /home/QQueke/Documents/Repositories/msquic/build/bin/Release
 # Compiler flags
 CXXFLAGS = -O0 -g -std=c++20 -Iinclude -I/usr/include/openssl -I$(INCLUDE_PATH) -L/usr/lib/x86_64-linux-gnu -lssl -lcrypto -lz  -L$(LIB_PATH) -lmsquic
 
+# CXXFLAGS += -DQUIC_API_ENABLE_PREVIEW_FEATURES
 # Directories
 SRCDIR = src
 INCDIR = include
@@ -24,6 +25,7 @@ S_CALLBACKS_SRC = $(SRCDIR)/sCallbacks.cpp
 
 # Source files for client
 CLIENT_SRC = $(SRCDIR)/client.cpp
+C_CALLBACKS_SRC = $(SRCDIR)/cCallbacks.cpp
 
 # Common source files
 UTILS_SRC = $(SRCDIR)/utils.cpp
@@ -38,6 +40,7 @@ S_CALLBACKS_OBJ = $(BUILDDIR)/sCallbacks.o
 
 # Object files for client
 CLIENT_OBJ = $(BUILDDIR)/client.o
+C_CALLBACKS_OBJ = $(BUILDDIR)/cCallbacks.o
 
 # Common object files
 UTILS_OBJ = $(BUILDDIR)/utils.o
@@ -50,7 +53,7 @@ server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(LOG_OBJ) $(UTILS
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
 # Build the client executable
-client: $(CLIENT_OBJ) $(UTILS_OBJ)
+client: $(CLIENT_OBJ) $(UTILS_OBJ) $(C_CALLBACKS_OBJ)
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
 # Rules for building object files
@@ -73,6 +76,9 @@ $(BUILDDIR)/client.o: $(CLIENT_SRC) $(INCDIR)/utils.hpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BUILDDIR)/sCallbacks.o: $(S_CALLBACKS_SRC) 
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(BUILDDIR)/cCallbacks.o: $(C_CALLBACKS_SRC) 
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BUILDDIR)/utils.o: $(UTILS_SRC) $(INCDIR)/utils.hpp

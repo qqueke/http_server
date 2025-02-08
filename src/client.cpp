@@ -1,6 +1,7 @@
 
 // #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 #include "utils.hpp"
+#include "cCallbacks.hpp"
 
 void RunClient(_In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[]) {
   // Load the client configuration based on the "unsecure" command line option.
@@ -13,12 +14,11 @@ void RunClient(_In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[]) {
   const char *SslKeyLogFile = getenv(SslKeyLogEnvVar);
   HQUIC Connection = NULL;
 
-  //
+  int i = 0;
   // Allocate a new connection object.
-  //
   if (QUIC_FAILED(Status = MsQuic->ConnectionOpen(Registration,
                                                   ClientConnectionCallback,
-                                                  NULL, &Connection))) {
+                                                  &i, &Connection))) {
     printf("ConnectionOpen failed, 0x%x!\n", Status);
     goto Error;
   }
@@ -49,9 +49,8 @@ void RunClient(_In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[]) {
     }
   }
 
-  //
+
   // Get the target / server name or IP from the command line.
-  //
   const char *Target;
   if ((Target = GetValue(argc, argv, "target")) == NULL) {
     printf("Must specify '-target' argument!\n");
@@ -61,9 +60,7 @@ void RunClient(_In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[]) {
 
   printf("[conn][%p] Connecting...\n", Connection);
 
-  //
   // Start the connection to the server.
-  //
   if (QUIC_FAILED(Status = MsQuic->ConnectionStart(Connection, Configuration,
                                                    QUIC_ADDRESS_FAMILY_UNSPEC,
                                                    Target, UDP_PORT))) {
