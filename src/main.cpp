@@ -29,13 +29,7 @@ static void signalHandler(int signal) {
   shouldShutdown = true;
 }
 
-// extern const QUIC_API_TABLE *MsQuic;
-
 int main(int argc, char *argv[]) {
-  // int QUIC_MAIN_EXPORT main(_In_ int argc,
-  //                           _In_reads_(argc) _Null_terminated_ char *argv[])
-  //                           {
-
   QUIC_STATUS Status = QUIC_STATUS_SUCCESS;
 
   // Open a handle to the library and get the API function table.
@@ -76,7 +70,7 @@ int main(int argc, char *argv[]) {
   }
 
   if (GetFlag(argc, argv, "help") || GetFlag(argc, argv, "?")) {
-    // PrintUsage();
+    PrintUsage();
   }
   // else if (GetFlag(argc, argv, "client")) {
   //   RunClient(argc, argv);
@@ -91,8 +85,8 @@ int main(int argc, char *argv[]) {
           std::make_unique<HTTPServer>(argc, argv);
 
       // nice to have this as a function declared elsewhere
-      server->AddRoute("GET", "/hello", helloHandler);
-      server->AddRoute("GET", "/goodbye", goodbyeHandler);
+      // server->AddRoute("GET", "/hello", helloHandler);
+      // server->AddRoute("GET", "/goodbye", goodbyeHandler);
 
       std::thread([]() { periodicFlush(); }).detach();
 
@@ -100,7 +94,7 @@ int main(int argc, char *argv[]) {
 
       server->Run();
     }
-
+    shouldShutdown = true;
     std::cout << "Calling the shutdown flush" << std::endl;
     std::thread t([]() { shutdownFlush(); });
     t.join();

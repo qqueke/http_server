@@ -7,7 +7,6 @@
 #include "server.hpp"
 #include "utils.hpp"
 
-
 _IRQL_requires_max_(DISPATCH_LEVEL)
     _Function_class_(QUIC_STREAM_CALLBACK) QUIC_STATUS QUIC_API
     ServerStreamCallback(_In_ HQUIC Stream, _In_opt_ void *Context,
@@ -20,6 +19,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 
     // A previous StreamSend call has completed, and the context is being
     // returned back to the app.
+
     free(Event->SEND_COMPLETE.ClientContext);
     printf("[strm][%p] Data sent\n", Stream);
     break;
@@ -57,23 +57,30 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 
     // Here we send the response to the request. (since by now the
     // request should be fully processed)
+
     {
       std::string headers;
       std::string data;
 
       ParseStreamBuffer(Stream, server->BufferMap[Stream], headers, data);
 
-      // Validate Request
+      std::unordered_map<std::string, std::string> headersMap;
 
-      // Send Asnwer to request (Route it)
-      // Add protocol to routes so that we can choose to send with TCP or
-      // QUIC, deppending if the request is in HTTP1/2 or 3
+      bool acceptEncoding;
+
+      // Validate Request
+      HTTPServer::ValidateHeadersHTTP3(headers, headersMap);
+
+      // Route Request
+      std::string status = server->ServerRouter->RouteRequest(
+          headersMap[":method"], headersMap[":path"], data, Protocol::HTTP3,
+          (void *)Stream);
     }
     break;
   case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
-    
+
     // The peer aborted its send direction of the stream.
-    
+
     printf("[strm][%p] Peer aborted\n", Stream);
     MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
     break;
@@ -171,9 +178,11 @@ _IRQL_requires_max_(PASSIVE_LEVEL)
   QUIC_STATUS Status = QUIC_STATUS_NOT_SUPPORTED;
   switch (Event->Type) {
   case QUIC_LISTENER_EVENT_NEW_CONNECTION:
+
     // A new connection is being attempted by a client. For the handshake to
     // proceed, the server must provide a configuration for QUIC to use. The
     // app MUST set the callback handler before returning.
+
     MsQuic->SetCallbackHandler(Event->NEW_CONNECTION.Connection,
                                (void *)ServerConnectionCallback, Context);
     Status = MsQuic->ConnectionSetConfiguration(

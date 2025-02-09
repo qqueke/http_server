@@ -9,18 +9,11 @@
 
 #include "utils.hpp"
 
-
 void ClientSend(_In_ HQUIC Connection) {
   QUIC_STATUS Status;
-  // uint8_t *SendBufferRaw;
-  // QUIC_BUFFER *SendBuffer;
 
   // Create/allocate a new bidirectional stream. The stream is just allocated
   // and no QUIC stream identifier is assigned until it's started.
-  // std::array<HQUIC, 1> Streams{};
-  // int i = 0;
-  // for (HQUIC &Stream : Streams) {
-
   HQUIC Stream;
   // std::cout << "Stream: " << i++ << "\n";
   if (QUIC_FAILED(
@@ -39,8 +32,9 @@ void ClientSend(_In_ HQUIC Connection) {
   // Starts the bidirectional stream. By default, the peer is not notified of
   // the stream being started until data is sent on the stream.
   //  QUIC_STREAM_START_FLAG_NONE
-  if (QUIC_FAILED(Status = MsQuic->StreamStart(
-                      Stream, QUIC_STREAM_START_FLAG_IMMEDIATE))) {
+  // QUIC_STREAM_START_FLAG_IMMEDIATE
+  if (QUIC_FAILED(
+          Status = MsQuic->StreamStart(Stream, QUIC_STREAM_START_FLAG_NONE))) {
     printf("StreamStart failed, 0x%x!\n", Status);
 
     std::cout << "Shutting down Stream..." << std::endl;
@@ -73,11 +67,6 @@ void ClientSend(_In_ HQUIC Connection) {
   // Encode the frame length (size of the payload)
   EncodeVarint(frameHeader, payloadLength); // Frame Length
 
-  // for (auto byte : frameHeader) {
-  //   printf("%02X ", byte);
-  // }
-  // std::cout << std::endl;
-
   // Frame payload for Headers
   std::vector<uint8_t> framePayload(payloadLength);
   memcpy(framePayload.data(), compressedHeaders.c_str(), payloadLength);
@@ -93,11 +82,12 @@ void ClientSend(_In_ HQUIC Connection) {
 
   std::vector<std::vector<uint8_t>> frames;
 
-  for (int i = 0; i < 3; ++i) {
-    frames.emplace_back(headerFrame);
-  }
+  frames.emplace_back(headerFrame);
 
-  if (SendFrames(Connection, Stream, frames) == -1) {
+
+  // Add data frames here and append them to the frames
+
+  if (SendFramesToNewConn(Connection, Stream, frames) == -1) {
     return;
   }
 }

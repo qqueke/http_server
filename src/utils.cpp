@@ -9,6 +9,8 @@
 #include <thread>
 
 #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
+#include "log.hpp"
+#include "ssl.h"
 // The (optional) registration configuration for the app. This sets a name for
 // the app (used for persistent storage and for debugging). It also configures
 // the execution profile, using the default "low latency" profile.
@@ -24,39 +26,31 @@ const uint16_t UdpPort = 4567;
 // The default idle timeout period (1 second) used for the protocol.
 const uint64_t IdleTimeoutMs = 1000;
 
-//
 // The length of buffer sent over the streams in the protocol.
-//
 const uint32_t SendBufferLength = 100;
 
 // The QUIC API/function table returned from MsQuicOpen2. It contains all the
 // functions called by the app to interact with MsQuic.
 const QUIC_API_TABLE *MsQuic;
 
-//
 // The QUIC handle to the registration object. This is the top level API object
 // that represents the execution context for all work done by MsQuic on behalf
 // of the app.
-//
 HQUIC Registration;
 
-//
 // The QUIC handle to the configuration object. This object abstracts the
 // connection configuration. This includes TLS configuration and any other
 // QUIC layer settings.
-//
 HQUIC Configuration;
 
-//
+
 // The struct to be filled with TLS secrets
 // for debugging packet captured with e.g. Wireshark.
-//
 QUIC_TLS_SECRETS ClientSecrets = {0};
 
-//
+
 // The name of the environment variable being
 // used to get the path to the ssl key log file.
-//
 const char *SslKeyLogEnvVar = "SSLKEYLOGFILE";
 
 // typedef struct QUIC_CREDENTIAL_CONFIG_HELPER {
@@ -81,7 +75,6 @@ void PrintUsage() {
          "  quicsample.exe -server -cert_file:<...> -key_file:<...> "
          "[-password:<...>]\n");
 }
-
 
 void EncodeVarint(std::vector<uint8_t> &buffer, uint64_t value) {
   if (value <= 63) { // Fit in 1 byte
@@ -109,9 +102,8 @@ void EncodeVarint(std::vector<uint8_t> &buffer, uint64_t value) {
   }
 }
 
-
 uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
-                     const std::vector<uint8_t>::iterator &end) {
+                    const std::vector<uint8_t>::iterator &end) {
   // Check if there's enough data for at least the first byte
   if (iter + 1 >= end) {
     std::cout << "Error: Buffer overflow in ReadVarint\n";
@@ -139,7 +131,6 @@ uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
 
   return value;
 }
-
 
 // Parses stream buffer to retrieve headers payload and data payload
 void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
@@ -199,11 +190,7 @@ void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
   }
 }
 
-
-
-//
 // Helper functions to look up a command line arguments.
-//
 BOOLEAN
 GetFlag(_In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[],
         _In_z_ const char *name) {
@@ -231,9 +218,7 @@ GetValue(_In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[],
   return NULL;
 }
 
-//
 // Helper function to convert a hex character to its decimal value.
-//
 uint8_t DecodeHexChar(_In_ char c) {
   if (c >= '0' && c <= '9')
     return c - '0';
@@ -244,9 +229,7 @@ uint8_t DecodeHexChar(_In_ char c) {
   return 0;
 }
 
-//
 // Helper function to convert a string of hex characters to a byte buffer.
-//
 uint32_t DecodeHexBuffer(_In_z_ const char *HexBuffer,
                          _In_ uint32_t OutBufferLen,
                          _Out_writes_to_(OutBufferLen, return)
@@ -341,33 +324,30 @@ void WriteSslKeyLogFile(_In_z_ const char *FileName,
   fclose(File);
 }
 
-//
 // Helper function to load a server configuration. Uses the command line
 // arguments to load the credential part of the configuration.
-//
 BOOLEAN
 ServerLoadConfiguration(_In_ int argc,
                         _In_reads_(argc) _Null_terminated_ char *argv[]) {
   QUIC_SETTINGS Settings = {0};
-  //
+
   // Configures the server's idle timeout.
-  //
   Settings.IdleTimeoutMs = IdleTimeoutMs;
   Settings.IsSet.IdleTimeoutMs = TRUE;
-  //
+
   // Configures the server's resumption level to allow for resumption and
   // 0-RTT.
   Settings.ServerResumptionLevel = QUIC_SERVER_RESUME_AND_ZERORTT;
   Settings.IsSet.ServerResumptionLevel = TRUE;
-  //
+
   // Configures the server's settings to allow for the peer to open a single
   // bidirectional stream. By default connections are not configured to allow
   // any streams from the peer.
-  //
   Settings.PeerBidiStreamCount = 2;
   Settings.IsSet.PeerBidiStreamCount = TRUE;
   Settings.PeerUnidiStreamCount = 2;
   Settings.IsSet.PeerUnidiStreamCount = TRUE;
+
   // Settings.StreamMultiReceiveEnabled = TRUE;
 
   QUIC_CREDENTIAL_CONFIG_HELPER Config;
@@ -377,10 +357,9 @@ ServerLoadConfiguration(_In_ int argc,
   const char *Cert;
   const char *KeyFile;
   if ((Cert = GetValue(argc, argv, "cert_hash")) != NULL) {
-    //
     // Load the server's certificate from the default certificate store,
     // using the provided certificate hash.
-    //
+
     uint32_t CertHashLen = DecodeHexBuffer(
         Cert, sizeof(Config.CertHash.ShaHash), Config.CertHash.ShaHash);
     if (CertHashLen != sizeof(Config.CertHash.ShaHash)) {
@@ -412,10 +391,8 @@ ServerLoadConfiguration(_In_ int argc,
     return FALSE;
   }
 
-  //
   // Allocate/initialize the configuration object, with the configured ALPN
   // and settings.
-  //
   QUIC_STATUS Status = QUIC_STATUS_SUCCESS;
   if (QUIC_FAILED(Status = MsQuic->ConfigurationOpen(
                       Registration, &Alpn, 1, &Settings, sizeof(Settings), NULL,
@@ -424,9 +401,7 @@ ServerLoadConfiguration(_In_ int argc,
     return FALSE;
   }
 
-  //
   // Loads the TLS credential part of the configuration.
-  //
   if (QUIC_FAILED(Status = MsQuic->ConfigurationLoadCredential(
                       Configuration, &Config.CredConfig))) {
     printf("ConfigurationLoadCredential failed, 0x%x!\n", Status);
@@ -436,51 +411,58 @@ ServerLoadConfiguration(_In_ int argc,
   return TRUE;
 }
 
-int SendLastFrame(_In_ HQUIC Connection, HQUIC Stream,
-                  const std::vector<uint8_t> &frame) {
+
+int SendFramesToStream(HQUIC Stream,
+                       const std::vector<std::vector<uint8_t>> &frames) {
   QUIC_STATUS Status;
   uint8_t *SendBufferRaw;
   QUIC_BUFFER *SendBuffer;
 
-  SendBufferRaw = (uint8_t *)malloc(sizeof(QUIC_BUFFER) + frame.size());
+  for (auto &frame : frames) {
+    // const std::vector<uint8_t>& frame = frames[i];
 
-  if (SendBufferRaw == NULL) {
-    printf("SendBuffer allocation failed!\n");
-    Status = QUIC_STATUS_OUT_OF_MEMORY;
-    if (QUIC_FAILED(Status)) {
-      std::cout << "Shutting down connection..." << std::endl;
-      MsQuic->ConnectionShutdown(Connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE,
-                                 0);
-      return -1;
+    SendBufferRaw = (uint8_t *)malloc(sizeof(QUIC_BUFFER) + frame.size());
+
+    if (SendBufferRaw == NULL) {
+      printf("SendBuffer allocation failed!\n");
+      Status = QUIC_STATUS_OUT_OF_MEMORY;
+      if (QUIC_FAILED(Status)) {
+        std::cout << "Shutting down connection..." << std::endl;
+
+        MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
+
+        return -1;
+      }
+    }
+
+    SendBuffer = (QUIC_BUFFER *)SendBufferRaw;
+    SendBuffer->Buffer = SendBufferRaw + sizeof(QUIC_BUFFER);
+    SendBuffer->Length = frame.size();
+
+    memcpy(SendBuffer->Buffer, frame.data(), frame.size());
+
+    printf("[strm][%p] Sending data...\n", Stream);
+
+    if (QUIC_FAILED(Status = MsQuic->StreamSend(Stream, SendBuffer, 1,
+                                                (&frame == &frames.back())
+                                                    ? QUIC_SEND_FLAG_FIN
+                                                    : QUIC_SEND_FLAG_DELAY_SEND,
+                                                SendBuffer))) {
+      printf("StreamSend failed, 0x%x!\n", Status);
+      free(SendBufferRaw);
+      if (QUIC_FAILED(Status)) {
+        std::cout << "Shutting down connection..." << std::endl;
+
+        MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
+
+        return -1;
+      }
     }
   }
-  SendBuffer = (QUIC_BUFFER *)SendBufferRaw;
-  SendBuffer->Buffer = SendBufferRaw + sizeof(QUIC_BUFFER);
-  SendBuffer->Length = frame.size();
-
-  memcpy(SendBuffer->Buffer, frame.data(), frame.size());
-
-  // std::this_thread::sleep_for(std::chrono::milliseconds(10000));
-  printf("[strm][%p] Sending data...\n", Stream);
-
-  // Sends the buffer over the stream. Note the FIN flag is passed along with
-  // the buffer. This indicates this is the last buffer on the stream and the
-  // the stream is shut down (in the send direction) immediately after.
-  if (QUIC_FAILED(Status = MsQuic->StreamSend(
-                      Stream, SendBuffer, 1, QUIC_SEND_FLAG_FIN, SendBuffer))) {
-    printf("StreamSend failed, 0x%x!\n", Status);
-    free(SendBufferRaw);
-    if (QUIC_FAILED(Status)) {
-      std::cout << "Shutting down connection..." << std::endl;
-      MsQuic->ConnectionShutdown(Connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE,
-                                 0);
-      return -1;
-    }
-  }
-  return frame.size();
+  return 0;
 }
 
-int SendFrames(_In_ HQUIC Connection, HQUIC Stream,
+int SendFramesToNewConn(_In_ HQUIC Connection, HQUIC Stream,
                const std::vector<std::vector<uint8_t>> &frames) {
   QUIC_STATUS Status;
   uint8_t *SendBufferRaw;
@@ -532,53 +514,6 @@ int SendFrames(_In_ HQUIC Connection, HQUIC Stream,
       }
     }
   }
-
-  // if (QUIC_FAILED(Status = MsQuic->StreamSend(Stream, SendBuffer, 1,
-  //                                             QUIC_SEND_FLAG_FIN, NULL))) {
-  //   printf("StreamSend failed, 0x%x!\n", Status);
-  //   free(SendBufferRaw);
-  //   if (QUIC_FAILED(Status)) {
-  //     std::cout << "Shutting down connection..." << std::endl;
-  //     MsQuic->ConnectionShutdown(Connection,
-  //     QUIC_CONNECTION_SHUTDOWN_FLAG_NONE,
-  //                                0);
-  //     return -1;
-  //   }
-  // }
-
-  //  std::string message = "Hello from client!";
-  //
-  //  void *SendBufferRaw2 = malloc(sizeof(QUIC_BUFFER) + message.size());
-  //
-  //  // void *SendBufferRaw = malloc(sizeof(QUIC_BUFFER) +SendBufferLength);
-  //  if (SendBufferRaw2 == nullptr) {
-  //    printf("SendBuffer allocation failed!\n");
-  //    MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
-  //    return -1;
-  //  }
-  //
-  // QUIC_BUFFER *SendBuffer2 = (QUIC_BUFFER *)SendBufferRaw2;
-  //  SendBuffer2->Buffer = (uint8_t *)SendBufferRaw2 + sizeof(QUIC_BUFFER);
-  //  SendBuffer2->Length = message.size();
-  //
-  //  memcpy(SendBuffer2->Buffer, message.c_str(), message.size());
-  //
-  //  printf("[strm][%p] Sending data...\n", Stream);
-  //
-  //  // Sends the buffer over the stream. Note the FIN flag is passed along
-  //  with
-  //  // the buffer. This indicates this is the last buffer on the stream and
-  //  the
-  //  // the stream is shut down (in the send direction) immediately after.
-  //  Status = 0;
-  //  if (QUIC_FAILED(Status = MsQuic->StreamSend(
-  //                      Stream, SendBuffer2, 1, QUIC_SEND_FLAG_FIN, NULL))) {
-  //    printf("StreamSend failed, 0x%x!\n", Status);
-  //    free(SendBufferRaw);
-  //    MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
-  //    return -1;
-  //  }
-
   return frames.size();
 }
 
@@ -603,10 +538,8 @@ ClientLoadConfiguration(BOOLEAN Unsecure) {
     CredConfig.Flags |= QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION;
   }
 
-  //
   // Allocate/initialize the configuration object, with the configured ALPN
   // and settings.
-  //
   QUIC_STATUS Status = QUIC_STATUS_SUCCESS;
   if (QUIC_FAILED(Status = MsQuic->ConfigurationOpen(
                       Registration, &Alpn, 1, &Settings, sizeof(Settings), NULL,
@@ -615,10 +548,8 @@ ClientLoadConfiguration(BOOLEAN Unsecure) {
     return FALSE;
   }
 
-  //
   // Loads the TLS credential part of the configuration. This is required even
   // on client side, to indicate if a certificate is required or not.
-  //
   if (QUIC_FAILED(Status = MsQuic->ConfigurationLoadCredential(Configuration,
                                                                &CredConfig))) {
     printf("ConfigurationLoadCredential failed, 0x%x!\n", Status);
@@ -627,3 +558,5 @@ ClientLoadConfiguration(BOOLEAN Unsecure) {
 
   return TRUE;
 }
+
+

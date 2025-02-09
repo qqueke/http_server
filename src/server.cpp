@@ -20,19 +20,315 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <zlib.h>
 
 #include <mutex>
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unordered_set>
 
 #include "utils.hpp"
 
+static std::unordered_map<std::string, std::string> responseCache;
+static std::mutex responseMutex;
+static std::mutex cacheMutex;
+
 std::atomic<bool> shouldShutdown(false);
+
+static void verifyContentType(const std::string &filePath,
+                              std::string &httpResponse) {
+  std::string fileExtension{};
+  for (int pos = (int)filePath.size() - 1; pos >= 0; --pos) {
+    if (filePath[pos] == '.') {
+      fileExtension = filePath.substr(pos, filePath.size() - pos);
+    }
+  }
+
+  if (fileExtension == ".html") {
+    httpResponse += "Content-Type: text/html\r\n";
+  }
+  if (fileExtension == ".css") {
+    httpResponse += "Content-Type: text/css\r\n";
+  }
+  if (fileExtension == ".js") {
+    httpResponse += "Content-Type: text/javascript\r\n";
+  }
+  if (fileExtension == ".json") {
+    httpResponse += "Content-Type: application/json\r\n";
+  }
+  if (fileExtension == ".xml") {
+    httpResponse += "Content-Type: application/xml\r\n";
+  }
+  if (fileExtension == ".txt") {
+    httpResponse += "Content-Type: text/plain\r\n";
+  }
+  if (fileExtension == ".jpg") {
+    httpResponse += "Content-Type: image/jpeg\r\n";
+  }
+  if (fileExtension == ".jpeg") {
+    httpResponse += "Content-Type: image/jpeg\r\n";
+  }
+  if (fileExtension == ".png") {
+    httpResponse += "Content-Type: image/png\r\n";
+  }
+  if (fileExtension == ".gif") {
+    httpResponse += "Content-Type: image/gif\r\n";
+  }
+  if (fileExtension == ".svg") {
+    httpResponse += "Content-Type: text/svg\r\n";
+  }
+  if (fileExtension == ".webp") {
+    httpResponse += "Content-Type: image/webp\r\n";
+  }
+  if (fileExtension == ".mp3") {
+    httpResponse += "Content-Type: audio/mpeg\r\n";
+  }
+  if (fileExtension == ".wav") {
+    httpResponse += "Content-Type: audio/wav\r\n";
+  }
+  if (fileExtension == ".mp4") {
+    httpResponse += "Content-Type: video/mp4\r\n";
+  }
+  if (fileExtension == ".webm") {
+    httpResponse += "Content-Type: video/webm\r\n";
+  }
+  if (fileExtension == ".woff") {
+    httpResponse += "Content-Type: font/woff\r\n";
+  }
+  if (fileExtension == ".woff2") {
+    httpResponse += "Content-Type: font/woff2\r\n";
+  }
+  if (fileExtension == ".ttf") {
+    httpResponse += "Content-Type: font/ttf\r\n";
+  }
+  if (fileExtension == ".otf") {
+    httpResponse += "Content-Type: font/otf\r\n";
+  }
+  if (fileExtension == ".pdf") {
+    httpResponse += "Content-Type: application/pdf\r\n";
+  }
+  if (fileExtension == ".zip") {
+    httpResponse += "Content-Type: application/zip\r\n";
+  }
+  if (fileExtension == ".gz") {
+    httpResponse += "Content-Type: application/gzip\r\n";
+  }
+
+  httpResponse += "\r\n";
+}
+
+static void sendFile(SSL *clientSSL, const std::string &filePath,
+                     bool acceptEncoding) {
+  int fileFd = open(filePath.c_str(), O_RDONLY);
+
+  struct stat fileStat{};
+  if (fstat(fileFd, &fileStat) == -1) {
+    LogError("Error getting file stats");
+    close(fileFd);
+    return;
+  }
+
+  std::string httpResponse = "HTTP/1.1 200 OK\r\n";
+  httpResponse +=
+      "Content-Length: " + std::to_string(fileStat.st_size) + "\r\n";
+
+  if (acceptEncoding) {
+    httpResponse += "Content-Encoding: gzip\r\n";
+  }
+
+  verifyContentType(filePath, httpResponse);
+
+  // verify  content type
+  ssize_t bytesSent =
+      SSL_write(clientSSL, httpResponse.data(), (int)httpResponse.size());
+
+  if (bytesSent <= 0) {
+    int err = SSL_get_error(clientSSL, (int)bytesSent);
+    LogError("SSL_write failed: " + std::to_string(err));
+    close(fileFd);
+    return;
+  }
+
+  if (BIO_get_ktls_send(SSL_get_wbio(clientSSL))) {
+    bytesSent = SSL_sendfile(clientSSL, fileFd, 0, fileStat.st_size, 0);
+    if (bytesSent >= 0) {
+      close(fileFd);
+      return;
+    }
+    LogError("SSL_sendfile failed, falling back to manual send");
+  }
+
+  std::array<char, 4096> buffer{};
+
+  while (read(fileFd, buffer.data(), buffer.size()) > 0) {
+    bytesSent = SSL_write(clientSSL, buffer.data(), buffer.size());
+
+    if (bytesSent <= 0) {
+      int err = SSL_get_error(clientSSL, (int)bytesSent);
+      LogError("SSL_write failed: " + std::to_string(err));
+      close(fileFd);
+      return;
+    }
+  }
+
+  close(fileFd);
+}
+
+enum CompressionType { DEFLATE, GZIP };
+
+bool compressData(const std::string &inputFile, const std::string &outputFile,
+                  CompressionType type) {
+  std::ifstream inFileStream(inputFile, std::ios::binary);
+  if (!inFileStream) {
+    LogError("Failed to open input file\n");
+    return false;
+  }
+
+  // Create output file
+  std::ofstream file(outputFile, std::ios::binary | std::ios::out);
+  file.close();
+
+  std::ofstream outFileStream(outputFile, std::ios::binary);
+  if (!outFileStream) {
+    LogError("Failed to open output file\n");
+    return false;
+  }
+
+  // Will read file stream as chars until end of file ({}), to the vector
+  std::vector<char> buffer(std::istreambuf_iterator<char>(inFileStream), {});
+
+  uLongf compressedSize = compressBound(buffer.size());
+  std::vector<Bytef> compressedData(compressedSize);
+
+  z_stream zStream = {};
+  zStream.next_in = reinterpret_cast<Bytef *>(buffer.data());
+  zStream.avail_in = buffer.size();
+  zStream.next_out = compressedData.data();
+  zStream.avail_out = compressedSize;
+
+  int windowBits =
+      (type == GZIP) ? 15 + 16 : 15; // 15 for Deflate, +16 for Gzip
+
+  if (deflateInit2(&zStream, Z_BEST_COMPRESSION, Z_DEFLATED, windowBits, 8,
+                   Z_DEFAULT_STRATEGY) != Z_OK) {
+    LogError("Compression initialization failed\n");
+    return false;
+  }
+
+  if (deflate(&zStream, Z_FINISH) != Z_STREAM_END) {
+    LogError("Compression failed\n");
+    deflateEnd(&zStream);
+    return false;
+  }
+
+  outFileStream.write(reinterpret_cast<const char *>(compressedData.data()),
+                      (long)zStream.total_out);
+
+  deflateEnd(&zStream);
+
+  std::cout << ((type == GZIP) ? "Gzip" : "Deflate")
+            << " compression successful: " << outputFile << "\n";
+  return true;
+}
 
 std::string HTTPServer::threadSafeStrerror(int errnum) {
   std::lock_guard<std::mutex> lock(strerrorMutex);
   return {strerror(errnum)};
+}
+
+void HTTPServer::staticFileHandler(SSL *clientSSL, const std::string &filePath,
+                                   bool acceptEncoding) {
+  if (acceptEncoding) {
+    // find if a precomputed compressed file exists and send it
+    struct stat buf{};
+    int err = stat((filePath + ".gz").c_str(), &buf);
+    // file exists
+    if (err == 0) {
+      sendFile(clientSSL, filePath + ".gz", acceptEncoding);
+      return;
+    }
+
+    // otherwise compress it on the fly and send It
+    if (compressData(filePath, filePath + ".gz", GZIP)) {
+      sendFile(clientSSL, filePath + ".gz", acceptEncoding);
+      return;
+    }
+
+    LogError("Compression failed, falling back to full file");
+  }
+
+  sendFile(clientSSL, filePath, acceptEncoding);
+}
+
+void HTTPServer::storeInCache(const std::string &cacheKey,
+                              const std::string &response) {
+  std::lock_guard<std::mutex> lock(cacheMutex);
+  responseCache[cacheKey] = response;
+}
+
+int HTTPServer::SendHTTP1Response(SSL *clientSSL, const std::string &response) {
+  ssize_t bytesSent =
+      SSL_write(clientSSL, response.data(), (int)response.size());
+  if (bytesSent <= 0) {
+    LogError("Failed to reply to client");
+    return ERROR;
+  }
+  return 0;
+}
+
+int HTTPServer::SendHTTP3Response(HQUIC Stream, const std::string &headers,
+                                  const std::string &data) {
+  // Compress headers with QPACK
+  std::string compressedHeaders = headers;
+
+  // Construct the frame header for Headers
+  uint8_t frameType = 0x01; // 0x01 for HEADERS frame
+  size_t payloadLength = compressedHeaders.size();
+
+  // Header Frame : Type, Length
+  std::vector<uint8_t> frameHeader;
+
+  // Encode the frame type (0x01 for HEADERS frame)
+  EncodeVarint(frameHeader, frameType);
+  // Encode the frame length (size of the payload)
+  EncodeVarint(frameHeader, payloadLength);
+
+  // for (auto byte : frameHeader) {
+  //   printf("%02X ", byte);
+  // }
+  // std::cout << std::endl;
+
+  // Frame payload for Headers
+  std::vector<uint8_t> framePayload(payloadLength);
+  memcpy(framePayload.data(), compressedHeaders.c_str(), payloadLength);
+
+  // Combine the Frame Header and Payload into one buffer
+  size_t totalFrameSize = frameHeader.size() + framePayload.size();
+
+  // Complete Header frame (frame header + frame payload)
+  std::vector<uint8_t> headerFrame(totalFrameSize);
+  memcpy(headerFrame.data(), frameHeader.data(), frameHeader.size());
+  memcpy(headerFrame.data() + frameHeader.size(), framePayload.data(),
+         payloadLength);
+
+  // Process data into one or more frames.
+  // std::vector<std::vector<uint8_t>> dataFrames;
+
+  // Put header frame and data frames in frames response
+  std::vector<std::vector<uint8_t>> frames;
+
+  frames.emplace_back(headerFrame);
+
+  // for (auto &dataFrame : dataFrames) {
+  //   frames.emplace_back(dataFrame);
+  // }
+
+  if (SendFramesToStream(Stream, frames) == ERROR) {
+    return ERROR;
+  }
+
+  return 0;
 }
 
 int HTTPServer::ValidateRequestsHTTP1(const std::string &request,
@@ -113,123 +409,156 @@ int HTTPServer::ValidateRequestsHTTP1(const std::string &request,
   return 0;
 }
 
-int HTTPServer::ValidateRequestsHTTP3(const std::string &request,
-                                      std::string &method, std::string &path,
-                                      SSL *clientSock, bool &acceptEncoding) {
+void HTTPServer::ValidateHeadersHTTP3(
+    const std::string &headers,
+    std::unordered_map<std::string, std::string> &headersMap) {
+  std::istringstream headersStream(headers);
+  std::string line;
+
+  while (std::getline(headersStream, line)) {
+    if (!line.empty() && line.back() == '\r') {
+      line.pop_back();
+    }
+
+    // Find first occurrence of ": "
+    size_t pos = line.find(": ");
+    if (pos != std::string::npos) {
+      std::string key = line.substr(0, pos);
+      std::string value = line.substr(pos + 2);
+      headersMap[key] = value;
+    }
+  }
+
+  std::unordered_set<std::string> requiredHeaders;
+  requiredHeaders.insert(":method");
+  requiredHeaders.insert(":scheme");
+  requiredHeaders.insert(":path");
+
+  for (const auto &header : requiredHeaders) {
+    if (headersMap.find(header) == headersMap.end()) {
+      std::cout << "Missing atleast one mandatory header field\n";
+      headersMap["method"] = "BR";
+      headersMap["path"] = "";
+      return;
+    }
+  }
+
   // If all validations pass
   std::cout << "Request successfully validated for HTTP/3!\n";
-  return 0;
+  return;
 }
 
-void HTTPServer::clientHandlerThread(
-    int clientSock, std::chrono::high_resolution_clock::time_point startTime) {
-  std::array<char, BUFFER_SIZE> buffer{};
-  std::string request;
-
-  // Create SSL object
-  SSL *ssl = SSL_new(ctx);
-
-  //  sets the file descriptor clientSock as the input/output facility for the
-  //  TLS/SSL
-  SSL_set_fd(ssl, clientSock);
-
-  // TLS/SSL handshake
-  if (SSL_accept(ssl) <= 0) {
-    LogError("SSL handshake failed");
-    SSL_free(ssl);
-    close(clientSock);
-    return;
-  }
-
-  if (activeConnections >= MAX_CONNECTIONS) {
-    router->routeRequest("CL", "", ssl);
-    LogError("Connections limit exceeded");
-    SSL_free(ssl);
-    close(clientSock);
-    return;
-  }
-
-  activeConnections++;
-
-  std::string method{};
-  std::string path{};
-  std::string status{};
-
-  // Just to not delete the while loop
-  bool keepAlive = true;
-
-  while (!shouldShutdown && keepAlive) {
-    keepAlive = false;
-
-    ssize_t bytesReceived = SSL_read(ssl, buffer.data(), BUFFER_SIZE);
-
-    if (bytesReceived == 0) {
-      LogError("Client closed the connection");
-      break;
-    } else if (bytesReceived < 0) {
-      LogError("Failed to receive data");
-      break;
-    }
-
-    request.append(buffer.data(), bytesReceived);
-
-    while (bytesReceived == BUFFER_SIZE && !shouldShutdown) {
-      // struct pollfd pollFds(clientSock, POLLIN, 0);
-      //
-      // int polling = poll(&pollFds, 1, 0.5 * 1000);
-      // if (polling == 0) {
-      //   LogError("No more data to read");
-      //   break;
-      // } else if (polling == -1) {
-      //   LogError("Poll error, attempting to recv data");
-      // }
-
-      if (SSL_pending(ssl) == 0) {
-        LogError("No more data to read");
-        break;
-      }
-
-      bytesReceived = SSL_read(ssl, buffer.data(), BUFFER_SIZE);
-      request.append(buffer.data(), bytesReceived);
-    }
-
-    std::cout << "Raw request: " << request << std::endl;
-    bool acceptEncoding = false;
-    if (ValidateRequestsHTTP1(request, method, path, acceptEncoding) ==
-        ERROR) {
-      LogError("Request validation was unsuccessful");
-      continue;
-    }
-
-    if (path.starts_with("/static/")) {
-      std::string filePath = "static" + path.substr(7);
-      // Check how to proceed in here
-      router->staticFileHandler(ssl, filePath, acceptEncoding);
-      continue;
-    }
-
-    status = router->routeRequest(method, path, ssl);
-  }
-
-  // Timer should end  here and log it to the file
-
-  auto endTime = std::chrono::high_resolution_clock::now();
-
-  std::chrono::duration<double> elapsed = endTime - startTime;
-
-  // std::cout << "Request handled in " << elapsed.count() << " seconds\n";
-  std::ostringstream logStream;
-  logStream << "Method: " << method << " Path: " << path
-            << " Status: " << status << " Elapsed time: " << elapsed.count()
-            << " s";
-
-  LogRequest(logStream.str());
-
-  SSL_shutdown(ssl);
-  SSL_free(ssl);
-  activeConnections--;
-  close(clientSock);
-}
+// void HTTPServer::clientHandlerThread(
+//     int clientSock, std::chrono::high_resolution_clock::time_point startTime)
+//     {
+//   std::array<char, BUFFER_SIZE> buffer{};
+//   std::string request;
+//
+//   // Create SSL object
+//   SSL *ssl = SSL_new(ctx);
+//
+//   //  sets the file descriptor clientSock as the input/output facility for
+//   the
+//   //  TLS/SSL
+//   SSL_set_fd(ssl, clientSock);
+//
+//   // TLS/SSL handshake
+//   if (SSL_accept(ssl) <= 0) {
+//     LogError("SSL handshake failed");
+//     SSL_free(ssl);
+//     close(clientSock);
+//     return;
+//   }
+//
+//   if (activeConnections >= MAX_CONNECTIONS) {
+//     ServerRouter->RouteRequest("CL", "", ssl);
+//     LogError("Connections limit exceeded");
+//     SSL_free(ssl);
+//     close(clientSock);
+//     return;
+//   }
+//
+//   activeConnections++;
+//
+//   std::string method{};
+//   std::string path{};
+//   std::string status{};
+//
+//   // Just to not delete the while loop
+//   bool keepAlive = true;
+//
+//   while (!shouldShutdown && keepAlive) {
+//     keepAlive = false;
+//
+//     ssize_t bytesReceived = SSL_read(ssl, buffer.data(), BUFFER_SIZE);
+//
+//     if (bytesReceived == 0) {
+//       LogError("Client closed the connection");
+//       break;
+//     } else if (bytesReceived < 0) {
+//       LogError("Failed to receive data");
+//       break;
+//     }
+//
+//     request.append(buffer.data(), bytesReceived);
+//
+//     while (bytesReceived == BUFFER_SIZE && !shouldShutdown) {
+//       // struct pollfd pollFds(clientSock, POLLIN, 0);
+//       //
+//       // int polling = poll(&pollFds, 1, 0.5 * 1000);
+//       // if (polling == 0) {
+//       //   LogError("No more data to read");
+//       //   break;
+//       // } else if (polling == -1) {
+//       //   LogError("Poll error, attempting to recv data");
+//       // }
+//
+//       if (SSL_pending(ssl) == 0) {
+//         LogError("No more data to read");
+//         break;
+//       }
+//
+//       bytesReceived = SSL_read(ssl, buffer.data(), BUFFER_SIZE);
+//       request.append(buffer.data(), bytesReceived);
+//     }
+//
+//     std::cout << "Raw request: " << request << std::endl;
+//     bool acceptEncoding = false;
+//     if (ValidateRequestsHTTP1(request, method, path, acceptEncoding) ==
+//     ERROR) {
+//       LogError("Request validation was unsuccessful");
+//       continue;
+//     }
+//
+//     if (path.starts_with("/static/")) {
+//       std::string filePath = "static" + path.substr(7);
+//       // Check how to proceed in here
+//       ServerRouter->staticFileHandler(ssl, filePath, acceptEncoding);
+//       continue;
+//     }
+//
+//     status = ServerRouter->RouteRequest(method, path, ssl);
+//   }
+//
+//   // Timer should end  here and log it to the file
+//
+//   auto endTime = std::chrono::high_resolution_clock::now();
+//
+//   std::chrono::duration<double> elapsed = endTime - startTime;
+//
+//   // std::cout << "Request handled in " << elapsed.count() << " seconds\n";
+//   std::ostringstream logStream;
+//   logStream << "Method: " << method << " Path: " << path
+//             << " Status: " << status << " Elapsed time: " << elapsed.count()
+//             << " s";
+//
+//   LogRequest(logStream.str());
+//
+//   SSL_shutdown(ssl);
+//   SSL_free(ssl);
+//   activeConnections--;
+//   close(clientSock);
+// }
 
 HTTPServer::~HTTPServer() {
   if (serverSock != -1) {
@@ -239,13 +568,12 @@ HTTPServer::~HTTPServer() {
   std::cout << "Server shutdown gracefully" << std::endl;
 }
 
-void HTTPServer::AddRoute(
-    const std::string &method, const std::string &path,
-    const std::function<std::string(SSL *, const std::string)> &handler) {
-  router->addRoute(method, path, handler);
+void HTTPServer::AddRoute(const std::string &method, const std::string &path,
+                          const ROUTE_HANDLER &handler) {
+  ServerRouter->AddRoute(method, path, handler);
 }
 
-void HTTPServer::Run() {
+void HTTPServer::RunHTTP3() {
   // Starts listening for incoming connections.
   if (QUIC_FAILED(Status =
                       MsQuic->ListenerStart(Listener, &Alpn, 1, &Address))) {
@@ -257,9 +585,31 @@ void HTTPServer::Run() {
     return;
   }
 
+  while (!shouldShutdown) {
+  }
+}
+
+void HTTPServer::Run() {
+  // Starts listening for incoming connections.
+  // if (QUIC_FAILED(Status =
+  //                     MsQuic->ListenerStart(Listener, &Alpn, 1, &Address))) {
+  //   printf("ListenerStart failed, 0x%x!\n", Status);
+  //   LogError("Server failed to load configuration.");
+  //   if (Listener != NULL) {
+  //     MsQuic->ListenerClose(Listener);
+  //   }
+  //   return;
+  // }
+  //
+  std::thread http3Thread(&HTTPServer::RunHTTP3, this);
+  http3Thread.detach();
+  // HTTPServer::RunHTTP3();
   // Continue listening for connections until the Enter key is pressed.
-  printf("Press Enter to exit.\n\n");
-  getchar();
+  while (!shouldShutdown) {
+  }
+  //
+  // printf("Press Enter to exit.\n\n");
+  // getchar();
 }
 
 void HTTPServer::PrintFromServer() { std::cout << "Hello from server\n"; }
@@ -292,7 +642,7 @@ HTTPServer::HTTPServer(int argc, char *argv[])
     return;
   }
 
-  router = std::make_unique<Router>();
+  ServerRouter = std::make_unique<Router>();
 };
 
 // if (setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO, &timeout,

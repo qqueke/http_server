@@ -53,7 +53,7 @@ server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(LOG_OBJ) $(UTILS
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
 # Build the client executable
-client: $(CLIENT_OBJ) $(UTILS_OBJ) $(C_CALLBACKS_OBJ)
+client: $(CLIENT_OBJ) $(UTILS_OBJ) $(C_CALLBACKS_OBJ) $(LOG_OBJ)
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
 # Rules for building object files

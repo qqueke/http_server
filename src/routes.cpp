@@ -1,17 +1,20 @@
-#include "log.hpp"
-#include "router.hpp"
-#include <cstring>
 #include <fcntl.h>
-#include <iostream>
 #include <openssl/err.h>
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
-#include <string>
 #include <sys/sendfile.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#include <cstring>
+#include <iostream>
+#include <string>
+
+#include "log.hpp"
+#include "server.hpp"
+
 inline std::string helloHandler(SSL *clientSSL, const std::string &cacheKey) {
   const char *httpResponse = "HTTP/1.1 200 OK\r\n"
                              "Content-Type: text/plain\r\n"
@@ -24,7 +27,7 @@ inline std::string helloHandler(SSL *clientSSL, const std::string &cacheKey) {
     LogError("Failed to send response");
   }
 
-  Router::storeInCache(cacheKey, std::string(httpResponse));
+  HTTPServer::storeInCache(cacheKey, std::string(httpResponse));
 
   return "200 OK";
 }
@@ -40,7 +43,8 @@ inline std::string goodbyeHandler(SSL *clientSSL, const std::string &cacheKey) {
   if (bytesSent <= 0) {
     LogError("Failed to send response");
   }
-  Router::storeInCache(cacheKey, std::string(httpResponse));
+
+  HTTPServer::storeInCache(cacheKey, std::string(httpResponse));
 
   return "200 OK";
 }

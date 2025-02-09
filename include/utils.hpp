@@ -1,18 +1,35 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
 
-#include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <vector>
 
+#include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
+#include "crypto.h"
 
 #define _CRT_SECURE_NO_WARNINGS 1
 #define UDP_PORT 4567
 #ifndef UNREFERENCED_PARAMETER
 #define UNREFERENCED_PARAMETER(P) (void)(P)
 #endif
+
+#define ROUTE_HANDLER                                                          \
+  std::function<std::string(const std::string &, Protocol, void *,             \
+                            const std::string)>
+#define STATUS_CODE std::string
+
+enum class Protocol { HTTP1, HTTP2, HTTP3 };
+
+enum : int {
+  BUFFER_SIZE = 1024,
+  ERROR = -1,
+  TIMEOUT_SECONDS = 60,
+  MAX_CONNECTIONS = 100,
+  MAX_PENDING_CONNECTIONS = 100,
+  HTTP_PORT = 443,
+};
 
 extern const QUIC_API_TABLE *MsQuic;
 
@@ -34,15 +51,19 @@ extern QUIC_TLS_SECRETS ClientSecrets;
 
 extern const char *SslKeyLogEnvVar;
 
-
 uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
-                     const std::vector<uint8_t>::iterator &end);
-// typedef struct QUIC_CREDENTIAL_CONFIG_HELPER ;
+                    const std::vector<uint8_t>::iterator &end);
 void EncodeVarint(std::vector<uint8_t> &buffer, uint64_t value);
 
 void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
                        std::string &headers, std::string &data);
 
+int SendFramesToStream(HQUIC Stream,
+                       const std::vector<std::vector<uint8_t>> &frames);
+int SendFramesToNewConn(_In_ HQUIC Connection, HQUIC Stream,
+               const std::vector<std::vector<uint8_t>> &frames);
+
+void ClientSend(_In_ HQUIC Connection);
 
 // Helper function to provide program arguments
 void PrintUsage();
@@ -89,18 +110,12 @@ BOOLEAN
 ServerLoadConfiguration(_In_ int argc,
                         _In_reads_(argc) _Null_terminated_ char *argv[]);
 
-
-int SendData(_In_ HQUIC Connection, HQUIC Stream, const std::string &response);
-
-
-int SendLastFrame(_In_ HQUIC Connection, HQUIC Stream, const std::vector<uint8_t>& frame);
-int SendFrame(_In_ HQUIC Connection, HQUIC Stream, const std::vector<uint8_t>& frame);
-int SendFrames(_In_ HQUIC Connection, HQUIC Stream,
-               const std::vector<std::vector<uint8_t>> &frames); 
-void ClientSend(_In_ HQUIC Connection);
-
-// Helper function to load a client configuration.
+// Helper function to load a client configuration. Uses the command line
+// arguments to load the credential part of the configuration.
 BOOLEAN
 ClientLoadConfiguration(BOOLEAN Unsecure);
+int SendHTTP1Response(SSL *clientSSL, const std::string &response);
+int SendHTTP3Response(HQUIC Stream, const std::string &headers,
+                       const std::string &data);
 
 #endif
