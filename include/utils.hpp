@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "/home/QQueke/Documents/Repositories/ls-qpack/lsqpack.h"
+#include "/home/QQueke/Documents/Repositories/ls-qpack/lsxpack_header.h"
 #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 #include "crypto.h"
 
@@ -51,6 +53,13 @@ extern HQUIC Configuration;
 extern QUIC_TLS_SECRETS ClientSecrets;
 
 extern const char *SslKeyLogEnvVar;
+
+void QPACKHeaders(
+    const std::unordered_map<std::string, std::string> &headersMap,
+    std::vector<uint8_t> &encodedHeaders);
+
+void QUNPACKHeaders(const unsigned char *encoded_data, size_t data_size,
+                    std::unordered_map<std::string, std::string> &headersMap);
 
 std::vector<uint8_t> BuildHeaderFrame(std::string &compressedHeaders);
 std::vector<uint8_t> BuildDataFrame(std::string &data);

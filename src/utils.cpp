@@ -9,6 +9,8 @@
 #include <unordered_map>
 #include <utility>
 
+#include "/home/QQueke/Documents/Repositories/ls-qpack/lsqpack.h"
+#include "/home/QQueke/Documents/Repositories/ls-qpack/lsxpack_header.h"
 #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 
 // The (optional) registration configuration for the app. This sets a name for
@@ -60,6 +62,155 @@ const char *SslKeyLogEnvVar = "SSLKEYLOGFILE";
 //     QUIC_CERTIFICATE_FILE_PROTECTED CertFileProtected;
 //   };
 // } QUIC_CREDENTIAL_CONFIG_HELPER;
+
+#include <cstring>
+#include <iostream>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+typedef struct st_hblock_ctx {
+  struct lsxpack_header xhdr;
+  size_t buf_off;
+  char buf[0x1000];
+} hblock_ctx_t;
+
+void dhi_unblocked(void *hblock_ctx) { printf("dhi_unblocked\n"); }
+
+struct lsxpack_header *dhi_prepare_decode(void *hblock_ctx_p,
+                                          struct lsxpack_header *xhdr,
+                                          size_t space) {
+  printf("dhi_prepare_decode: xhdr=%lu, space=%lu\n", (size_t)xhdr, space);
+  hblock_ctx_t *block_ctx = (hblock_ctx_t *)hblock_ctx_p;
+
+  if (xhdr != NULL) {
+    xhdr->val_len = space;
+  } else {
+    lsxpack_header_prepare_decode(&block_ctx->xhdr, block_ctx->buf,
+                                  block_ctx->buf_off, space);
+  }
+  return &block_ctx->xhdr;
+  ;
+}
+
+int dhi_process_header(void *hblock_ctx, struct lsxpack_header *xhdr) {
+  printf("dhi_process_header: xhdr=%lu\n", (size_t)xhdr);
+  printf("%.*s: %.*s\n", xhdr->name_len, (xhdr->buf + xhdr->name_offset),
+         xhdr->val_len, (xhdr->buf + xhdr->val_offset));
+  return 0;
+}
+
+void print_bytes(void *buf, size_t len) {
+  unsigned char *cbuf = (unsigned char *)buf;
+  for (size_t i = 0; i < len; ++i) {
+    int n = (int)cbuf[i];
+    int u = (n >> 4) & 0xf;
+    int l = (n) & 0xf;
+    printf("%x%x", u, l);
+  }
+  printf("\n");
+}
+
+void QPACKHeaders(
+    const std::unordered_map<std::string, std::string> &headersMap,
+    std::vector<uint8_t> &encodedHeaders) {
+  // Prepare encoding context for QPACK (Header encoding for QUIC)
+  struct lsqpack_enc *enc = (lsqpack_enc *)malloc(sizeof(struct lsqpack_enc));
+  size_t buf_size = 1024;
+  unsigned char *buffer = (unsigned char *)malloc(buf_size);
+
+  lsqpack_enc_opts enc_opts{};
+
+  int ret = lsqpack_enc_init(enc, stdout, 0x1000, 0x1000, 0, enc_opts, buffer,
+                             &buf_size);
+
+  if (ret != 0) {
+    std::cerr << "Error initializing encoder." << std::endl;
+    return;
+  }
+
+  // Iterate through the headersMap and encode each header
+  for (const auto &header : headersMap) {
+    const std::string &name = header.first;
+    const std::string &value = header.second;
+
+    struct lsxpack_header xhdr;
+    lsxpack_header_set_offset2(&xhdr, name.c_str(), 0, name.length(),
+                               value.length(), 10); // example offset values
+
+    size_t enc_sz = 1024;
+    unsigned char *enc_buf = (unsigned char *)malloc(enc_sz);
+    size_t hdr_sz = 1024;
+    unsigned char *hdr_buf = (unsigned char *)malloc(hdr_sz);
+
+    lsqpack_enc_flags enc_flags;
+
+    enum lsqpack_enc_status enc_status = lsqpack_enc_encode(
+        enc, enc_buf, &enc_sz, hdr_buf, &hdr_sz, &xhdr, enc_flags);
+
+    // if (enc_status != LSQPACK_ENC_STATUS_OK) {
+    //   std::cerr << "Error encoding header: " << name << std::endl;
+    //   continue;
+    // }
+
+    encodedHeaders.insert(encodedHeaders.end(), enc_buf, enc_buf + enc_sz);
+    encodedHeaders.insert(encodedHeaders.end(), hdr_buf, hdr_buf + hdr_sz);
+    // Print the encoded header for debugging
+
+    // std::cout << "Encoded header: " << name << ": " << value << std::endl;
+    // print_bytes(enc_buf, enc_sz);
+    // print_bytes(hdr_buf, hdr_sz);
+  }
+
+  // Clean up encoder resources
+  free(buffer);
+  free(enc);
+}
+
+void QUNPACKHeaders(const unsigned char *encoded_data, size_t data_size,
+                    std::unordered_map<std::string, std::string> &headersMap) {
+  struct lsqpack_dec *dec =
+      (struct lsqpack_dec *)malloc(sizeof(struct lsqpack_dec));
+  struct lsqpack_dec_hset_if hset_if;
+  hset_if.dhi_unblocked = dhi_unblocked;
+  hset_if.dhi_prepare_decode = dhi_prepare_decode;
+  hset_if.dhi_process_header = dhi_process_header;
+  lsqpack_dec_opts dec_opts{};
+  lsqpack_dec_init(dec, stdout, 0x1000, 0, &hset_if, dec_opts);
+
+  size_t processed_size = 0;
+  const unsigned char *data_ptr = encoded_data;
+
+  // Decode the headers from the encoded buffer
+  while (processed_size < data_size) {
+    enum lsqpack_read_header_status read_status = lsqpack_dec_header_in(
+        dec, NULL, 0, data_size - processed_size, &data_ptr,
+        data_size - processed_size, NULL, NULL);
+
+    // if (read_status != LSQPACK_READ_HEADER_OK) {
+    //   std::cerr << "Error decoding header." << std::endl;
+    //   break;
+    // }
+
+    // Example: Here we assume headers are processed one by one
+    const struct lsxpack_header *xhdr =
+        &((hblock_ctx_t *)NULL)
+             ->xhdr; // Access the header (this needs proper structure casting)
+
+    std::string name(reinterpret_cast<char *>(xhdr->buf + xhdr->name_offset),
+                     xhdr->name_len);
+    std::string value(reinterpret_cast<char *>(xhdr->buf + xhdr->val_offset),
+                      xhdr->val_len);
+
+    // Insert the decoded header into the map
+    headersMap[name] = value;
+
+    processed_size += xhdr->val_len + xhdr->name_len + 2;
+  }
+
+  // Clean up decoder resources
+  free(dec);
+}
 
 void PrintUsage() {
   printf("\n"

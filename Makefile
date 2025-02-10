@@ -1,19 +1,30 @@
+
 MAKEFLAGS += -j$(nproc)
 
 # Compiler
 CXX = g++
 
-INCLUDE_PATH = /home/QQueke/Documents/Repositories/msquic/src/inc
-LIB_PATH = /home/QQueke/Documents/Repositories/msquic/build/bin/Release
-# Compiler flags
-CXXFLAGS = -O0 -g -std=c++20 -Iinclude -I/usr/include/openssl -I$(INCLUDE_PATH) -L/usr/lib/x86_64-linux-gnu -lssl -lcrypto -lz  -L$(LIB_PATH) -lmsquic
-
-# CXXFLAGS += -DQUIC_API_ENABLE_PREVIEW_FEATURES
-# Directories
 SRCDIR = src
 INCDIR = include
 BUILDDIR = build
 TESTDIR = tests
+
+CXXFLAGS += -O0 -g -std=c++20
+
+# Include directories
+CXXFLAGS += -I$(INCDIR)          
+CXXFLAGS += -I/usr/include/openssl       
+CXXFLAGS += -I/home/QQueke/Documents/Repositories/ls-qpack 
+CXXFLAGS += -I/home/QQueke/Documents/Repositories/msquic/src/inc  
+
+# Library paths 
+LDFLAGS += -L/home/QQueke/Documents/Repositories/ls-qpack/build 
+LDFLAGS += -L/home/QQueke/Documents/Repositories/msquic/build/bin/Release  
+
+# Linked libraries 
+LDFLAGS += -lssl -lcrypto -lz
+LDFLAGS += -lmsquic
+LDFLAGS += -lls-qpack
 
 # Source files for server
 MAIN_SRC = $(SRCDIR)/main.cpp
@@ -50,11 +61,11 @@ all: server client
 
 # Build the main executable
 server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(S_CALLBACKS_OBJ)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Build the client executable
 client: $(CLIENT_OBJ) $(UTILS_OBJ) $(C_CALLBACKS_OBJ) $(LOG_OBJ)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Rules for building object files
 $(BUILDDIR)/main.o: $(MAIN_SRC) $(SERVER_SRC) $(ROUTES_SRC)

@@ -70,6 +70,25 @@ void ClientSend(_In_ HQUIC Connection) {
     // Change this function to work for response and request
     std::string http3Headers = RequestHTTP1ToHTTP3Headers(headers);
 
+    std::unordered_map<std::string, std::string> headersMap;
+    ParseHTTP3HeadersToMap(http3Headers, headersMap);
+    std::vector<uint8_t> encodedHeaders;
+
+    std::cout << "Headers before encoding\n";
+    for (auto &[key, value] : headersMap) {
+      std::cout << key << " " << value << "\n";
+    }
+
+    QPACKHeaders(headersMap, encodedHeaders);
+    headersMap.clear();
+
+    QUNPACKHeaders(encodedHeaders.data(), encodedHeaders.size(), headersMap);
+
+    std::cout << "Headers after encoding\n";
+    for (auto &[key, value] : headersMap) {
+      std::cout << key << " " << value << "\n";
+    }
+
     // Transform HTTP1 headers into HTTP3
     // Compress headers with QPACK
     std::string compressedHeaders = http3Headers;
