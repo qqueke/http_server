@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
@@ -51,9 +52,15 @@ extern QUIC_TLS_SECRETS ClientSecrets;
 
 extern const char *SslKeyLogEnvVar;
 
+std::vector<uint8_t> BuildHeaderFrame(std::string &compressedHeaders);
+std::vector<uint8_t> BuildDataFrame(std::string &data);
 uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
                     const std::vector<uint8_t>::iterator &end);
 void EncodeVarint(std::vector<uint8_t> &buffer, uint64_t value);
+
+std::string ResponseHTTP1ToHTTP3Headers(const std::string &http1Headers);
+
+std::string RequestHTTP1ToHTTP3Headers(const std::string &http1Headers);
 
 void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
                        std::string &headers, std::string &data);
@@ -61,7 +68,11 @@ void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
 int SendFramesToStream(HQUIC Stream,
                        const std::vector<std::vector<uint8_t>> &frames);
 int SendFramesToNewConn(_In_ HQUIC Connection, HQUIC Stream,
-               const std::vector<std::vector<uint8_t>> &frames);
+                        const std::vector<std::vector<uint8_t>> &frames);
+
+void ParseHTTP3HeadersToMap(
+    const std::string &headers,
+    std::unordered_map<std::string, std::string> &headersMap);
 
 void ClientSend(_In_ HQUIC Connection);
 
@@ -116,6 +127,6 @@ BOOLEAN
 ClientLoadConfiguration(BOOLEAN Unsecure);
 int SendHTTP1Response(SSL *clientSSL, const std::string &response);
 int SendHTTP3Response(HQUIC Stream, const std::string &headers,
-                       const std::string &data);
+                      const std::string &data);
 
 #endif

@@ -1,16 +1,16 @@
 #include "utils.hpp"
 
-#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <sstream>
 #include <string>
-#include <thread>
+#include <unordered_map>
+#include <utility>
 
 #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
-#include "log.hpp"
-#include "ssl.h"
+
 // The (optional) registration configuration for the app. This sets a name for
 // the app (used for persistent storage and for debugging). It also configures
 // the execution profile, using the default "low latency" profile.
@@ -43,11 +43,9 @@ HQUIC Registration;
 // QUIC layer settings.
 HQUIC Configuration;
 
-
 // The struct to be filled with TLS secrets
 // for debugging packet captured with e.g. Wireshark.
 QUIC_TLS_SECRETS ClientSecrets = {0};
-
 
 // The name of the environment variable being
 // used to get the path to the ssl key log file.
@@ -132,6 +130,177 @@ uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
   return value;
 }
 
+std::vector<uint8_t> BuildDataFrame(std::string &data) {
+  // Construct the frame header for Headers
+  uint8_t frameType = 0x00; // 0x00 for DATA frame
+  size_t payloadLength = data.size();
+
+  // Header Frame : Type, Length
+  std::vector<uint8_t> frameHeader;
+
+  // Encode the frame type (0x01 for HEADERS frame)
+  EncodeVarint(frameHeader, frameType);
+  // Encode the frame length (size of the payload)
+  EncodeVarint(frameHeader, payloadLength);
+
+  // Frame payload for Headers
+  std::vector<uint8_t> framePayload(payloadLength);
+  memcpy(framePayload.data(), data.c_str(), payloadLength);
+
+  // Combine the Frame Header and Payload into one buffer
+  size_t totalFrameSize = frameHeader.size() + framePayload.size();
+
+  // Complete Header frame (frame header + frame payload)
+  std::vector<uint8_t> dataFrame(totalFrameSize);
+  memcpy(dataFrame.data(), frameHeader.data(), frameHeader.size());
+  memcpy(dataFrame.data() + frameHeader.size(), framePayload.data(),
+         payloadLength);
+
+  return dataFrame;
+}
+
+std::vector<uint8_t> BuildHeaderFrame(std::string &compressedHeaders) {
+  // Construct the frame header for Headers
+  uint8_t frameType = 0x01; // 0x01 for HEADERS frame
+  size_t payloadLength = compressedHeaders.size();
+
+  // Header Frame : Type, Length
+  std::vector<uint8_t> frameHeader;
+
+  // Encode the frame type (0x01 for HEADERS frame)
+  EncodeVarint(frameHeader, frameType);
+  // Encode the frame length (size of the payload)
+  EncodeVarint(frameHeader, payloadLength);
+
+  // Frame payload for Headers
+  std::vector<uint8_t> framePayload(payloadLength);
+  memcpy(framePayload.data(), compressedHeaders.c_str(), payloadLength);
+
+  // Combine the Frame Header and Payload into one buffer
+  size_t totalFrameSize = frameHeader.size() + framePayload.size();
+
+  // Complete Header frame (frame header + frame payload)
+  std::vector<uint8_t> headerFrame(totalFrameSize);
+  memcpy(headerFrame.data(), frameHeader.data(), frameHeader.size());
+  memcpy(headerFrame.data() + frameHeader.size(), framePayload.data(),
+         payloadLength);
+
+  return headerFrame;
+}
+
+std::string RequestHTTP1ToHTTP3Headers(const std::string &http1Headers) {
+  std::istringstream stream(http1Headers);
+  std::string line;
+  std::string key{};
+  std::string value{};
+  std::vector<std::pair<std::string, std::string>> headers;
+
+  // Read the first line (status line in HTTP/1.1)
+  while (std::getline(stream, line, '\n')) {
+    if (!line.empty() && line.back() == '\r') {
+      line.pop_back();
+    }
+
+    size_t firstSpace = line.find(' ');
+    if (firstSpace != std::string::npos) {
+      // If we find a second space it is the status header
+      size_t secondSpace = line.find(' ', firstSpace + 1);
+      if (secondSpace != std::string::npos) {
+        key = ":method";
+        value = line.substr(0, firstSpace);
+        headers.emplace_back(key, value);
+
+        key = ":scheme";
+        value = "https";
+        headers.emplace_back(key, value);
+
+        key = ":path";
+        value = line.substr(firstSpace + 1, secondSpace - firstSpace - 1);
+        headers.emplace_back(key, value);
+
+      } else {
+        key = line.substr(0, firstSpace - 1);
+        value = line.substr(firstSpace + 1);
+
+        // Remove "Connection" header
+        if (key != "Connection")
+          headers.emplace_back(key, value);
+      }
+    }
+  }
+
+  // Construct HTTP/3 headers
+  std::string http3Headers;
+  for (const auto &entry : headers) {
+    http3Headers += entry.first + ": " + entry.second + "\r\n";
+  }
+
+  return http3Headers;
+}
+
+void ParseHTTP3HeadersToMap(
+    const std::string &headers,
+    std::unordered_map<std::string, std::string> &headersMap) {
+  std::istringstream headersStream(headers);
+  std::string line;
+
+  while (std::getline(headersStream, line)) {
+    if (!line.empty() && line.back() == '\r') {
+      line.pop_back();
+    }
+
+    // Find first occurrence of ": "
+    size_t pos = line.find(": ");
+    if (pos != std::string::npos) {
+      std::string key = line.substr(0, pos);
+      std::string value = line.substr(pos + 2);
+      headersMap[key] = value;
+    }
+  }
+}
+
+std::string ResponseHTTP1ToHTTP3Headers(const std::string &http1Headers) {
+  std::istringstream stream(http1Headers);
+  std::string line;
+  std::string key{};
+  std::string value{};
+  std::vector<std::pair<std::string, std::string>> headers;
+
+  // Read the first line (status line in HTTP/1.1)
+  while (std::getline(stream, line, '\n')) {
+    if (!line.empty() && line.back() == '\r') {
+      line.pop_back();
+    }
+
+    size_t firstSpace = line.find(' ');
+    if (firstSpace != std::string::npos) {
+      // If we find a second space it is the status header
+      size_t secondSpace = line.find(' ', firstSpace + 1);
+      if (secondSpace != std::string::npos) {
+        key = ":status";
+        value = line.substr(firstSpace + 1, secondSpace - firstSpace - 1);
+        headers.emplace_back(key, value);
+
+      } else {
+        key = line.substr(0, firstSpace - 1);
+        value = line.substr(firstSpace + 1);
+
+        // Remove "Connection" header
+        if (key != "Connection")
+          headers.emplace_back(key, value);
+      }
+    }
+  }
+
+  // Construct HTTP/3 headers
+  std::string http3Headers;
+  for (const auto &entry : headers) {
+    http3Headers += entry.first + ": " + entry.second + "\r\n";
+  }
+
+  return http3Headers;
+}
+
 // Parses stream buffer to retrieve headers payload and data payload
 void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
                        std::string &headers, std::string &data) {
@@ -177,8 +346,7 @@ void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
 
     iter += frameLength;
   }
-  std::cout << "Headers:\n" << headers << "\n";
-  std::cout << "Data:\n" << data << "\n";
+  std::cout << headers << data << "\n";
 
   // Optionally, print any remaining unprocessed data in the buffer
   if (iter < streamBuffer.end()) {
@@ -411,7 +579,6 @@ ServerLoadConfiguration(_In_ int argc,
   return TRUE;
 }
 
-
 int SendFramesToStream(HQUIC Stream,
                        const std::vector<std::vector<uint8_t>> &frames) {
   QUIC_STATUS Status;
@@ -463,7 +630,7 @@ int SendFramesToStream(HQUIC Stream,
 }
 
 int SendFramesToNewConn(_In_ HQUIC Connection, HQUIC Stream,
-               const std::vector<std::vector<uint8_t>> &frames) {
+                        const std::vector<std::vector<uint8_t>> &frames) {
   QUIC_STATUS Status;
   uint8_t *SendBufferRaw;
   QUIC_BUFFER *SendBuffer;
@@ -558,5 +725,3 @@ ClientLoadConfiguration(BOOLEAN Unsecure) {
 
   return TRUE;
 }
-
-

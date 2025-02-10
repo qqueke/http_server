@@ -1,7 +1,8 @@
+#include <unordered_map>
 
-// #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
-#include "utils.hpp"
 #include "cCallbacks.hpp"
+#include "utils.hpp"
+std::unordered_map<HQUIC, std::vector<uint8_t>> BufferMap;
 
 void RunClient(_In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[]) {
   // Load the client configuration based on the "unsecure" command line option.
@@ -17,8 +18,8 @@ void RunClient(_In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[]) {
   int i = 0;
   // Allocate a new connection object.
   if (QUIC_FAILED(Status = MsQuic->ConnectionOpen(Registration,
-                                                  ClientConnectionCallback,
-                                                  &i, &Connection))) {
+                                                  ClientConnectionCallback, &i,
+                                                  &Connection))) {
     printf("ConnectionOpen failed, 0x%x!\n", Status);
     goto Error;
   }
@@ -49,7 +50,6 @@ void RunClient(_In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[]) {
     }
   }
 
-
   // Get the target / server name or IP from the command line.
   const char *Target;
   if ((Target = GetValue(argc, argv, "target")) == NULL) {
@@ -79,7 +79,6 @@ int QUIC_MAIN_EXPORT main(_In_ int argc,
                           _In_reads_(argc) _Null_terminated_ char *argv[]) {
   QUIC_STATUS Status = QUIC_STATUS_SUCCESS;
 
-  
   // Open a handle to the library and get the API function table.
   if (QUIC_FAILED(Status = MsQuicOpen2(&MsQuic))) {
     printf("MsQuicOpen2 failed, 0x%x!\n", Status);
@@ -97,10 +96,10 @@ int QUIC_MAIN_EXPORT main(_In_ int argc,
     PrintUsage();
   } else if (GetFlag(argc, argv, "client")) {
     RunClient(argc, argv);
-   }
-  //else if (GetFlag(argc, argv, "server")) {
-  //   RunServer(argc, argv);
-  //}
+  }
+  // else if (GetFlag(argc, argv, "server")) {
+  //    RunServer(argc, argv);
+  // }
   else {
     PrintUsage();
   }

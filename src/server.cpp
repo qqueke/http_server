@@ -1,18 +1,5 @@
 #include "server.hpp"
 
-#include <atomic>
-#include <cassert>
-#include <cerrno>
-#include <cstring>
-#include <functional>
-#include <iostream>
-#include <memory>
-
-#include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
-#include "log.hpp"
-#include "router.hpp"
-#include "sCallbacks.hpp"
-// #include <msquic.h>
 #include <netinet/in.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
@@ -22,12 +9,22 @@
 #include <unistd.h>
 #include <zlib.h>
 
+#include <atomic>
+#include <cassert>
+#include <cerrno>
+#include <cstring>
+#include <iostream>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_set>
 
+#include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
+#include "log.hpp"
+#include "router.hpp"
+#include "sCallbacks.hpp"
 #include "utils.hpp"
 
 static std::unordered_map<std::string, std::string> responseCache;
@@ -277,53 +274,8 @@ int HTTPServer::SendHTTP1Response(SSL *clientSSL, const std::string &response) {
   return 0;
 }
 
-int HTTPServer::SendHTTP3Response(HQUIC Stream, const std::string &headers,
-                                  const std::string &data) {
-  // Compress headers with QPACK
-  std::string compressedHeaders = headers;
-
-  // Construct the frame header for Headers
-  uint8_t frameType = 0x01; // 0x01 for HEADERS frame
-  size_t payloadLength = compressedHeaders.size();
-
-  // Header Frame : Type, Length
-  std::vector<uint8_t> frameHeader;
-
-  // Encode the frame type (0x01 for HEADERS frame)
-  EncodeVarint(frameHeader, frameType);
-  // Encode the frame length (size of the payload)
-  EncodeVarint(frameHeader, payloadLength);
-
-  // for (auto byte : frameHeader) {
-  //   printf("%02X ", byte);
-  // }
-  // std::cout << std::endl;
-
-  // Frame payload for Headers
-  std::vector<uint8_t> framePayload(payloadLength);
-  memcpy(framePayload.data(), compressedHeaders.c_str(), payloadLength);
-
-  // Combine the Frame Header and Payload into one buffer
-  size_t totalFrameSize = frameHeader.size() + framePayload.size();
-
-  // Complete Header frame (frame header + frame payload)
-  std::vector<uint8_t> headerFrame(totalFrameSize);
-  memcpy(headerFrame.data(), frameHeader.data(), frameHeader.size());
-  memcpy(headerFrame.data() + frameHeader.size(), framePayload.data(),
-         payloadLength);
-
-  // Process data into one or more frames.
-  // std::vector<std::vector<uint8_t>> dataFrames;
-
-  // Put header frame and data frames in frames response
-  std::vector<std::vector<uint8_t>> frames;
-
-  frames.emplace_back(headerFrame);
-
-  // for (auto &dataFrame : dataFrames) {
-  //   frames.emplace_back(dataFrame);
-  // }
-
+int HTTPServer::SendHTTP3Response(HQUIC Stream,
+                                  std::vector<std::vector<uint8_t>> &frames) {
   if (SendFramesToStream(Stream, frames) == ERROR) {
     return ERROR;
   }
@@ -429,6 +381,7 @@ void HTTPServer::ValidateHeadersHTTP3(
     }
   }
 
+  // Should probably be a variable within the class
   std::unordered_set<std::string> requiredHeaders;
   requiredHeaders.insert(":method");
   requiredHeaders.insert(":scheme");
@@ -445,7 +398,6 @@ void HTTPServer::ValidateHeadersHTTP3(
 
   // If all validations pass
   std::cout << "Request successfully validated for HTTP/3!\n";
-  return;
 }
 
 // void HTTPServer::clientHandlerThread(

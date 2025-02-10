@@ -47,8 +47,14 @@ private:
 
   // Some default handles
   static STATUS_CODE handleBadRequest(const std::string &data,
-                                      Protocol protocol, void *ctx,
+                                      Protocol protocol, void *context,
                                       const std::string &cacheKey);
+
+  static void SendResponse(std::string &headers, Protocol protocol,
+                           void *context);
+
+  static void SendResponse(std::string &headers, std::string &body,
+                           Protocol protocol, void *context);
 };
 
 #endif // ROUTER_HPP

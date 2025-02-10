@@ -76,8 +76,8 @@ public:
 
   static int SendHTTP1Response(SSL *clientSSL, const std::string &response);
 
-  static int SendHTTP3Response(HQUIC Stream, const std::string &headers,
-                               const std::string &data);
+  static int SendHTTP3Response(HQUIC Stream,
+                               std::vector<std::vector<uint8_t>> &frames);
 };
 
 #endif // HTTPSERVER_HPP

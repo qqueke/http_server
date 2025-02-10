@@ -5,9 +5,12 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include "utils.hpp"
+
+extern std::unordered_map<HQUIC, std::vector<uint8_t>> BufferMap;
 
 void ClientSend(_In_ HQUIC Connection) {
   QUIC_STATUS Status;
@@ -47,48 +50,41 @@ void ClientSend(_In_ HQUIC Connection) {
   }
 
   // std::this_thread::sleep_for(std::chrono::milliseconds(10000));
-  std::string compressedHeaders = ":method: GET\r\n"
-                                  ":scheme: https\r\n"
-                                  ":authority: qqueke\r\n"
-                                  ":path: /hello\r\n"
-                                  "user-agent: custom-client/1.0\r\n"
-                                  "accept: */*\r\n";
+  // These will be formated to
 
-  // Construct the frame header for Headers
-  uint8_t frameType = 0x01; // 0x01 for HEADERS frame
-  size_t payloadLength = compressedHeaders.size();
+  // std::string headers = ":method: GET\r\n"
+  //                       ":scheme: https\r\n"
+  //                       ":authority: qqueke\r\n"
+  //                       ":path: /hello\r\n"
+  //                       "user-agent: custom-client/1.0\r\n"
+  //                       "accept: */*\r\n";
 
-  // Header Frame : Type, Length
-  std::vector<uint8_t> frameHeader;
+  std::string headers = "GET /hello HTTP/1.1\r\n"
+                        "Host: qqueke\r\n"
+                        "User-Agent: custom-client/1.0\r\n"
+                        "Accept: */*\r\n";
 
-  // Encode the frame type (0x01 for HEADERS frame)
-  EncodeVarint(frameHeader, frameType); // Frame Type
+  std::string body = "It's me Mario";
 
-  // Encode the frame length (size of the payload)
-  EncodeVarint(frameHeader, payloadLength); // Frame Length
+  {
+    // Change this function to work for response and request
+    std::string http3Headers = RequestHTTP1ToHTTP3Headers(headers);
 
-  // Frame payload for Headers
-  std::vector<uint8_t> framePayload(payloadLength);
-  memcpy(framePayload.data(), compressedHeaders.c_str(), payloadLength);
+    // Transform HTTP1 headers into HTTP3
+    // Compress headers with QPACK
+    std::string compressedHeaders = http3Headers;
 
-  // Combine the Frame Header and Payload into one buffer
-  size_t totalFrameSize = frameHeader.size() + framePayload.size();
+    // Put header frame and data frames in frames response
+    std::vector<std::vector<uint8_t>> frames;
 
-  // Complete Header frame (frame header + frame payload)
-  std::vector<uint8_t> headerFrame(totalFrameSize);
-  memcpy(headerFrame.data(), frameHeader.data(), frameHeader.size());
-  memcpy(headerFrame.data() + frameHeader.size(), framePayload.data(),
-         payloadLength);
+    // Build frames
+    frames.emplace_back(BuildHeaderFrame(compressedHeaders));
 
-  std::vector<std::vector<uint8_t>> frames;
+    frames.emplace_back(BuildDataFrame(body));
 
-  frames.emplace_back(headerFrame);
-
-
-  // Add data frames here and append them to the frames
-
-  if (SendFramesToNewConn(Connection, Stream, frames) == -1) {
-    return;
+    if (SendFramesToNewConn(Connection, Stream, frames) == -1) {
+      return;
+    }
   }
 }
 
@@ -117,23 +113,48 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
       const QUIC_BUFFER *buffer = &Event->RECEIVE.Buffers[i];
 
       uint8_t *bufferPointer = buffer->Buffer;
-      std::vector<uint8_t> framePayload(bufferPointer,
-                                        bufferPointer + buffer->Length);
-      std::string payloadStr(framePayload.begin(), framePayload.end());
+      uint8_t *bufferEnd = buffer->Buffer + buffer->Length;
 
-      std::cout << "Payload:\n" << payloadStr << "\n";
+      if (buffer->Length > 0) {
+        auto &streamBuffer = BufferMap[Stream];
+        streamBuffer.insert(streamBuffer.end(), bufferPointer, bufferEnd);
+      }
     }
 
     break;
   case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
-    //
+
     // The peer gracefully shut down its send direction of the stream.
-    //
+
     printf("[strm][%p] Peer aborted\n", Stream);
     break;
   case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
     // The peer aborted its send direction of the stream.
     printf("[strm][%p] Peer shut down\n", Stream);
+
+    if (BufferMap.find(Stream) == BufferMap.end()) {
+      std::cout << "Error: no buffer found for Stream:" << Stream << "\n";
+      break;
+    }
+
+    {
+      std::string headers;
+      std::string data;
+
+      ParseStreamBuffer(Stream, BufferMap[Stream], headers, data);
+
+      std::unordered_map<std::string, std::string> headersMap;
+
+      ParseHTTP3HeadersToMap(headers, headersMap);
+
+      if (headersMap.find(":status") == headersMap.end()) {
+        std::cout << "Error: Response missing :status field\n";
+      } else {
+        std::cout << "Status: " << headersMap[":status"] << " " << data
+                  << std::endl;
+      }
+    }
+
     break;
   case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
     // Both directions of the stream have been shut down and MsQuic is done
