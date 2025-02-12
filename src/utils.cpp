@@ -3,7 +3,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -12,7 +14,8 @@
 #include "/home/QQueke/Documents/Repositories/ls-qpack/lsqpack.h"
 #include "/home/QQueke/Documents/Repositories/ls-qpack/lsxpack_header.h"
 #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
-
+#include "cCallbacks.hpp"
+#include "server.hpp"
 // The (optional) registration configuration for the app. This sets a name for
 // the app (used for persistent storage and for debugging). It also configures
 // the execution profile, using the default "low latency" profile.
@@ -69,38 +72,7 @@ const char *SslKeyLogEnvVar = "SSLKEYLOGFILE";
 #include <unordered_map>
 #include <vector>
 
-typedef struct st_hblock_ctx {
-  struct lsxpack_header xhdr;
-  size_t buf_off;
-  char buf[0x1000];
-} hblock_ctx_t;
-
-void dhi_unblocked(void *hblock_ctx) { printf("dhi_unblocked\n"); }
-
-struct lsxpack_header *dhi_prepare_decode(void *hblock_ctx_p,
-                                          struct lsxpack_header *xhdr,
-                                          size_t space) {
-  printf("dhi_prepare_decode: xhdr=%lu, space=%lu\n", (size_t)xhdr, space);
-  hblock_ctx_t *block_ctx = (hblock_ctx_t *)hblock_ctx_p;
-
-  if (xhdr != NULL) {
-    xhdr->val_len = space;
-  } else {
-    lsxpack_header_prepare_decode(&block_ctx->xhdr, block_ctx->buf,
-                                  block_ctx->buf_off, space);
-  }
-  return &block_ctx->xhdr;
-  ;
-}
-
-int dhi_process_header(void *hblock_ctx, struct lsxpack_header *xhdr) {
-  printf("dhi_process_header: xhdr=%lu\n", (size_t)xhdr);
-  printf("%.*s: %.*s\n", xhdr->name_len, (xhdr->buf + xhdr->name_offset),
-         xhdr->val_len, (xhdr->buf + xhdr->val_offset));
-  return 0;
-}
-
-void print_bytes(void *buf, size_t len) {
+void PrintBytes(void *buf, size_t len) {
   unsigned char *cbuf = (unsigned char *)buf;
   for (size_t i = 0; i < len; ++i) {
     int n = (int)cbuf[i];
@@ -111,105 +83,216 @@ void print_bytes(void *buf, size_t len) {
   printf("\n");
 }
 
-void QPACKHeaders(
-    const std::unordered_map<std::string, std::string> &headersMap,
-    std::vector<uint8_t> &encodedHeaders) {
+void dhiUnblocked(void *hblock_ctx) { printf("dhi_unblocked\n"); }
+
+struct lsxpack_header *dhiPrepareDecode(void *hblock_ctx_p,
+                                        struct lsxpack_header *xhdr,
+                                        size_t space) {
+  printf("dhi_prepare_decode: xhdr=%lu, space=%lu\n", (size_t)xhdr, space);
+  hblock_ctx_t *block_ctx = (hblock_ctx_t *)hblock_ctx_p;
+
+  if (xhdr != NULL) {
+    xhdr->val_len = space;
+  } else {
+    lsxpack_header_prepare_decode(&block_ctx->xhdr, block_ctx->buf,
+                                  block_ctx->buf_off, space);
+  }
+  return &block_ctx->xhdr;
+}
+
+int dhiProcessHeaderServer(void *hblock_ctx, struct lsxpack_header *xhdr) {
+  printf("dhi_process_header: xhdr=%lu\n", (size_t)xhdr);
+  printf("%.*s: %.*s\n", xhdr->name_len, (xhdr->buf + xhdr->name_offset),
+         xhdr->val_len, (xhdr->buf + xhdr->val_offset));
+
+  std::string headerKey(xhdr->buf + xhdr->name_offset, xhdr->name_len);
+  std::string headerValue(xhdr->buf + xhdr->val_offset, xhdr->val_len);
+
+  hblock_ctx_t *block_ctx = (hblock_ctx_t *)hblock_ctx;
+  // block_ctx->stream
+  HTTPServer *server = HTTPServer::GetInstance();
+
+  server->DecodedHeadersMap[block_ctx->stream][headerKey] = headerValue;
+
+  return 0;
+}
+
+void UQPACKHeadersServer(HQUIC stream, std::vector<uint8_t> &encodedHeaders) {
+  std::vector<struct lsqpack_dec> dec(1);
+
+  struct lsqpack_dec_hset_if hset_if;
+  hset_if.dhi_unblocked = dhiUnblocked;
+  hset_if.dhi_prepare_decode = dhiPrepareDecode;
+  hset_if.dhi_process_header = dhiProcessHeaderServer;
+
+  enum lsqpack_dec_opts dec_opts {};
+  lsqpack_dec_init(dec.data(), stdout, 0x1000, 0, &hset_if, dec_opts);
+
+  // hblock_ctx_t *blockCtx = (hblock_ctx_t *)malloc(sizeof(hblock_ctx_t));
+
+  std::vector<hblock_ctx_t> blockCtx(1);
+
+  memset(&blockCtx.back(), 0, sizeof(hblock_ctx_t));
+  blockCtx.back().stream = stream;
+
+  const unsigned char *encodedHeadersPtr = encodedHeaders.data();
+  size_t totalHeaderSize = encodedHeaders.size();
+
+  enum lsqpack_read_header_status readStatus;
+
+  readStatus =
+      lsqpack_dec_header_in(dec.data(), &blockCtx.back(), 100, totalHeaderSize,
+                            &encodedHeadersPtr, totalHeaderSize, NULL, NULL);
+
+  // printf("lsqpack_dec_header_in return = %d, const_end_header_buf = %lu, "
+  //        "end_header_buf = %lu\n",
+  //        read_status, (size_t)all_header_ptr, (size_t)all_header);
+
+  std::cout << "--------------------------------------------\n";
+  std::cout << "-----------Decoding finished ---------------\n";
+  std::cout << "--------------------------------------------\n";
+}
+
+extern std::unordered_map<HQUIC, std::unordered_map<std::string, std::string>>
+    DecodedHeadersMap;
+
+int dhiProcessHeaderClient(void *hblock_ctx, struct lsxpack_header *xhdr) {
+  printf("dhi_process_header: xhdr=%lu\n", (size_t)xhdr);
+  printf("%.*s: %.*s\n", xhdr->name_len, (xhdr->buf + xhdr->name_offset),
+         xhdr->val_len, (xhdr->buf + xhdr->val_offset));
+
+  std::string headerKey(xhdr->buf + xhdr->name_offset, xhdr->name_len);
+  std::string headerValue(xhdr->buf + xhdr->val_offset, xhdr->val_len);
+
+  hblock_ctx_t *block_ctx = (hblock_ctx_t *)hblock_ctx;
+
+  DecodedHeadersMap[block_ctx->stream][headerKey] = headerValue;
+
+  return 0;
+}
+
+void UQPACKHeadersClient(HQUIC stream, std::vector<uint8_t> &encodedHeaders) {
+  std::vector<struct lsqpack_dec> dec(1);
+
+  struct lsqpack_dec_hset_if hset_if;
+  hset_if.dhi_unblocked = dhiUnblocked;
+  hset_if.dhi_prepare_decode = dhiPrepareDecode;
+  hset_if.dhi_process_header = dhiProcessHeaderClient;
+
+  enum lsqpack_dec_opts dec_opts {};
+  lsqpack_dec_init(dec.data(), stdout, 0x1000, 0, &hset_if, dec_opts);
+
+  // hblock_ctx_t *blockCtx = (hblock_ctx_t *)malloc(sizeof(hblock_ctx_t));
+
+  std::vector<hblock_ctx_t> blockCtx(1);
+
+  memset(&blockCtx.back(), 0, sizeof(hblock_ctx_t));
+  blockCtx.back().stream = stream;
+
+  const unsigned char *encodedHeadersPtr = encodedHeaders.data();
+  size_t totalHeaderSize = encodedHeaders.size();
+
+  enum lsqpack_read_header_status readStatus;
+
+  readStatus =
+      lsqpack_dec_header_in(dec.data(), &blockCtx.back(), 100, totalHeaderSize,
+                            &encodedHeadersPtr, totalHeaderSize, NULL, NULL);
+
+  // printf("lsqpack_dec_header_in return = %d, const_end_header_buf = %lu, "
+  //        "end_header_buf = %lu\n",
+  //        read_status, (size_t)all_header_ptr, (size_t)all_header);
+
+  std::cout << "--------------------------------------------\n";
+  std::cout << "-----------Decoding finished ---------------\n";
+  std::cout << "--------------------------------------------\n";
+
+  // std::cout << "Decoded headers:\n";
+  // for (auto &[key, value] : DecodedHeadersMap[stream]) {
+  //   std::cout << key << ": " << value << "\n";
+  // }
+}
+
+void QPACKHeaders(std::unordered_map<std::string, std::string> &headersMap,
+                  std::vector<uint8_t> &encodedHeaders) {
   // Prepare encoding context for QPACK (Header encoding for QUIC)
-  struct lsqpack_enc *enc = (lsqpack_enc *)malloc(sizeof(struct lsqpack_enc));
-  size_t buf_size = 1024;
-  unsigned char *buffer = (unsigned char *)malloc(buf_size);
+  std::vector<struct lsqpack_enc> enc(1);
 
-  lsqpack_enc_opts enc_opts{};
+  size_t stdcBufSize = 1024;
 
-  int ret = lsqpack_enc_init(enc, stdout, 0x1000, 0x1000, 0, enc_opts, buffer,
-                             &buf_size);
+  std::vector<unsigned char> sdtcBuf(1);
+
+  lsqpack_enc_opts encOpts{};
+
+  int ret =
+      lsqpack_enc_init(enc.data(), stdout, 0x1000, 0x1000, 0,
+                       LSQPACK_ENC_OPT_SERVER, sdtcBuf.data(), &stdcBufSize);
 
   if (ret != 0) {
     std::cerr << "Error initializing encoder." << std::endl;
     return;
   }
 
+  ret = lsqpack_enc_start_header(enc.data(), 100, 0);
+  // printf("lsqpack_enc_start_header return = %d\n", ret);
+
+  enum lsqpack_enc_status encStatus;
+
+  std::vector<std::pair<std::vector<unsigned char>, size_t>> encodedHeadersInfo;
   // Iterate through the headersMap and encode each header
+
+  size_t headerSize = 1024;
+  size_t totalHeaderSize = 0;
   for (const auto &header : headersMap) {
+    // auto header = headersMap.begin();
     const std::string &name = header.first;
     const std::string &value = header.second;
 
-    struct lsxpack_header xhdr;
-    lsxpack_header_set_offset2(&xhdr, name.c_str(), 0, name.length(),
-                               value.length(), 10); // example offset values
+    std::string combinedHeader = name + ": " + value;
+    // std::cout << "Combined header:\n" << combined_header << std::endl;
 
-    size_t enc_sz = 1024;
-    unsigned char *enc_buf = (unsigned char *)malloc(enc_sz);
-    size_t hdr_sz = 1024;
-    unsigned char *hdr_buf = (unsigned char *)malloc(hdr_sz);
+    struct lsxpack_header headerFormat;
+    lsxpack_header_set_offset2(&headerFormat, combinedHeader.c_str(), 0,
+                               name.length(), name.length() + 2, value.size());
 
-    lsqpack_enc_flags enc_flags;
+    size_t encSize = 1024;
+    std::vector<unsigned char> encBuf(encSize);
 
-    enum lsqpack_enc_status enc_status = lsqpack_enc_encode(
-        enc, enc_buf, &enc_sz, hdr_buf, &hdr_sz, &xhdr, enc_flags);
+    lsqpack_enc_flags enc_flags{};
 
-    // if (enc_status != LSQPACK_ENC_STATUS_OK) {
-    //   std::cerr << "Error encoding header: " << name << std::endl;
-    //   continue;
-    // }
+    encodedHeadersInfo.emplace_back(std::vector<unsigned char>(headerSize),
+                                    headerSize);
 
-    encodedHeaders.insert(encodedHeaders.end(), enc_buf, enc_buf + enc_sz);
-    encodedHeaders.insert(encodedHeaders.end(), hdr_buf, hdr_buf + hdr_sz);
-    // Print the encoded header for debugging
+    encStatus = lsqpack_enc_encode(enc.data(), encBuf.data(), &encSize,
+                                   encodedHeadersInfo.back().first.data(),
+                                   &encodedHeadersInfo.back().second,
+                                   &headerFormat, enc_flags);
 
-    // std::cout << "Encoded header: " << name << ": " << value << std::endl;
-    // print_bytes(enc_buf, enc_sz);
-    // print_bytes(hdr_buf, hdr_sz);
+    totalHeaderSize += encodedHeadersInfo.back().second;
   }
 
-  // Clean up encoder resources
-  free(buffer);
-  free(enc);
-}
+  std::vector<unsigned char> endHeaderBuf(headerSize);
 
-void QUNPACKHeaders(const unsigned char *encoded_data, size_t data_size,
-                    std::unordered_map<std::string, std::string> &headersMap) {
-  struct lsqpack_dec *dec =
-      (struct lsqpack_dec *)malloc(sizeof(struct lsqpack_dec));
-  struct lsqpack_dec_hset_if hset_if;
-  hset_if.dhi_unblocked = dhi_unblocked;
-  hset_if.dhi_prepare_decode = dhi_prepare_decode;
-  hset_if.dhi_process_header = dhi_process_header;
-  lsqpack_dec_opts dec_opts{};
-  lsqpack_dec_init(dec, stdout, 0x1000, 0, &hset_if, dec_opts);
+  size_t endHeaderSize =
+      lsqpack_enc_end_header(enc.data(), endHeaderBuf.data(), headerSize, NULL);
 
-  size_t processed_size = 0;
-  const unsigned char *data_ptr = encoded_data;
+  totalHeaderSize += endHeaderSize;
 
-  // Decode the headers from the encoded buffer
-  while (processed_size < data_size) {
-    enum lsqpack_read_header_status read_status = lsqpack_dec_header_in(
-        dec, NULL, 0, data_size - processed_size, &data_ptr,
-        data_size - processed_size, NULL, NULL);
+  encodedHeaders.resize(totalHeaderSize);
+  const unsigned char *encodedHeadersPtr = encodedHeaders.data();
 
-    // if (read_status != LSQPACK_READ_HEADER_OK) {
-    //   std::cerr << "Error decoding header." << std::endl;
-    //   break;
-    // }
+  memcpy(encodedHeaders.data(), endHeaderBuf.data(), endHeaderSize);
 
-    // Example: Here we assume headers are processed one by one
-    const struct lsxpack_header *xhdr =
-        &((hblock_ctx_t *)NULL)
-             ->xhdr; // Access the header (this needs proper structure casting)
-
-    std::string name(reinterpret_cast<char *>(xhdr->buf + xhdr->name_offset),
-                     xhdr->name_len);
-    std::string value(reinterpret_cast<char *>(xhdr->buf + xhdr->val_offset),
-                      xhdr->val_len);
-
-    // Insert the decoded header into the map
-    headersMap[name] = value;
-
-    processed_size += xhdr->val_len + xhdr->name_len + 2;
+  totalHeaderSize = endHeaderSize;
+  for (auto &headerInfo : encodedHeadersInfo) {
+    unsigned char *headerPointer = headerInfo.first.data();
+    size_t headerSize = headerInfo.second;
+    memcpy(encodedHeaders.data() + totalHeaderSize, headerPointer, headerSize);
+    totalHeaderSize += headerSize;
   }
 
-  // Clean up decoder resources
-  free(dec);
+  std::cout << "--------------------------------------------\n";
+  std::cout << "-----------Encoding finished ---------------\n";
+  std::cout << "--------------------------------------------\n";
 }
 
 void PrintUsage() {
@@ -310,10 +393,11 @@ std::vector<uint8_t> BuildDataFrame(std::string &data) {
   return dataFrame;
 }
 
-std::vector<uint8_t> BuildHeaderFrame(std::string &compressedHeaders) {
+std::vector<uint8_t>
+BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders) {
   // Construct the frame header for Headers
   uint8_t frameType = 0x01; // 0x01 for HEADERS frame
-  size_t payloadLength = compressedHeaders.size();
+  size_t payloadLength = encodedHeaders.size();
 
   // Header Frame : Type, Length
   std::vector<uint8_t> frameHeader;
@@ -324,16 +408,17 @@ std::vector<uint8_t> BuildHeaderFrame(std::string &compressedHeaders) {
   EncodeVarint(frameHeader, payloadLength);
 
   // Frame payload for Headers
-  std::vector<uint8_t> framePayload(payloadLength);
-  memcpy(framePayload.data(), compressedHeaders.c_str(), payloadLength);
+  // std::vector<uint8_t> framePayload(payloadLength);
+  // memcpy(framePayload.data(), encodedHeaders.c_str(), payloadLength);
 
   // Combine the Frame Header and Payload into one buffer
-  size_t totalFrameSize = frameHeader.size() + framePayload.size();
+  size_t totalFrameSize = frameHeader.size() + payloadLength;
 
   // Complete Header frame (frame header + frame payload)
   std::vector<uint8_t> headerFrame(totalFrameSize);
+  headerFrame.resize(totalFrameSize);
   memcpy(headerFrame.data(), frameHeader.data(), frameHeader.size());
-  memcpy(headerFrame.data() + frameHeader.size(), framePayload.data(),
+  memcpy(headerFrame.data() + frameHeader.size(), encodedHeaders.data(),
          payloadLength);
 
   return headerFrame;
@@ -452,9 +537,8 @@ std::string ResponseHTTP1ToHTTP3Headers(const std::string &http1Headers) {
   return http3Headers;
 }
 
-// Parses stream buffer to retrieve headers payload and data payload
-void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
-                       std::string &headers, std::string &data) {
+void ParseStreamBufferServer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
+                             std::string &headers, std::string &data) {
   auto iter = streamBuffer.begin();
 
   while (iter < streamBuffer.end()) {
@@ -480,7 +564,14 @@ void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
     switch (frameType) {
     case 0x01: // HEADERS frame
       std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
-      headers = std::string(iter, iter + frameLength);
+
+      {
+        std::vector<uint8_t> encodedHeaders(iter, iter + frameLength);
+
+        UQPACKHeadersServer(Stream, encodedHeaders);
+
+        // headers = std::string(iter, iter + frameLength);
+      }
       break;
 
     case 0x00: // DATA frame
@@ -497,7 +588,71 @@ void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
 
     iter += frameLength;
   }
-  std::cout << headers << data << "\n";
+  // std::cout << headers << data << "\n";
+
+  // Optionally, print any remaining unprocessed data in the buffer
+  if (iter < streamBuffer.end()) {
+    std::cout << "Error: Remaining data for in Buffer from Stream: " << Stream
+              << "-------\n";
+    std::cout.write(reinterpret_cast<const char *>(&(*iter)),
+                    streamBuffer.end() - iter);
+    std::cout << std::endl;
+  }
+}
+
+// Parses stream buffer to retrieve headers payload and data payload
+void ParseStreamBufferClient(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
+                             std::string &data) {
+  auto iter = streamBuffer.begin();
+
+  while (iter < streamBuffer.end()) {
+    // Ensure we have enough data for a frame (frameType + frameLength)
+    if (std::distance(iter, streamBuffer.end()) < 3) {
+      std::cout << "Error: Bad frame format (Not enough data)\n";
+      break;
+    }
+
+    // Read the frame type
+    uint64_t frameType = ReadVarint(iter, streamBuffer.end());
+
+    // Read the frame length
+    uint64_t frameLength = ReadVarint(iter, streamBuffer.end());
+
+    // Ensure the payload doesn't exceed the bounds of the buffer
+    if (std::distance(iter, streamBuffer.end()) < frameLength) {
+      std::cout << "Error: Payload exceeds buffer bounds\n";
+      break;
+    }
+
+    // Handle the frame based on the type
+    switch (frameType) {
+    case 0x01: // HEADERS frame
+      std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
+
+      {
+        std::vector<uint8_t> encodedHeaders(iter, iter + frameLength);
+
+        UQPACKHeadersClient(Stream, encodedHeaders);
+
+        // headers = std::string(iter, iter + frameLength);
+      }
+      break;
+
+    case 0x00: // DATA frame
+      std::cout << "[strm][" << Stream << "] Received DATA frame\n";
+      // Data might have been transmitted over multiple frames
+      data += std::string(iter, iter + frameLength);
+      break;
+
+    default: // Unknown frame type
+      std::cout << "[strm][" << Stream << "] Unknown frame type: 0x" << std::hex
+                << frameType << std::dec << "\n";
+      break;
+    }
+
+    iter += frameLength;
+  }
+  // std::cout << headers << data << "\n";
 
   // Optionally, print any remaining unprocessed data in the buffer
   if (iter < streamBuffer.end()) {

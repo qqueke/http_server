@@ -7,6 +7,8 @@
 #include "server.hpp"
 #include "utils.hpp"
 
+// std::unordered_map<std::string, std::string> decodedHeaders;
+
 _IRQL_requires_max_(DISPATCH_LEVEL)
     _Function_class_(QUIC_STREAM_CALLBACK) QUIC_STATUS QUIC_API
     ServerStreamCallback(_In_ HQUIC Stream, _In_opt_ void *Context,
@@ -62,18 +64,23 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
       std::string headers;
       std::string data;
 
-      ParseStreamBuffer(Stream, server->BufferMap[Stream], headers, data);
+      ParseStreamBufferServer(Stream, server->BufferMap[Stream], headers, data);
 
-      std::unordered_map<std::string, std::string> headersMap;
-
-      bool acceptEncoding;
+      // std::unordered_map<std::string, std::string> headersMap;
+      std::cout << "Decoded headers:\n";
+      for (const auto &header : server->DecodedHeadersMap[Stream]) {
+        std::cout << header.first << ": " << header.second << "\n";
+      }
+      // bool acceptEncoding;
 
       // Validate Request
-      HTTPServer::ValidateHeadersHTTP3(headers, headersMap);
+      HTTPServer::ValidateHeadersHTTP3(headers,
+                                       server->DecodedHeadersMap[Stream]);
 
       // Route Request
       std::string status = server->ServerRouter->RouteRequest(
-          headersMap[":method"], headersMap[":path"], data, Protocol::HTTP3,
+          server->DecodedHeadersMap[Stream][":method"],
+          server->DecodedHeadersMap[Stream][":path"], data, Protocol::HTTP3,
           (void *)Stream);
     }
     break;

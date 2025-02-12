@@ -2,6 +2,7 @@
 #include "cCallbacks.hpp"
 
 #include <array>
+#include <cstdint>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -10,7 +11,14 @@
 
 #include "utils.hpp"
 
-extern std::unordered_map<HQUIC, std::vector<uint8_t>> BufferMap;
+// extern std::unordered_map<HQUIC, std::vector<uint8_t>> BufferMap;
+// extern std::unordered_map<HQUIC, std::unordered_map<std::string,
+// std::string>>
+//     DecodedHeadersMap;
+
+std::unordered_map<HQUIC, std::vector<uint8_t>> BufferMap;
+std::unordered_map<HQUIC, std::unordered_map<std::string, std::string>>
+    DecodedHeadersMap;
 
 void ClientSend(_In_ HQUIC Connection) {
   QUIC_STATUS Status;
@@ -72,32 +80,20 @@ void ClientSend(_In_ HQUIC Connection) {
 
     std::unordered_map<std::string, std::string> headersMap;
     ParseHTTP3HeadersToMap(http3Headers, headersMap);
-    std::vector<uint8_t> encodedHeaders;
 
     std::cout << "Headers before encoding\n";
     for (auto &[key, value] : headersMap) {
       std::cout << key << " " << value << "\n";
     }
 
+    std::vector<uint8_t> encodedHeaders;
     QPACKHeaders(headersMap, encodedHeaders);
-    headersMap.clear();
-
-    QUNPACKHeaders(encodedHeaders.data(), encodedHeaders.size(), headersMap);
-
-    std::cout << "Headers after encoding\n";
-    for (auto &[key, value] : headersMap) {
-      std::cout << key << " " << value << "\n";
-    }
-
-    // Transform HTTP1 headers into HTTP3
-    // Compress headers with QPACK
-    std::string compressedHeaders = http3Headers;
 
     // Put header frame and data frames in frames response
     std::vector<std::vector<uint8_t>> frames;
 
     // Build frames
-    frames.emplace_back(BuildHeaderFrame(compressedHeaders));
+    frames.emplace_back(BuildHeaderFrame(encodedHeaders));
 
     frames.emplace_back(BuildDataFrame(body));
 
@@ -160,17 +156,14 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
       std::string headers;
       std::string data;
 
-      ParseStreamBuffer(Stream, BufferMap[Stream], headers, data);
+      ParseStreamBufferClient(Stream, BufferMap[Stream], data);
 
-      std::unordered_map<std::string, std::string> headersMap;
-
-      ParseHTTP3HeadersToMap(headers, headersMap);
-
-      if (headersMap.find(":status") == headersMap.end()) {
+      if (DecodedHeadersMap[Stream].find(":status") ==
+          DecodedHeadersMap[Stream].end()) {
         std::cout << "Error: Response missing :status field\n";
       } else {
-        std::cout << "Status: " << headersMap[":status"] << " " << data
-                  << std::endl;
+        std::cout << "Status: " << DecodedHeadersMap[Stream][":status"] << " "
+                  << data << std::endl;
       }
     }
 
@@ -257,4 +250,75 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     break;
   }
   return QUIC_STATUS_SUCCESS;
+}
+
+void RunClient(_In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[]) {
+  // Load the client configuration based on the "unsecure" command line option.
+  if (!ClientLoadConfiguration(GetFlag(argc, argv, "unsecure"))) {
+    return;
+  }
+
+  QUIC_STATUS Status;
+  const char *ResumptionTicketString = NULL;
+  const char *SslKeyLogFile = getenv(SslKeyLogEnvVar);
+  HQUIC Connection = NULL;
+
+  int i = 0;
+  // Allocate a new connection object.
+  if (QUIC_FAILED(Status = MsQuic->ConnectionOpen(Registration,
+                                                  ClientConnectionCallback, &i,
+                                                  &Connection))) {
+    printf("ConnectionOpen failed, 0x%x!\n", Status);
+    goto Error;
+  }
+
+  if ((ResumptionTicketString = GetValue(argc, argv, "ticket")) != NULL) {
+    //
+    // If provided at the command line, set the resumption ticket that can
+    // be used to resume a previous session.
+    //
+    uint8_t ResumptionTicket[10240];
+    uint16_t TicketLength = (uint16_t)DecodeHexBuffer(
+        ResumptionTicketString, sizeof(ResumptionTicket), ResumptionTicket);
+    if (QUIC_FAILED(Status = MsQuic->SetParam(
+                        Connection, QUIC_PARAM_CONN_RESUMPTION_TICKET,
+                        TicketLength, ResumptionTicket))) {
+      printf("SetParam(QUIC_PARAM_CONN_RESUMPTION_TICKET) failed, 0x%x!\n",
+             Status);
+      goto Error;
+    }
+  }
+
+  if (SslKeyLogFile != NULL) {
+    if (QUIC_FAILED(
+            Status = MsQuic->SetParam(Connection, QUIC_PARAM_CONN_TLS_SECRETS,
+                                      sizeof(ClientSecrets), &ClientSecrets))) {
+      printf("SetParam(QUIC_PARAM_CONN_TLS_SECRETS) failed, 0x%x!\n", Status);
+      goto Error;
+    }
+  }
+
+  // Get the target / server name or IP from the command line.
+  const char *Target;
+  if ((Target = GetValue(argc, argv, "target")) == NULL) {
+    printf("Must specify '-target' argument!\n");
+    Status = QUIC_STATUS_INVALID_PARAMETER;
+    goto Error;
+  }
+
+  printf("[conn][%p] Connecting...\n", Connection);
+
+  // Start the connection to the server.
+  if (QUIC_FAILED(Status = MsQuic->ConnectionStart(Connection, Configuration,
+                                                   QUIC_ADDRESS_FAMILY_UNSPEC,
+                                                   Target, UDP_PORT))) {
+    printf("ConnectionStart failed, 0x%x!\n", Status);
+    goto Error;
+  }
+
+Error:
+
+  if (QUIC_FAILED(Status) && Connection != NULL) {
+    MsQuic->ConnectionClose(Connection);
+  }
 }

@@ -57,14 +57,14 @@ C_CALLBACKS_OBJ = $(BUILDDIR)/cCallbacks.o
 UTILS_OBJ = $(BUILDDIR)/utils.o
 
 # Targets
-all: server client
+all: server client 
 
 # Build the main executable
-server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(S_CALLBACKS_OBJ)
+server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(S_CALLBACKS_OBJ) $(C_CALLBACKS_OBJ)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Build the client executable
-client: $(CLIENT_OBJ) $(UTILS_OBJ) $(C_CALLBACKS_OBJ) $(LOG_OBJ)
+client: $(CLIENT_OBJ) $(UTILS_OBJ) $(C_CALLBACKS_OBJ) $(LOG_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(S_CALLBACKS_OBJ)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Rules for building object files

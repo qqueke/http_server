@@ -81,9 +81,14 @@ int main(int argc, char *argv[]) {
     signal(SIGTERM, signalHandler); // Termination signal
 
     {
-      std::unique_ptr<HTTPServer> server =
-          std::make_unique<HTTPServer>(argc, argv);
+      // std::unique_ptr<HTTPServer> server =
+      //     std::make_unique<HTTPServer>(argc, argv);
 
+      // std::unique_ptr<HTTPServer> server =
+      //     std::make_unique<HTTPServer::GetInstance()>;
+
+      HTTPServer::Initialize(argc, argv);
+      std::unique_ptr<HTTPServer> server(HTTPServer::GetInstance());
       // nice to have this as a function declared elsewhere
       // server->AddRoute("GET", "/hello", helloHandler);
       // server->AddRoute("GET", "/goodbye", goodbyeHandler);

@@ -54,25 +54,38 @@ extern QUIC_TLS_SECRETS ClientSecrets;
 
 extern const char *SslKeyLogEnvVar;
 
-void QPACKHeaders(
-    const std::unordered_map<std::string, std::string> &headersMap,
-    std::vector<uint8_t> &encodedHeaders);
+typedef struct st_hblock_ctx {
+  struct lsxpack_header xhdr;
+  size_t buf_off;
+  char buf[0x1000];
+  HQUIC stream;
+} hblock_ctx_t;
 
-void QUNPACKHeaders(const unsigned char *encoded_data, size_t data_size,
-                    std::unordered_map<std::string, std::string> &headersMap);
+void UQPACKHeadersClient(HQUIC stream, std::vector<uint8_t> &encodedHeaders);
 
-std::vector<uint8_t> BuildHeaderFrame(std::string &compressedHeaders);
+void UQPACKHeadersServer(HQUIC stream, std::vector<uint8_t> &encodedHeaders);
+
+void QPACKHeaders(std::unordered_map<std::string, std::string> &headersMap,
+                  std::vector<uint8_t> &encodedHeaders);
+
+std::vector<uint8_t>
+BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders);
+
 std::vector<uint8_t> BuildDataFrame(std::string &data);
+
 uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
                     const std::vector<uint8_t>::iterator &end);
+
 void EncodeVarint(std::vector<uint8_t> &buffer, uint64_t value);
 
 std::string ResponseHTTP1ToHTTP3Headers(const std::string &http1Headers);
 
 std::string RequestHTTP1ToHTTP3Headers(const std::string &http1Headers);
 
-void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
-                       std::string &headers, std::string &data);
+void ParseStreamBufferClient(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
+                             std::string &data);
+void ParseStreamBufferServer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
+                             std::string &headers, std::string &data);
 
 int SendFramesToStream(HQUIC Stream,
                        const std::vector<std::vector<uint8_t>> &frames);

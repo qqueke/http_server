@@ -34,7 +34,12 @@ private:
   HQUIC Listener;
   QUIC_ADDR Address;
 
+  static HTTPServer *instance;
+  static std::mutex instanceMutex;
+
   std::string threadSafeStrerror(int errnum);
+
+  HTTPServer(int argc, char *argv[]);
 
   void
   clientHandlerThread(int clientSock,
@@ -45,10 +50,14 @@ private:
   void RunHTTP3();
 
 public:
-  std::unordered_map<HQUIC, std::vector<uint8_t>> BufferMap;
+  static void Initialize(int argc, char *argv[]);
+  static HTTPServer *GetInstance();
 
+  std::unordered_map<HQUIC, std::vector<uint8_t>> BufferMap;
   std::unique_ptr<Router> ServerRouter;
-  HTTPServer(int argc, char *argv[]);
+  std::unordered_map<HQUIC, std::unordered_map<std::string, std::string>>
+      DecodedHeadersMap;
+
   HTTPServer(const HTTPServer &) = delete;
   HTTPServer(HTTPServer &&) = delete;
   HTTPServer &operator=(const HTTPServer &) = delete;

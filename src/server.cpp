@@ -33,6 +33,9 @@ static std::mutex cacheMutex;
 
 std::atomic<bool> shouldShutdown(false);
 
+HTTPServer *HTTPServer::instance = nullptr;
+std::mutex HTTPServer::instanceMutex;
+
 static void verifyContentType(const std::string &filePath,
                               std::string &httpResponse) {
   std::string fileExtension{};
@@ -364,22 +367,22 @@ int HTTPServer::ValidateRequestsHTTP1(const std::string &request,
 void HTTPServer::ValidateHeadersHTTP3(
     const std::string &headers,
     std::unordered_map<std::string, std::string> &headersMap) {
-  std::istringstream headersStream(headers);
-  std::string line;
-
-  while (std::getline(headersStream, line)) {
-    if (!line.empty() && line.back() == '\r') {
-      line.pop_back();
-    }
-
-    // Find first occurrence of ": "
-    size_t pos = line.find(": ");
-    if (pos != std::string::npos) {
-      std::string key = line.substr(0, pos);
-      std::string value = line.substr(pos + 2);
-      headersMap[key] = value;
-    }
-  }
+  // std::istringstream headersStream(headers);
+  // std::string line;
+  //
+  // while (std::getline(headersStream, line)) {
+  //   if (!line.empty() && line.back() == '\r') {
+  //     line.pop_back();
+  //   }
+  //
+  //   // Find first occurrence of ": "
+  //   size_t pos = line.find(": ");
+  //   if (pos != std::string::npos) {
+  //     std::string key = line.substr(0, pos);
+  //     std::string value = line.substr(pos + 2);
+  //     headersMap[key] = value;
+  //   }
+  // }
 
   // Should probably be a variable within the class
   std::unordered_set<std::string> requiredHeaders;
@@ -596,6 +599,21 @@ HTTPServer::HTTPServer(int argc, char *argv[])
 
   ServerRouter = std::make_unique<Router>();
 };
+
+void HTTPServer::Initialize(int argc, char *argv[]) {
+  std::lock_guard<std::mutex> lock(instanceMutex); // Ensure thread-safety
+  if (!instance) {
+    instance = new HTTPServer(argc, argv);
+  }
+}
+
+HTTPServer *HTTPServer::GetInstance() {
+  std::lock_guard<std::mutex> lock(instanceMutex); // Ensure thread-safety
+  if (!instance) {
+    return nullptr;
+  }
+  return instance; // Return raw pointer to the instance
+}
 
 // if (setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO, &timeout,
 //                sizeof timeout) == -1) {

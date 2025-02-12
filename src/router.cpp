@@ -71,11 +71,16 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
 
     // Transform HTTP1 headers into HTTP3
     // Compress headers with QPACK
-    std::string compressedHeaders = http3Headers;
+    std::vector<uint8_t> encodedHeaders;
+
+    std::unordered_map<std::string, std::string> headersMap;
+    ParseHTTP3HeadersToMap(http3Headers, headersMap);
+
+    QPACKHeaders(headersMap, encodedHeaders);
 
     std::vector<std::vector<uint8_t>> frames;
 
-    frames.emplace_back(BuildHeaderFrame(compressedHeaders));
+    frames.emplace_back(BuildHeaderFrame(encodedHeaders));
 
     HQUIC Stream = (HQUIC)context;
 
@@ -112,23 +117,16 @@ void Router::SendResponse(std::string &headers, std::string &body,
 
     // Transform HTTP1 headers into HTTP3
     // Compress headers with QPACK
-    std::string compressedHeaders = http3Headers;
+    std::vector<uint8_t> encodedHeaders;
 
-    // std::vector<uint8_t> headerFrame = BuildHeaderFrame(compressedHeaders);
+    std::unordered_map<std::string, std::string> headersMap;
+    ParseHTTP3HeadersToMap(http3Headers, headersMap);
 
-    // Process data into one or more frames.
-    // std::vector<std::vector<uint8_t>> dataFrames;
+    QPACKHeaders(headersMap, encodedHeaders);
 
-    // Put header frame and data frames in frames response
     std::vector<std::vector<uint8_t>> frames;
 
-    frames.emplace_back(BuildHeaderFrame(compressedHeaders));
-
-    frames.emplace_back(BuildDataFrame(body));
-    // for (auto &dataFrame : dataFrames) {
-    //   frames.emplace_back(dataFrame);
-    // }
-    // Build frames
+    frames.emplace_back(BuildHeaderFrame(encodedHeaders));
 
     HQUIC Stream = (HQUIC)context;
 
