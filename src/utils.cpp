@@ -14,6 +14,7 @@
 #include "/home/QQueke/Documents/Repositories/ls-qpack/lsqpack.h"
 #include "/home/QQueke/Documents/Repositories/ls-qpack/lsxpack_header.h"
 #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
+#include "log.hpp"
 
 // The (optional) registration configuration for the app. This sets a name for
 // the app (used for persistent storage and for debugging). It also configures
@@ -82,14 +83,11 @@ void PrintBytes(void *buf, size_t len) {
   printf("\n");
 }
 
-void dhiUnblocked(void *hblock_ctx) {
-  //  printf("dhi_unblocked\n");
-}
+void dhiUnblocked(void *hblock_ctx) {}
 
 struct lsxpack_header *dhiPrepareDecode(void *hblock_ctx_p,
                                         struct lsxpack_header *xhdr,
                                         size_t space) {
-  // printf("dhi_prepare_decode: xhdr=%lu, space=%lu\n", (size_t)xhdr, space);
   hblock_ctx_t *block_ctx = (hblock_ctx_t *)hblock_ctx_p;
 
   if (xhdr != NULL) {
@@ -122,7 +120,6 @@ void QPACKHeaders(std::unordered_map<std::string, std::string> &headersMap,
   }
 
   ret = lsqpack_enc_start_header(enc.data(), 100, 0);
-  // printf("lsqpack_enc_start_header return = %d\n", ret);
 
   enum lsqpack_enc_status encStatus;
 
@@ -137,7 +134,6 @@ void QPACKHeaders(std::unordered_map<std::string, std::string> &headersMap,
     const std::string &value = header.second;
 
     std::string combinedHeader = name + ": " + value;
-    // std::cout << "Combined header:\n" << combined_header << std::endl;
 
     struct lsxpack_header headerFormat;
     lsxpack_header_set_offset2(&headerFormat, combinedHeader.c_str(), 0,
@@ -178,10 +174,6 @@ void QPACKHeaders(std::unordered_map<std::string, std::string> &headersMap,
     memcpy(encodedHeaders.data() + totalHeaderSize, headerPointer, headerSize);
     totalHeaderSize += headerSize;
   }
-
-  // std::cout << "--------------------------------------------\n";
-  // std::cout << "-----------Encoding finished ---------------\n";
-  // std::cout << "--------------------------------------------\n";
 }
 
 void PrintUsage() {
@@ -227,8 +219,8 @@ uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
                     const std::vector<uint8_t>::iterator &end) {
   // Check if there's enough data for at least the first byte
   if (iter + 1 >= end) {
-    std::cout << "Error: Buffer overflow in ReadVarint\n";
-    return -1; // or some error value
+    LogError("Buffer overflow in ReadVarint");
+    return ERROR;
   }
 
   // Read the first byte
@@ -241,8 +233,8 @@ uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
 
   // Check if we have enough data for the full varint
   if (iter + length - 1 >= end) {
-    std::cout << "Error: Not enough data in buffer for full varint\n";
-    return -1; // or some error value
+    LogError("Error: Not enough data in buffer for full varint\n");
+    return ERROR;
   }
 
   // Read the remaining bytes of the varint
@@ -500,7 +492,9 @@ void WriteSslKeyLogFile(_In_z_ const char *FileName,
 #endif
 
   if (File == NULL) {
-    printf("Failed to open sslkeylogfile %s\n", FileName);
+    std::ostringstream oss;
+    oss << "Failed to open sslkeylogfile" << FileName;
+    LogError(oss.str());
     return;
   }
   if (fseek(File, 0, SEEK_END) == 0 && ftell(File) == 0) {
@@ -629,14 +623,19 @@ ServerLoadConfiguration(_In_ int argc,
   if (QUIC_FAILED(Status = MsQuic->ConfigurationOpen(
                       Registration, &Alpn, 1, &Settings, sizeof(Settings), NULL,
                       &Configuration))) {
-    printf("ConfigurationOpen failed, 0x%x!\n", Status);
+    std::ostringstream oss;
+    oss << "ConfigurationOpen failed, 0x" << std::hex << Status;
+    LogError(oss.str());
+
     return FALSE;
   }
 
   // Loads the TLS credential part of the configuration.
   if (QUIC_FAILED(Status = MsQuic->ConfigurationLoadCredential(
                       Configuration, &Config.CredConfig))) {
-    printf("ConfigurationLoadCredential failed, 0x%x!\n", Status);
+    std::ostringstream oss;
+    oss << "ConfigurationLoadCredential failed, 0x" << std::hex << Status;
+    LogError(oss.str());
     return FALSE;
   }
 
@@ -655,11 +654,9 @@ int SendFramesToStream(HQUIC Stream,
     SendBufferRaw = (uint8_t *)malloc(sizeof(QUIC_BUFFER) + frame.size());
 
     if (SendBufferRaw == NULL) {
-      printf("SendBuffer allocation failed!\n");
+      LogError("SendBuffer allocation failed");
       Status = QUIC_STATUS_OUT_OF_MEMORY;
       if (QUIC_FAILED(Status)) {
-        std::cout << "Shutting down connection..." << std::endl;
-
         MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
 
         return -1;
@@ -672,18 +669,17 @@ int SendFramesToStream(HQUIC Stream,
 
     memcpy(SendBuffer->Buffer, frame.data(), frame.size());
 
-    printf("[strm][%p] Sending data...\n", Stream);
-
     if (QUIC_FAILED(Status = MsQuic->StreamSend(Stream, SendBuffer, 1,
                                                 (&frame == &frames.back())
                                                     ? QUIC_SEND_FLAG_FIN
                                                     : QUIC_SEND_FLAG_DELAY_SEND,
                                                 SendBuffer))) {
-      printf("StreamSend failed, 0x%x!\n", Status);
+      std::ostringstream oss;
+      oss << "StreamSend failed, 0x" << std::hex << Status;
+      LogError(oss.str());
+
       free(SendBufferRaw);
       if (QUIC_FAILED(Status)) {
-        std::cout << "Shutting down connection..." << std::endl;
-
         MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
 
         return -1;
@@ -705,10 +701,9 @@ int SendFramesToNewConn(_In_ HQUIC Connection, HQUIC Stream,
     SendBufferRaw = (uint8_t *)malloc(sizeof(QUIC_BUFFER) + frame.size());
 
     if (SendBufferRaw == NULL) {
-      printf("SendBuffer allocation failed!\n");
+      LogError("SendBuffer allocation failed!\n");
       Status = QUIC_STATUS_OUT_OF_MEMORY;
       if (QUIC_FAILED(Status)) {
-        std::cout << "Shutting down connection..." << std::endl;
         MsQuic->ConnectionShutdown(Connection,
                                    QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
         return -1;
@@ -721,10 +716,6 @@ int SendFramesToNewConn(_In_ HQUIC Connection, HQUIC Stream,
 
     memcpy(SendBuffer->Buffer, frame.data(), frame.size());
 
-    printf("[strm][%p] Sending data...\n", Stream);
-
-    std::cout << "Attempting to send without closing\n";
-
     // Delay on sending the last frame
     // if (&frame == &frames.back()) {
     //   std::this_thread::sleep_for(std::chrono::milliseconds(3000));
@@ -735,10 +726,11 @@ int SendFramesToNewConn(_In_ HQUIC Connection, HQUIC Stream,
                                                     ? QUIC_SEND_FLAG_FIN
                                                     : QUIC_SEND_FLAG_DELAY_SEND,
                                                 SendBuffer))) {
-      printf("StreamSend failed, 0x%x!\n", Status);
+      std::ostringstream oss;
+      oss << "StreamSend failed, 0x" << std::hex << Status;
+      LogError(oss.str());
       free(SendBufferRaw);
       if (QUIC_FAILED(Status)) {
-        std::cout << "Shutting down connection..." << std::endl;
         MsQuic->ConnectionShutdown(Connection,
                                    QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
         return -1;
@@ -773,7 +765,10 @@ ClientLoadConfiguration(BOOLEAN Unsecure) {
   if (QUIC_FAILED(Status = MsQuic->ConfigurationOpen(
                       Registration, &Alpn, 1, &Settings, sizeof(Settings), NULL,
                       &Configuration))) {
-    printf("ConfigurationOpen failed, 0x%x!\n", Status);
+    std::ostringstream oss;
+    oss << "ConfigurationOpen failed, 0x" << std::hex << Status;
+    LogError(oss.str());
+
     return FALSE;
   }
 
@@ -781,7 +776,10 @@ ClientLoadConfiguration(BOOLEAN Unsecure) {
   // on client side, to indicate if a certificate is required or not.
   if (QUIC_FAILED(Status = MsQuic->ConfigurationLoadCredential(Configuration,
                                                                &CredConfig))) {
-    printf("ConfigurationLoadCredential failed, 0x%x!\n", Status);
+    std::ostringstream oss;
+    oss << "ConfigurationLoadCredential failed, 0x" << std::hex << Status;
+    LogError(oss.str());
+
     return FALSE;
   }
 

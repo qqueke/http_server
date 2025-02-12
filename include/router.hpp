@@ -38,6 +38,9 @@ public:
                            const std::string &data, Protocol protocol,
                            void *context);
 
+  STATUS_CODE RouteRequest(const std::string &method, const std::string &path,
+                           Protocol protocol, void *context);
+
 private:
   // Routes receive string data, Protocol, void* Context, and Cache key for
   // caching purposes Route map with method-path pairs

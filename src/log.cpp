@@ -1,4 +1,5 @@
 #include "log.hpp"
+
 #include <chrono>
 #include <iostream>
 #include <mutex>
@@ -11,14 +12,13 @@ std::ofstream requestLogFile("logs/requests.log", std::ios::app);
 std::mutex stderrMutex;
 std::mutex stdoutMutex;
 
-const size_t maxLogBatchSize = 3;
+const size_t maxLogBatchSize = 1;
 
 static std::vector<std::string> errorBuffer;
 static std::vector<std::string> requestBuffer;
 
 inline void flushLogsToFile(std::ofstream &file,
                             std::vector<std::string> &buffer) {
-
   for (const auto &log : buffer) {
     file << log << "\n";
   }
@@ -70,7 +70,6 @@ inline auto getTimestamp() {
 }
 
 void logError(const std::string &error, const char *file, int line) {
-
   std::string logEntry = getTimestamp() + ": " + error +
                          " in file: " + std::string(file) +
                          " at line: " + std::to_string(line);

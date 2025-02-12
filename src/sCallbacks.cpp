@@ -1,9 +1,12 @@
 #include "sCallbacks.hpp"
 
 #include <cstdint>
+#include <format>
 #include <iostream>
+#include <sstream>
 #include <string>
 
+#include "log.hpp"
 #include "server.hpp"
 #include "utils.hpp"
 
@@ -23,7 +26,9 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     // returned back to the app.
 
     free(Event->SEND_COMPLETE.ClientContext);
+#ifdef QUIC_DEBUG
     printf("[strm][%p] Data sent\n", Stream);
+#endif
     break;
   case QUIC_STREAM_EVENT_RECEIVE:
 
@@ -31,9 +36,11 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     if (server->BufferMap.find(Stream) == server->BufferMap.end()) {
       server->BufferMap[Stream].reserve(256);
     }
+#ifdef QUIC_DEBUG
 
-    // Data was received from the peer on Stream.
     printf("[strm][%p] Data received\n", Stream);
+#endif
+    // Data was received from the peer on Stream.
 
     for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++) {
       const QUIC_BUFFER *buffer = &Event->RECEIVE.Buffers[i];
@@ -49,51 +56,78 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     break;
   case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
 
-    // The peer gracefully shut down its send direction of the stream.
+  {
+    auto startTime = std::chrono::high_resolution_clock::now();
+#ifdef QUIC_DEBUG
+
     printf("[strm][%p] Peer shut down\n", Stream);
+#endif
+    // The peer gracefully shut down its send direction of the stream.
 
     if (server->BufferMap.find(Stream) == server->BufferMap.end()) {
-      std::cout << "Error: no buffer found for Stream:" << Stream << "\n";
+      std::ostringstream oss;
+      oss << " No BufferMap found for Stream: " << Stream << "!";
+      LogError(oss.str());
       break;
     }
 
     // Here we send the response to the request. (since by now the
     // request should be fully processed)
 
-    {
-      std::string data;
+    std::string data;
 
-      HTTPServer::ParseStreamBuffer(Stream, server->BufferMap[Stream], data);
+    HTTPServer::ParseStreamBuffer(Stream, server->BufferMap[Stream], data);
 
-      // std::unordered_map<std::string, std::string> headersMap;
-      std::cout << "Request:\n";
-      for (const auto &header : server->DecodedHeadersMap[Stream]) {
-        std::cout << header.first << ": " << header.second << "\n";
-      }
-      std::cout << data << std::endl;
-      // bool acceptEncoding;
-
-      // Validate Request
-      HTTPServer::ValidateHeadersHTTP3(server->DecodedHeadersMap[Stream]);
-
-      // Route Request
-      std::string status = server->ServerRouter->RouteRequest(
-          server->DecodedHeadersMap[Stream][":method"],
-          server->DecodedHeadersMap[Stream][":path"], data, Protocol::HTTP3,
-          (void *)Stream);
+    // std::unordered_map<std::string, std::string> headersMap;
+    std::cout << "HTTP3 Request:\n";
+    for (const auto &header : server->DecodedHeadersMap[Stream]) {
+      std::cout << header.first << ": " << header.second << "\n";
     }
-    break;
+    std::cout << data << std::endl;
+    // bool acceptEncoding;
+
+    // Validate Request
+    HTTPServer::ValidateHeadersHTTP3(server->DecodedHeadersMap[Stream]);
+
+    // Route Request
+    std::string status = server->ServerRouter->RouteRequest(
+        server->DecodedHeadersMap[Stream][":method"],
+        server->DecodedHeadersMap[Stream][":path"], data, Protocol::HTTP3,
+        (void *)Stream);
+
+    auto endTime = std::chrono::high_resolution_clock::now();
+
+    std::chrono::duration<double> elapsed = endTime - startTime;
+
+    // std::cout << "Request handled in " << elapsed.count() << "
+    // seconds\n";
+    std::ostringstream logStream;
+    logStream << "Protocol: HTTP3 "
+              << "Method: " << server->DecodedHeadersMap[Stream][":method"]
+              << " Path: " << server->DecodedHeadersMap[Stream][":path"]
+              << " Status: " << status << " Elapsed time: " << elapsed.count()
+              << " s";
+
+    LogRequest(logStream.str());
+  }
+
+  break;
   case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
 
     // The peer aborted its send direction of the stream.
+#ifdef QUIC_DEBUG
 
     printf("[strm][%p] Peer aborted\n", Stream);
+#endif
     MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
     break;
   case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
-    // Both directions of the stream have been shut down and MsQuic is done
-    // with the stream. It can now be safely cleaned up.
+// Both directions of the stream have been shut down and MsQuic is done
+// with the stream. It can now be safely cleaned up.
+#ifdef QUIC_DEBUG
     printf("[strm][%p] Stream officialy closed\n", Stream);
+#endif
+
     MsQuic->StreamClose(Stream);
     break;
   default:
@@ -113,9 +147,10 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 
   switch (Event->Type) {
   case QUIC_CONNECTION_EVENT_CONNECTED:
-
-    // The handshake has completed for the connection.
+#ifdef QUIC_DEBUG
     printf("[conn][%p] Connected\n", Connection);
+#endif
+    // The handshake has completed for the connection.
 
     // Send  resumption ticket for future interactions
     // MsQuic->ConnectionSendResumptionTicket(
@@ -128,6 +163,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     // is the expected way for the connection to shut down with this
     // protocol, since we let idle timeout kill the connection.
 
+#ifdef QUIC_DEBUG
     if (Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status ==
         QUIC_STATUS_CONNECTION_IDLE) {
       printf("[conn][%p] Successfully shut down on idle.\n", Connection);
@@ -135,28 +171,36 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
       printf("[conn][%p] Shut down by transport, 0x%x\n", Connection,
              Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status);
     }
+#endif
+
     break;
   case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
 
     // The connection was explicitly shut down by the peer.
-
+#ifdef QUIC_DEBUG
     printf("[conn][%p] Shut down by peer, 0x%llu\n", Connection,
            (unsigned long long)Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
+#endif
+
     break;
   case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
 
     // The connection has completed the shutdown process and is ready to be
     // safely cleaned up.
+#ifdef QUIC_DEBUG
 
     printf("[conn][%p] Connection officialy closed\n", Connection);
+#endif
     MsQuic->ConnectionClose(Connection);
     break;
   case QUIC_CONNECTION_EVENT_PEER_STREAM_STARTED:
 
     // The peer has started/created a new stream. The app MUST set the
     // callback handler before returning.
+#ifdef QUIC_DEBUG
 
     printf("[strm][%p] Peer started\n", Event->PEER_STREAM_STARTED.Stream);
+#endif
     MsQuic->SetCallbackHandler(Event->PEER_STREAM_STARTED.Stream,
                                (void *)ServerStreamCallback, Context);
     break;
@@ -164,8 +208,10 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 
     // The connection succeeded in doing a TLS resumption of a previous
     // connection's session.
+#ifdef QUIC_DEBUG
 
     printf("[conn][%p] Connection resumed!\n", Connection);
+#endif
     break;
   default:
     break;

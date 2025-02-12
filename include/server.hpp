@@ -41,9 +41,7 @@ private:
 
   HTTPServer(int argc, char *argv[]);
 
-  void
-  clientHandlerThread(int clientSock,
-                      std::chrono::high_resolution_clock::time_point startTime);
+  void HTTP1RequestHandlerThread(int clientSock);
 
   void RunHTTP1();
   void RunHTTP2();
@@ -86,7 +84,7 @@ public:
 
   static int ValidateRequestsHTTP1(const std::string &request,
                                    std::string &method, std::string &path,
-                                   bool &acceptEncoding);
+                                   std::string &body, bool &acceptEncoding);
 
   static void ValidateHeadersHTTP3(
       std::unordered_map<std::string, std::string> &headersMap);

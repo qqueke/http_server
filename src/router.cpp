@@ -70,6 +70,8 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
     std::unordered_map<std::string, std::string> headersMap;
     ResponseHTTP1ToHTTP3Headers(headers, headersMap);
 
+    // Transform HTTP1 headers into HTTP3
+    // Compress headers with QPACK
     std::vector<uint8_t> encodedHeaders;
 
     QPACKHeaders(headersMap, encodedHeaders);
@@ -144,7 +146,7 @@ STATUS_CODE Router::handleBadRequest(const std::string &data, Protocol protocol,
 
   std::string headers = "HTTP/1.1 400 Bad Request\r\n"
                         "Content-Type: text/plain\r\n"
-                        "Content-Length: 20\r\n"
+                        "Content-Length: 11\r\n"
                         "Connection: close\r\n"
                         "\r\n";
 

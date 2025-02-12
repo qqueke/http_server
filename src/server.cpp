@@ -13,6 +13,7 @@
 #include <cassert>
 #include <cerrno>
 #include <cstring>
+#include <format>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -81,14 +82,6 @@ void HTTPServer::UQPACKHeadersServer(HQUIC stream,
   readStatus =
       lsqpack_dec_header_in(dec.data(), &blockCtx.back(), 100, totalHeaderSize,
                             &encodedHeadersPtr, totalHeaderSize, NULL, NULL);
-
-  // printf("lsqpack_dec_header_in return = %d, const_end_header_buf = %lu, "
-  //        "end_header_buf = %lu\n",
-  //        read_status, (size_t)all_header_ptr, (size_t)all_header);
-
-  // std::cout << "--------------------------------------------\n";
-  // std::cout << "-----------Decoding finished ---------------\n";
-  // std::cout << "--------------------------------------------\n";
 }
 
 void HTTPServer::ParseStreamBuffer(HQUIC Stream,
@@ -99,7 +92,7 @@ void HTTPServer::ParseStreamBuffer(HQUIC Stream,
   while (iter < streamBuffer.end()) {
     // Ensure we have enough data for a frame (frameType + frameLength)
     if (std::distance(iter, streamBuffer.end()) < 3) {
-      std::cout << "Error: Bad frame format (Not enough data)\n";
+      LogError("Bad frame format (Not enough data)");
       break;
     }
 
@@ -111,7 +104,7 @@ void HTTPServer::ParseStreamBuffer(HQUIC Stream,
 
     // Ensure the payload doesn't exceed the bounds of the buffer
     if (std::distance(iter, streamBuffer.end()) < frameLength) {
-      std::cout << "Error: Payload exceeds buffer bounds\n";
+      LogError("Payload exceeds buffer bounds");
       break;
     }
 
@@ -143,15 +136,17 @@ void HTTPServer::ParseStreamBuffer(HQUIC Stream,
 
     iter += frameLength;
   }
-  // std::cout << headers << data << "\n";
 
   // Optionally, print any remaining unprocessed data in the buffer
   if (iter < streamBuffer.end()) {
-    std::cout << "Error: Remaining data for in Buffer from Stream: " << Stream
-              << "-------\n";
-    std::cout.write(reinterpret_cast<const char *>(&(*iter)),
-                    streamBuffer.end() - iter);
-    std::cout << std::endl;
+    std::ostringstream oss;
+    oss << "Data left to read on Buffer from Stream, 0x" << std::hex << Stream
+        << "!";
+    LogError(oss.str());
+
+    // std::cout.write(reinterpret_cast<const char *>(&(*iter)),
+    //                 streamBuffer.end() - iter);
+    // std::cout << std::endl;
   }
 }
 
@@ -407,7 +402,7 @@ int HTTPServer::SendHTTP3Response(HQUIC Stream,
 
 int HTTPServer::ValidateRequestsHTTP1(const std::string &request,
                                       std::string &method, std::string &path,
-                                      bool &acceptEncoding) {
+                                      std::string &body, bool &acceptEncoding) {
   std::istringstream requestStream(request);
   std::string line;
 
@@ -459,7 +454,6 @@ int HTTPServer::ValidateRequestsHTTP1(const std::string &request,
   }
 
   // Parse Body (if has content-length)
-  std::string body;
   if (headers.find("Content-Length") != headers.end()) {
     size_t contentLength = std::stoi(headers["Content-Length"]);
 
@@ -484,25 +478,7 @@ int HTTPServer::ValidateRequestsHTTP1(const std::string &request,
 }
 
 void HTTPServer::ValidateHeadersHTTP3(
-
     std::unordered_map<std::string, std::string> &headersMap) {
-  // std::istringstream headersStream(headers);
-  // std::string line;
-  //
-  // while (std::getline(headersStream, line)) {
-  //   if (!line.empty() && line.back() == '\r') {
-  //     line.pop_back();
-  //   }
-  //
-  //   // Find first occurrence of ": "
-  //   size_t pos = line.find(": ");
-  //   if (pos != std::string::npos) {
-  //     std::string key = line.substr(0, pos);
-  //     std::string value = line.substr(pos + 2);
-  //     headersMap[key] = value;
-  //   }
-  // }
-
   // Should probably be a variable within the class
   std::unordered_set<std::string> requiredHeaders;
   requiredHeaders.insert(":method");
@@ -511,7 +487,7 @@ void HTTPServer::ValidateHeadersHTTP3(
 
   for (const auto &header : requiredHeaders) {
     if (headersMap.find(header) == headersMap.end()) {
-      std::cout << "Missing atleast one mandatory header field\n";
+      LogError("Failed to validate HTTP3 request (missing header field)");
       headersMap["method"] = "BR";
       headersMap["path"] = "";
       return;
@@ -522,117 +498,117 @@ void HTTPServer::ValidateHeadersHTTP3(
   std::cout << "Request successfully validated for HTTP/3!\n";
 }
 
-// void HTTPServer::clientHandlerThread(
-//     int clientSock, std::chrono::high_resolution_clock::time_point startTime)
-//     {
-//   std::array<char, BUFFER_SIZE> buffer{};
-//   std::string request;
-//
-//   // Create SSL object
-//   SSL *ssl = SSL_new(ctx);
-//
-//   //  sets the file descriptor clientSock as the input/output facility for
-//   the
-//   //  TLS/SSL
-//   SSL_set_fd(ssl, clientSock);
-//
-//   // TLS/SSL handshake
-//   if (SSL_accept(ssl) <= 0) {
-//     LogError("SSL handshake failed");
-//     SSL_free(ssl);
-//     close(clientSock);
-//     return;
-//   }
-//
-//   if (activeConnections >= MAX_CONNECTIONS) {
-//     ServerRouter->RouteRequest("CL", "", ssl);
-//     LogError("Connections limit exceeded");
-//     SSL_free(ssl);
-//     close(clientSock);
-//     return;
-//   }
-//
-//   activeConnections++;
-//
-//   std::string method{};
-//   std::string path{};
-//   std::string status{};
-//
-//   // Just to not delete the while loop
-//   bool keepAlive = true;
-//
-//   while (!shouldShutdown && keepAlive) {
-//     keepAlive = false;
-//
-//     ssize_t bytesReceived = SSL_read(ssl, buffer.data(), BUFFER_SIZE);
-//
-//     if (bytesReceived == 0) {
-//       LogError("Client closed the connection");
-//       break;
-//     } else if (bytesReceived < 0) {
-//       LogError("Failed to receive data");
-//       break;
-//     }
-//
-//     request.append(buffer.data(), bytesReceived);
-//
-//     while (bytesReceived == BUFFER_SIZE && !shouldShutdown) {
-//       // struct pollfd pollFds(clientSock, POLLIN, 0);
-//       //
-//       // int polling = poll(&pollFds, 1, 0.5 * 1000);
-//       // if (polling == 0) {
-//       //   LogError("No more data to read");
-//       //   break;
-//       // } else if (polling == -1) {
-//       //   LogError("Poll error, attempting to recv data");
-//       // }
-//
-//       if (SSL_pending(ssl) == 0) {
-//         LogError("No more data to read");
-//         break;
-//       }
-//
-//       bytesReceived = SSL_read(ssl, buffer.data(), BUFFER_SIZE);
-//       request.append(buffer.data(), bytesReceived);
-//     }
-//
-//     std::cout << "Raw request: " << request << std::endl;
-//     bool acceptEncoding = false;
-//     if (ValidateRequestsHTTP1(request, method, path, acceptEncoding) ==
-//     ERROR) {
-//       LogError("Request validation was unsuccessful");
-//       continue;
-//     }
-//
-//     if (path.starts_with("/static/")) {
-//       std::string filePath = "static" + path.substr(7);
-//       // Check how to proceed in here
-//       ServerRouter->staticFileHandler(ssl, filePath, acceptEncoding);
-//       continue;
-//     }
-//
-//     status = ServerRouter->RouteRequest(method, path, ssl);
-//   }
-//
-//   // Timer should end  here and log it to the file
-//
-//   auto endTime = std::chrono::high_resolution_clock::now();
-//
-//   std::chrono::duration<double> elapsed = endTime - startTime;
-//
-//   // std::cout << "Request handled in " << elapsed.count() << " seconds\n";
-//   std::ostringstream logStream;
-//   logStream << "Method: " << method << " Path: " << path
-//             << " Status: " << status << " Elapsed time: " << elapsed.count()
-//             << " s";
-//
-//   LogRequest(logStream.str());
-//
-//   SSL_shutdown(ssl);
-//   SSL_free(ssl);
-//   activeConnections--;
-//   close(clientSock);
-// }
+void HTTPServer::HTTP1RequestHandlerThread(int clientSock) {
+  auto startTime = std::chrono::high_resolution_clock::now();
+  std::array<char, BUFFER_SIZE> buffer{};
+  std::string request;
+
+  // Create SSL object
+  SSL *ssl = SSL_new(ctx);
+
+  //  sets the file descriptor clientSock as the input/output facility for
+  // theTLS/SSL
+  SSL_set_fd(ssl, clientSock);
+
+  // TLS/SSL handshake
+  if (SSL_accept(ssl) <= 0) {
+    LogError("SSL handshake failed");
+    SSL_free(ssl);
+    close(clientSock);
+    return;
+  }
+
+  if (activeConnections >= MAX_CONNECTIONS) {
+    ServerRouter->RouteRequest("BR", "", "", Protocol::HTTP1, ssl);
+    LogError("Connections limit exceeded");
+    SSL_free(ssl);
+    close(clientSock);
+    return;
+  }
+
+  activeConnections++;
+
+  std::string method{};
+  std::string path{};
+  std::string status{};
+
+  // Just to not delete the while loop
+  bool keepAlive = true;
+
+  while (!shouldShutdown && keepAlive) {
+    keepAlive = false;
+
+    ssize_t bytesReceived = SSL_read(ssl, buffer.data(), BUFFER_SIZE);
+
+    if (bytesReceived == 0) {
+      LogError("Client closed the connection");
+      break;
+    } else if (bytesReceived < 0) {
+      LogError("Failed to receive data");
+      break;
+    }
+
+    request.append(buffer.data(), bytesReceived);
+
+    while (bytesReceived == BUFFER_SIZE && !shouldShutdown) {
+      // struct pollfd pollFds(clientSock, POLLIN, 0);
+      //
+      // int polling = poll(&pollFds, 1, 0.5 * 1000);
+      // if (polling == 0) {
+      //   LogError("No more data to read");
+      //   break;
+      // } else if (polling == -1) {
+      //   LogError("Poll error, attempting to recv data");
+      // }
+
+      if (SSL_pending(ssl) == 0) {
+        LogError("No more data to read");
+        break;
+      }
+
+      bytesReceived = SSL_read(ssl, buffer.data(), BUFFER_SIZE);
+      request.append(buffer.data(), bytesReceived);
+    }
+
+    std::cout << "HTTP1 Request:\n" << request << std::endl;
+
+    std::string body;
+    bool acceptEncoding = false;
+    if (ValidateRequestsHTTP1(request, method, path, body, acceptEncoding) ==
+        ERROR) {
+      LogError("Request validation was unsuccessful");
+      continue;
+    }
+
+    if (path.starts_with("/static/")) {
+      std::string filePath = "static" + path.substr(7);
+      // Check how to proceed in here
+      staticFileHandler(ssl, filePath, acceptEncoding);
+      continue;
+    }
+
+    status =
+        ServerRouter->RouteRequest(method, path, body, Protocol::HTTP1, ssl);
+  }
+
+  // Timer should end  here and log it to the file
+  auto endTime = std::chrono::high_resolution_clock::now();
+
+  std::chrono::duration<double> elapsed = endTime - startTime;
+
+  std::ostringstream logStream;
+  logStream << "Protocol: HTTP1 "
+            << "Method: " << method << " Path: " << path
+            << " Status: " << status << " Elapsed time: " << elapsed.count()
+            << " s";
+
+  LogRequest(logStream.str());
+
+  SSL_shutdown(ssl);
+  SSL_free(ssl);
+  activeConnections--;
+  close(clientSock);
+}
 
 HTTPServer::~HTTPServer() {
   if (serverSock != -1) {
@@ -647,11 +623,57 @@ void HTTPServer::AddRoute(const std::string &method, const std::string &path,
   ServerRouter->AddRoute(method, path, handler);
 }
 
+void HTTPServer::RunHTTP1() {
+  if (listen(serverSock, MAX_PENDING_CONNECTIONS) == ERROR) {
+    LogError(threadSafeStrerror(errno));
+    return;
+  }
+
+  struct pollfd pollFds(serverSock, POLLIN, 0);
+
+  while (!shouldShutdown) {
+    int polling = poll(&pollFds, 1, 1 * 1000);
+    if (polling == 0) {
+      continue;
+    } else if (polling == ERROR) {
+      LogError("Poll error on main thread");
+      continue;
+    }
+
+    sockaddr clientAddr{};
+    socklen_t len = sizeof(clientAddr);
+    int clientSock = accept(serverSock, &clientAddr, &len);
+    if (clientSock == -1) {
+      LogError(threadSafeStrerror(errno));
+      continue;
+    }
+
+    // Timer should start here
+    if (setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+                   sizeof timeout) == -1) {
+      LogError(threadSafeStrerror(errno));
+    }
+
+    if (setsockopt(clientSock, SOL_SOCKET, SO_SNDTIMEO, &timeout,
+                   sizeof timeout) == -1) {
+      LogError(threadSafeStrerror(errno));
+    }
+
+    std::thread([this, clientSock]() {
+      HTTP1RequestHandlerThread(clientSock);
+    }).detach();
+  }
+}
+
 void HTTPServer::RunHTTP3() {
   // Starts listening for incoming connections.
   if (QUIC_FAILED(Status =
                       MsQuic->ListenerStart(Listener, &Alpn, 1, &Address))) {
-    printf("ListenerStart failed, 0x%x!\n", Status);
+    // printf("ListenerStart failed, 0x%x!\n", Status);
+    std::ostringstream oss;
+    oss << "ListenerStart failed, 0x" << std::hex << Status << "!";
+    LogError(oss.str());
+
     LogError("Server failed to load configuration.");
     if (Listener != NULL) {
       MsQuic->ListenerClose(Listener);
@@ -661,32 +683,72 @@ void HTTPServer::RunHTTP3() {
 }
 
 void HTTPServer::Run() {
-  // Starts listening for incoming connections.
-  // if (QUIC_FAILED(Status =
-  //                     MsQuic->ListenerStart(Listener, &Alpn, 1, &Address))) {
-  //   printf("ListenerStart failed, 0x%x!\n", Status);
-  //   LogError("Server failed to load configuration.");
-  //   if (Listener != NULL) {
-  //     MsQuic->ListenerClose(Listener);
-  //   }
-  //   return;
-  // }
-  //
+  std::thread http1Thread(&HTTPServer::RunHTTP1, this);
+  http1Thread.detach();
+
   std::thread http3Thread(&HTTPServer::RunHTTP3, this);
   http3Thread.detach();
-  // HTTPServer::RunHTTP3();
-  // Continue listening for connections until the Enter key is pressed.
+
   while (!shouldShutdown) {
   }
-  //
-  // printf("Press Enter to exit.\n\n");
-  // getchar();
 }
 
 void HTTPServer::PrintFromServer() { std::cout << "Hello from server\n"; }
 
 HTTPServer::HTTPServer(int argc, char *argv[])
-    : Status(0), activeConnections(0), Listener(nullptr) {
+    : serverSock(socket(AF_INET, SOCK_STREAM, 0)), serverAddr(), timeout(),
+      Status(0), activeConnections(0), Listener(nullptr) {
+  //------------------------ HTTP1 TCP SETUP----------------------
+
+  SSL_load_error_strings();
+  SSL_library_init();
+  OpenSSL_add_all_algorithms();
+
+  ctx = SSL_CTX_new(SSLv23_server_method());
+  if (!ctx) {
+    LogError("Failed to create SSL context");
+    exit(EXIT_FAILURE);
+  }
+
+  if (SSL_CTX_use_certificate_file(ctx, "certificates/server.crt",
+                                   SSL_FILETYPE_PEM) <= 0) {
+    LogError("Failed to load server certificate");
+    exit(EXIT_FAILURE);
+  }
+
+  if (SSL_CTX_use_PrivateKey_file(ctx, "certificates/server.key",
+                                  SSL_FILETYPE_PEM) <= 0) {
+    LogError("Failed to load server private key");
+    exit(EXIT_FAILURE);
+  }
+
+  if (!SSL_CTX_check_private_key(ctx)) {
+    LogError("Private key does not match the certificate");
+    exit(EXIT_FAILURE);
+  }
+
+  if (serverSock == ERROR) {
+    LogError(threadSafeStrerror(errno));
+    exit(EXIT_FAILURE);
+  }
+
+  serverAddr.sin_family = AF_INET;
+  serverAddr.sin_port = htons(HTTP_PORT);
+  serverAddr.sin_addr.s_addr = INADDR_ANY;
+
+  // For HTTPS since the port is 443 we need higher privileges ( Any port
+  // bellow
+  // 1024 requires that)
+  if (bind(serverSock, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) ==
+      ERROR) {
+    LogError(threadSafeStrerror(errno));
+    exit(EXIT_FAILURE);
+  }
+
+  timeout = {};
+  timeout.tv_sec = TIMEOUT_SECONDS;
+
+  //------------------------ HTTP3 QUIC SETUP----------------------
   // Configures the address used for the listener to listen on all IP
   // addresses and the given UDP port.
   Address = {0};
@@ -705,14 +767,13 @@ HTTPServer::HTTPServer(int argc, char *argv[])
   // Create/allocate a new listener object.
   if (QUIC_FAILED(Status = MsQuic->ListenerOpen(
                       Registration, ServerListenerCallback, this, &Listener))) {
-    printf("ListenerOpen failed, 0x%x!\n", Status);
+    LogError(std::format("ListenerStart failed, 0x{:x}!", Status));
     LogError("Server failed to load configuration.");
     if (Listener != NULL) {
       MsQuic->ListenerClose(Listener);
     }
     return;
   }
-
   ServerRouter = std::make_unique<Router>();
 };
 
