@@ -61,21 +61,20 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     // request should be fully processed)
 
     {
-      std::string headers;
       std::string data;
 
-      ParseStreamBufferServer(Stream, server->BufferMap[Stream], headers, data);
+      HTTPServer::ParseStreamBuffer(Stream, server->BufferMap[Stream], data);
 
       // std::unordered_map<std::string, std::string> headersMap;
-      std::cout << "Decoded headers:\n";
+      std::cout << "Request:\n";
       for (const auto &header : server->DecodedHeadersMap[Stream]) {
         std::cout << header.first << ": " << header.second << "\n";
       }
+      std::cout << data << std::endl;
       // bool acceptEncoding;
 
       // Validate Request
-      HTTPServer::ValidateHeadersHTTP3(headers,
-                                       server->DecodedHeadersMap[Stream]);
+      HTTPServer::ValidateHeadersHTTP3(server->DecodedHeadersMap[Stream]);
 
       // Route Request
       std::string status = server->ServerRouter->RouteRequest(

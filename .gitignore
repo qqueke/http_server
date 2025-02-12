@@ -1,5 +1,5 @@
 # Ignore executables in the root directory
-/*
+# /*
 
 # Ignore everything in build/
 build/

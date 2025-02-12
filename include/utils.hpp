@@ -61,6 +61,11 @@ typedef struct st_hblock_ctx {
   HQUIC stream;
 } hblock_ctx_t;
 
+void dhiUnblocked(void *hblock_ctx);
+
+struct lsxpack_header *
+dhiPrepareDecode(void *hblock_ctx_p, struct lsxpack_header *xhdr, size_t space);
+
 void UQPACKHeadersClient(HQUIC stream, std::vector<uint8_t> &encodedHeaders);
 
 void UQPACKHeadersServer(HQUIC stream, std::vector<uint8_t> &encodedHeaders);
@@ -78,14 +83,19 @@ uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
 
 void EncodeVarint(std::vector<uint8_t> &buffer, uint64_t value);
 
-std::string ResponseHTTP1ToHTTP3Headers(const std::string &http1Headers);
+void ResponseHTTP1ToHTTP3Headers(
+    const std::string &http1Headers,
+    std::unordered_map<std::string, std::string> &headerMap);
 
-std::string RequestHTTP1ToHTTP3Headers(const std::string &http1Headers);
+void RequestHTTP1ToHTTP3Headers(
+    const std::string &http1Headers,
+    std::unordered_map<std::string, std::string> &headersMap);
 
-void ParseStreamBufferClient(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
-                             std::string &data);
-void ParseStreamBufferServer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
-                             std::string &headers, std::string &data);
+// void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
+//                              std::string &data);
+// void ParseStreamBufferServer(HQUIC Stream, std::vector<uint8_t>
+// &streamBuffer,
+//                              std::string &headers, std::string &data);
 
 int SendFramesToStream(HQUIC Stream,
                        const std::vector<std::vector<uint8_t>> &frames);

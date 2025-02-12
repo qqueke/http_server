@@ -64,6 +64,15 @@ public:
   HTTPServer &operator=(HTTPServer &&) = delete;
   ~HTTPServer();
 
+  static int dhiProcessHeader(void *hblock_ctx, struct lsxpack_header *xhdr);
+
+  static void UQPACKHeadersServer(HQUIC stream,
+                                  std::vector<uint8_t> &encodedHeaders);
+
+  static void ParseStreamBuffer(HQUIC Stream,
+                                std::vector<uint8_t> &streamBuffer,
+                                std::string &data);
+
   void staticFileHandler(SSL *clientSSL, const std::string &filePath,
                          bool acceptEncoding);
 
@@ -80,7 +89,6 @@ public:
                                    bool &acceptEncoding);
 
   static void ValidateHeadersHTTP3(
-      const std::string &headers,
       std::unordered_map<std::string, std::string> &headersMap);
 
   static int SendHTTP1Response(SSL *clientSSL, const std::string &response);

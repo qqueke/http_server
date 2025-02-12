@@ -14,8 +14,7 @@
 #include "/home/QQueke/Documents/Repositories/ls-qpack/lsqpack.h"
 #include "/home/QQueke/Documents/Repositories/ls-qpack/lsxpack_header.h"
 #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
-#include "cCallbacks.hpp"
-#include "server.hpp"
+
 // The (optional) registration configuration for the app. This sets a name for
 // the app (used for persistent storage and for debugging). It also configures
 // the execution profile, using the default "low latency" profile.
@@ -83,12 +82,14 @@ void PrintBytes(void *buf, size_t len) {
   printf("\n");
 }
 
-void dhiUnblocked(void *hblock_ctx) { printf("dhi_unblocked\n"); }
+void dhiUnblocked(void *hblock_ctx) {
+  //  printf("dhi_unblocked\n");
+}
 
 struct lsxpack_header *dhiPrepareDecode(void *hblock_ctx_p,
                                         struct lsxpack_header *xhdr,
                                         size_t space) {
-  printf("dhi_prepare_decode: xhdr=%lu, space=%lu\n", (size_t)xhdr, space);
+  // printf("dhi_prepare_decode: xhdr=%lu, space=%lu\n", (size_t)xhdr, space);
   hblock_ctx_t *block_ctx = (hblock_ctx_t *)hblock_ctx_p;
 
   if (xhdr != NULL) {
@@ -98,118 +99,6 @@ struct lsxpack_header *dhiPrepareDecode(void *hblock_ctx_p,
                                   block_ctx->buf_off, space);
   }
   return &block_ctx->xhdr;
-}
-
-int dhiProcessHeaderServer(void *hblock_ctx, struct lsxpack_header *xhdr) {
-  printf("dhi_process_header: xhdr=%lu\n", (size_t)xhdr);
-  printf("%.*s: %.*s\n", xhdr->name_len, (xhdr->buf + xhdr->name_offset),
-         xhdr->val_len, (xhdr->buf + xhdr->val_offset));
-
-  std::string headerKey(xhdr->buf + xhdr->name_offset, xhdr->name_len);
-  std::string headerValue(xhdr->buf + xhdr->val_offset, xhdr->val_len);
-
-  hblock_ctx_t *block_ctx = (hblock_ctx_t *)hblock_ctx;
-  // block_ctx->stream
-  HTTPServer *server = HTTPServer::GetInstance();
-
-  server->DecodedHeadersMap[block_ctx->stream][headerKey] = headerValue;
-
-  return 0;
-}
-
-void UQPACKHeadersServer(HQUIC stream, std::vector<uint8_t> &encodedHeaders) {
-  std::vector<struct lsqpack_dec> dec(1);
-
-  struct lsqpack_dec_hset_if hset_if;
-  hset_if.dhi_unblocked = dhiUnblocked;
-  hset_if.dhi_prepare_decode = dhiPrepareDecode;
-  hset_if.dhi_process_header = dhiProcessHeaderServer;
-
-  enum lsqpack_dec_opts dec_opts {};
-  lsqpack_dec_init(dec.data(), stdout, 0x1000, 0, &hset_if, dec_opts);
-
-  // hblock_ctx_t *blockCtx = (hblock_ctx_t *)malloc(sizeof(hblock_ctx_t));
-
-  std::vector<hblock_ctx_t> blockCtx(1);
-
-  memset(&blockCtx.back(), 0, sizeof(hblock_ctx_t));
-  blockCtx.back().stream = stream;
-
-  const unsigned char *encodedHeadersPtr = encodedHeaders.data();
-  size_t totalHeaderSize = encodedHeaders.size();
-
-  enum lsqpack_read_header_status readStatus;
-
-  readStatus =
-      lsqpack_dec_header_in(dec.data(), &blockCtx.back(), 100, totalHeaderSize,
-                            &encodedHeadersPtr, totalHeaderSize, NULL, NULL);
-
-  // printf("lsqpack_dec_header_in return = %d, const_end_header_buf = %lu, "
-  //        "end_header_buf = %lu\n",
-  //        read_status, (size_t)all_header_ptr, (size_t)all_header);
-
-  std::cout << "--------------------------------------------\n";
-  std::cout << "-----------Decoding finished ---------------\n";
-  std::cout << "--------------------------------------------\n";
-}
-
-extern std::unordered_map<HQUIC, std::unordered_map<std::string, std::string>>
-    DecodedHeadersMap;
-
-int dhiProcessHeaderClient(void *hblock_ctx, struct lsxpack_header *xhdr) {
-  printf("dhi_process_header: xhdr=%lu\n", (size_t)xhdr);
-  printf("%.*s: %.*s\n", xhdr->name_len, (xhdr->buf + xhdr->name_offset),
-         xhdr->val_len, (xhdr->buf + xhdr->val_offset));
-
-  std::string headerKey(xhdr->buf + xhdr->name_offset, xhdr->name_len);
-  std::string headerValue(xhdr->buf + xhdr->val_offset, xhdr->val_len);
-
-  hblock_ctx_t *block_ctx = (hblock_ctx_t *)hblock_ctx;
-
-  DecodedHeadersMap[block_ctx->stream][headerKey] = headerValue;
-
-  return 0;
-}
-
-void UQPACKHeadersClient(HQUIC stream, std::vector<uint8_t> &encodedHeaders) {
-  std::vector<struct lsqpack_dec> dec(1);
-
-  struct lsqpack_dec_hset_if hset_if;
-  hset_if.dhi_unblocked = dhiUnblocked;
-  hset_if.dhi_prepare_decode = dhiPrepareDecode;
-  hset_if.dhi_process_header = dhiProcessHeaderClient;
-
-  enum lsqpack_dec_opts dec_opts {};
-  lsqpack_dec_init(dec.data(), stdout, 0x1000, 0, &hset_if, dec_opts);
-
-  // hblock_ctx_t *blockCtx = (hblock_ctx_t *)malloc(sizeof(hblock_ctx_t));
-
-  std::vector<hblock_ctx_t> blockCtx(1);
-
-  memset(&blockCtx.back(), 0, sizeof(hblock_ctx_t));
-  blockCtx.back().stream = stream;
-
-  const unsigned char *encodedHeadersPtr = encodedHeaders.data();
-  size_t totalHeaderSize = encodedHeaders.size();
-
-  enum lsqpack_read_header_status readStatus;
-
-  readStatus =
-      lsqpack_dec_header_in(dec.data(), &blockCtx.back(), 100, totalHeaderSize,
-                            &encodedHeadersPtr, totalHeaderSize, NULL, NULL);
-
-  // printf("lsqpack_dec_header_in return = %d, const_end_header_buf = %lu, "
-  //        "end_header_buf = %lu\n",
-  //        read_status, (size_t)all_header_ptr, (size_t)all_header);
-
-  std::cout << "--------------------------------------------\n";
-  std::cout << "-----------Decoding finished ---------------\n";
-  std::cout << "--------------------------------------------\n";
-
-  // std::cout << "Decoded headers:\n";
-  // for (auto &[key, value] : DecodedHeadersMap[stream]) {
-  //   std::cout << key << ": " << value << "\n";
-  // }
 }
 
 void QPACKHeaders(std::unordered_map<std::string, std::string> &headersMap,
@@ -224,7 +113,7 @@ void QPACKHeaders(std::unordered_map<std::string, std::string> &headersMap,
   lsqpack_enc_opts encOpts{};
 
   int ret =
-      lsqpack_enc_init(enc.data(), stdout, 0x1000, 0x1000, 0,
+      lsqpack_enc_init(enc.data(), NULL, 0x1000, 0x1000, 0,
                        LSQPACK_ENC_OPT_SERVER, sdtcBuf.data(), &stdcBufSize);
 
   if (ret != 0) {
@@ -290,9 +179,9 @@ void QPACKHeaders(std::unordered_map<std::string, std::string> &headersMap,
     totalHeaderSize += headerSize;
   }
 
-  std::cout << "--------------------------------------------\n";
-  std::cout << "-----------Encoding finished ---------------\n";
-  std::cout << "--------------------------------------------\n";
+  // std::cout << "--------------------------------------------\n";
+  // std::cout << "-----------Encoding finished ---------------\n";
+  // std::cout << "--------------------------------------------\n";
 }
 
 void PrintUsage() {
@@ -424,12 +313,14 @@ BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders) {
   return headerFrame;
 }
 
-std::string RequestHTTP1ToHTTP3Headers(const std::string &http1Headers) {
+void RequestHTTP1ToHTTP3Headers(
+    const std::string &http1Headers,
+    std::unordered_map<std::string, std::string> &headersMap) {
   std::istringstream stream(http1Headers);
   std::string line;
   std::string key{};
   std::string value{};
-  std::vector<std::pair<std::string, std::string>> headers;
+  // std::vector<std::pair<std::string, std::string>> headers;
 
   // Read the first line (status line in HTTP/1.1)
   while (std::getline(stream, line, '\n')) {
@@ -444,15 +335,20 @@ std::string RequestHTTP1ToHTTP3Headers(const std::string &http1Headers) {
       if (secondSpace != std::string::npos) {
         key = ":method";
         value = line.substr(0, firstSpace);
-        headers.emplace_back(key, value);
+        headersMap[key] = value;
+        // headers.emplace_back(key, value);
 
         key = ":scheme";
         value = "https";
-        headers.emplace_back(key, value);
+
+        headersMap[key] = value;
+        // headers.emplace_back(key, value);
 
         key = ":path";
         value = line.substr(firstSpace + 1, secondSpace - firstSpace - 1);
-        headers.emplace_back(key, value);
+
+        headersMap[key] = value;
+        // headers.emplace_back(key, value);
 
       } else {
         key = line.substr(0, firstSpace - 1);
@@ -460,18 +356,11 @@ std::string RequestHTTP1ToHTTP3Headers(const std::string &http1Headers) {
 
         // Remove "Connection" header
         if (key != "Connection")
-          headers.emplace_back(key, value);
+          headersMap[key] = value;
+        // headers.emplace_back(key, value);
       }
     }
   }
-
-  // Construct HTTP/3 headers
-  std::string http3Headers;
-  for (const auto &entry : headers) {
-    http3Headers += entry.first + ": " + entry.second + "\r\n";
-  }
-
-  return http3Headers;
 }
 
 void ParseHTTP3HeadersToMap(
@@ -495,7 +384,9 @@ void ParseHTTP3HeadersToMap(
   }
 }
 
-std::string ResponseHTTP1ToHTTP3Headers(const std::string &http1Headers) {
+void ResponseHTTP1ToHTTP3Headers(
+    const std::string &http1Headers,
+    std::unordered_map<std::string, std::string> &headerMap) {
   std::istringstream stream(http1Headers);
   std::string line;
   std::string key{};
@@ -515,7 +406,8 @@ std::string ResponseHTTP1ToHTTP3Headers(const std::string &http1Headers) {
       if (secondSpace != std::string::npos) {
         key = ":status";
         value = line.substr(firstSpace + 1, secondSpace - firstSpace - 1);
-        headers.emplace_back(key, value);
+        // headers.emplace_back(key, value);
+        headerMap[key] = value;
 
       } else {
         key = line.substr(0, firstSpace - 1);
@@ -523,144 +415,10 @@ std::string ResponseHTTP1ToHTTP3Headers(const std::string &http1Headers) {
 
         // Remove "Connection" header
         if (key != "Connection")
-          headers.emplace_back(key, value);
+          headerMap[key] = value;
+        // headers.emplace_back(key, value);
       }
     }
-  }
-
-  // Construct HTTP/3 headers
-  std::string http3Headers;
-  for (const auto &entry : headers) {
-    http3Headers += entry.first + ": " + entry.second + "\r\n";
-  }
-
-  return http3Headers;
-}
-
-void ParseStreamBufferServer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
-                             std::string &headers, std::string &data) {
-  auto iter = streamBuffer.begin();
-
-  while (iter < streamBuffer.end()) {
-    // Ensure we have enough data for a frame (frameType + frameLength)
-    if (std::distance(iter, streamBuffer.end()) < 3) {
-      std::cout << "Error: Bad frame format (Not enough data)\n";
-      break;
-    }
-
-    // Read the frame type
-    uint64_t frameType = ReadVarint(iter, streamBuffer.end());
-
-    // Read the frame length
-    uint64_t frameLength = ReadVarint(iter, streamBuffer.end());
-
-    // Ensure the payload doesn't exceed the bounds of the buffer
-    if (std::distance(iter, streamBuffer.end()) < frameLength) {
-      std::cout << "Error: Payload exceeds buffer bounds\n";
-      break;
-    }
-
-    // Handle the frame based on the type
-    switch (frameType) {
-    case 0x01: // HEADERS frame
-      std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
-
-      {
-        std::vector<uint8_t> encodedHeaders(iter, iter + frameLength);
-
-        UQPACKHeadersServer(Stream, encodedHeaders);
-
-        // headers = std::string(iter, iter + frameLength);
-      }
-      break;
-
-    case 0x00: // DATA frame
-      std::cout << "[strm][" << Stream << "] Received DATA frame\n";
-      // Data might have been transmitted over multiple frames
-      data += std::string(iter, iter + frameLength);
-      break;
-
-    default: // Unknown frame type
-      std::cout << "[strm][" << Stream << "] Unknown frame type: 0x" << std::hex
-                << frameType << std::dec << "\n";
-      break;
-    }
-
-    iter += frameLength;
-  }
-  // std::cout << headers << data << "\n";
-
-  // Optionally, print any remaining unprocessed data in the buffer
-  if (iter < streamBuffer.end()) {
-    std::cout << "Error: Remaining data for in Buffer from Stream: " << Stream
-              << "-------\n";
-    std::cout.write(reinterpret_cast<const char *>(&(*iter)),
-                    streamBuffer.end() - iter);
-    std::cout << std::endl;
-  }
-}
-
-// Parses stream buffer to retrieve headers payload and data payload
-void ParseStreamBufferClient(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
-                             std::string &data) {
-  auto iter = streamBuffer.begin();
-
-  while (iter < streamBuffer.end()) {
-    // Ensure we have enough data for a frame (frameType + frameLength)
-    if (std::distance(iter, streamBuffer.end()) < 3) {
-      std::cout << "Error: Bad frame format (Not enough data)\n";
-      break;
-    }
-
-    // Read the frame type
-    uint64_t frameType = ReadVarint(iter, streamBuffer.end());
-
-    // Read the frame length
-    uint64_t frameLength = ReadVarint(iter, streamBuffer.end());
-
-    // Ensure the payload doesn't exceed the bounds of the buffer
-    if (std::distance(iter, streamBuffer.end()) < frameLength) {
-      std::cout << "Error: Payload exceeds buffer bounds\n";
-      break;
-    }
-
-    // Handle the frame based on the type
-    switch (frameType) {
-    case 0x01: // HEADERS frame
-      std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
-
-      {
-        std::vector<uint8_t> encodedHeaders(iter, iter + frameLength);
-
-        UQPACKHeadersClient(Stream, encodedHeaders);
-
-        // headers = std::string(iter, iter + frameLength);
-      }
-      break;
-
-    case 0x00: // DATA frame
-      std::cout << "[strm][" << Stream << "] Received DATA frame\n";
-      // Data might have been transmitted over multiple frames
-      data += std::string(iter, iter + frameLength);
-      break;
-
-    default: // Unknown frame type
-      std::cout << "[strm][" << Stream << "] Unknown frame type: 0x" << std::hex
-                << frameType << std::dec << "\n";
-      break;
-    }
-
-    iter += frameLength;
-  }
-  // std::cout << headers << data << "\n";
-
-  // Optionally, print any remaining unprocessed data in the buffer
-  if (iter < streamBuffer.end()) {
-    std::cout << "Error: Remaining data for in Buffer from Stream: " << Stream
-              << "-------\n";
-    std::cout.write(reinterpret_cast<const char *>(&(*iter)),
-                    streamBuffer.end() - iter);
-    std::cout << std::endl;
   }
 }
 
@@ -990,9 +748,7 @@ int SendFramesToNewConn(_In_ HQUIC Connection, HQUIC Stream,
   return frames.size();
 }
 
-//
 // Helper function to load a client configuration.
-//
 BOOLEAN
 ClientLoadConfiguration(BOOLEAN Unsecure) {
   QUIC_SETTINGS Settings = {0};

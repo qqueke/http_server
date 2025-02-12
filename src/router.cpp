@@ -67,14 +67,10 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
   case Protocol::HTTP3:
 
   {
-    std::string http3Headers = ResponseHTTP1ToHTTP3Headers(headers);
-
-    // Transform HTTP1 headers into HTTP3
-    // Compress headers with QPACK
-    std::vector<uint8_t> encodedHeaders;
-
     std::unordered_map<std::string, std::string> headersMap;
-    ParseHTTP3HeadersToMap(http3Headers, headersMap);
+    ResponseHTTP1ToHTTP3Headers(headers, headersMap);
+
+    std::vector<uint8_t> encodedHeaders;
 
     QPACKHeaders(headersMap, encodedHeaders);
 
@@ -113,14 +109,10 @@ void Router::SendResponse(std::string &headers, std::string &body,
   case Protocol::HTTP3:
 
   {
-    std::string http3Headers = ResponseHTTP1ToHTTP3Headers(headers);
-
-    // Transform HTTP1 headers into HTTP3
-    // Compress headers with QPACK
-    std::vector<uint8_t> encodedHeaders;
-
     std::unordered_map<std::string, std::string> headersMap;
-    ParseHTTP3HeadersToMap(http3Headers, headersMap);
+    ResponseHTTP1ToHTTP3Headers(headers, headersMap);
+
+    std::vector<uint8_t> encodedHeaders;
 
     QPACKHeaders(headersMap, encodedHeaders);
 
