@@ -1,0 +1,11 @@
+# Ignore executables in the root directory
+/*
+
+# Ignore everything in build/
+build/
+
+# Ignore everything in .cache/
+.cache/
+
+# Ignore everything in logs/
+logs/
