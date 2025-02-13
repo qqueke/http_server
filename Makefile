@@ -39,6 +39,7 @@ CLIENT_SRC = $(SRCDIR)/client.cpp
 C_CALLBACKS_SRC = $(SRCDIR)/cCallbacks.cpp
 
 # Common source files
+COMMON_SRC = $(SRCDIR)/common.cpp
 UTILS_SRC = $(SRCDIR)/utils.cpp
 
 # Object files for server
@@ -54,17 +55,14 @@ CLIENT_OBJ = $(BUILDDIR)/client.o
 C_CALLBACKS_OBJ = $(BUILDDIR)/cCallbacks.o
 
 # Common object files
+COMMON_OBJ = $(BUILDDIR)/common.o
 UTILS_OBJ = $(BUILDDIR)/utils.o
 
 # Targets
-all: server client 
+all: server 
 
 # Build the main executable
-server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(S_CALLBACKS_OBJ) 
-	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
-
-# Build the client executable
-client: $(CLIENT_OBJ) $(UTILS_OBJ) $(C_CALLBACKS_OBJ) $(LOG_OBJ) 
+server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(S_CALLBACKS_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(COMMON_OBJ) $(CLIENT_OBJ) $(C_CALLBACKS_OBJ)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Rules for building object files
@@ -90,6 +88,9 @@ $(BUILDDIR)/sCallbacks.o: $(S_CALLBACKS_SRC)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BUILDDIR)/cCallbacks.o: $(C_CALLBACKS_SRC) 
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(BUILDDIR)/common.o: $(COMMON_SRC) $(INCDIR)/common.hpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BUILDDIR)/utils.o: $(UTILS_SRC) $(INCDIR)/utils.hpp

@@ -19,23 +19,28 @@
 #include <string>
 
 #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
+#include "common.hpp"
 #include "router.hpp"
 
-class HTTPServer {
+class HTTPServer : public HTTPBase {
 private:
+  static HTTPServer *instance;
+  static std::mutex instanceMutex;
+
+  std::mutex strerrorMutex;
+
   std::atomic<int> activeConnections;
+
+  // TCP stuff
   int serverSock;
   sockaddr_in serverAddr;
   struct timeval timeout;
-  std::mutex strerrorMutex;
   SSL_CTX *ctx;
 
+  // QUIC stuff
   QUIC_STATUS Status;
   HQUIC Listener;
   QUIC_ADDR Address;
-
-  static HTTPServer *instance;
-  static std::mutex instanceMutex;
 
   std::string threadSafeStrerror(int errnum);
 
@@ -48,13 +53,21 @@ private:
   void RunHTTP3();
 
 public:
+  // std::unordered_map<HQUIC, std::vector<uint8_t>> BufferMap;
+  // std::unordered_map<HQUIC, std::unordered_map<std::string, std::string>>
+  //     DecodedHeadersMap;
+
+  // std::unordered_map<HQUIC, std::vector<uint8_t>> BufferMap;
+  // std::unordered_map<HQUIC, std::unordered_map<std::string, std::string>>
+  //     DecodedHeadersMap;
+
   static void Initialize(int argc, char *argv[]);
   static HTTPServer *GetInstance();
 
-  std::unordered_map<HQUIC, std::vector<uint8_t>> BufferMap;
+  // std::unordered_map<HQUIC, std::vector<uint8_t>> BufferMap;
   std::unique_ptr<Router> ServerRouter;
-  std::unordered_map<HQUIC, std::unordered_map<std::string, std::string>>
-      DecodedHeadersMap;
+  // std::unordered_map<HQUIC, std::unordered_map<std::string, std::string>>
+  //     DecodedHeadersMap;
 
   HTTPServer(const HTTPServer &) = delete;
   HTTPServer(HTTPServer &&) = delete;
@@ -64,12 +77,36 @@ public:
 
   static int dhiProcessHeader(void *hblock_ctx, struct lsxpack_header *xhdr);
 
-  static void UQPACKHeadersServer(HQUIC stream,
-                                  std::vector<uint8_t> &encodedHeaders);
+  // The server's callback for stream events from MsQuic.
+  _IRQL_requires_max_(DISPATCH_LEVEL)
+      _Function_class_(QUIC_STREAM_CALLBACK) QUIC_STATUS QUIC_API
+      static StreamCallback(_In_ HQUIC Stream, _In_opt_ void *Context,
+                            _Inout_ QUIC_STREAM_EVENT *Event);
 
-  static void ParseStreamBuffer(HQUIC Stream,
-                                std::vector<uint8_t> &streamBuffer,
-                                std::string &data);
+  // The server's callback for connection events from MsQuic.
+  _IRQL_requires_max_(DISPATCH_LEVEL)
+      _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API
+      static ConnectionCallback(_In_ HQUIC Connection, _In_opt_ void *Context,
+                                _Inout_ QUIC_CONNECTION_EVENT *Event);
+
+  // The server's callback for listener events from MsQuic.
+  // Using context to send HTTPServer instance
+  _IRQL_requires_max_(PASSIVE_LEVEL)
+      _Function_class_(QUIC_LISTENER_CALLBACK) QUIC_STATUS QUIC_API
+      static ListenerCallback(_In_ HQUIC Listener, _In_opt_ void *Context,
+                              _Inout_ QUIC_LISTENER_EVENT *Event);
+
+  /*------------PURE VIRTUAL FUNCTIONS -----------------------*/
+  unsigned char LoadQUICConfiguration(
+      _In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[]) override;
+
+  void DecQPACKHeaders(HQUIC stream,
+                       std::vector<uint8_t> &encodedHeaders) override;
+
+  void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
+                         std::string &data) override;
+
+  /*-------------------------------------------*/
 
   void staticFileHandler(SSL *clientSSL, const std::string &filePath,
                          bool acceptEncoding);

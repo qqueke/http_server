@@ -1,24 +1,23 @@
-#include "sCallbacks.hpp"
-
 #include <cstdint>
-#include <format>
 #include <iostream>
 #include <sstream>
 #include <string>
 
+#include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 #include "log.hpp"
 #include "server.hpp"
 #include "utils.hpp"
 
-// std::unordered_map<std::string, std::string> decodedHeaders;
+#define QUIC_DEBUG
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
     _Function_class_(QUIC_STREAM_CALLBACK) QUIC_STATUS QUIC_API
-    ServerStreamCallback(_In_ HQUIC Stream, _In_opt_ void *Context,
-                         _Inout_ QUIC_STREAM_EVENT *Event) {
+    HTTPServer::StreamCallback(_In_ HQUIC Stream, _In_opt_ void *Context,
+                               _Inout_ QUIC_STREAM_EVENT *Event) {
   // UNREFERENCED_PARAMETER(Context);
   HTTPServer *server = (HTTPServer *)Context;
 
+  // HTTPServer *server = HTTPServer::GetInstance();
   switch (Event->Type) {
   case QUIC_STREAM_EVENT_SEND_COMPLETE:
 
@@ -32,14 +31,24 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     break;
   case QUIC_STREAM_EVENT_RECEIVE:
 
-    // If no previous allocated Buffer let's allocate one for this Stream
-    if (server->BufferMap.find(Stream) == server->BufferMap.end()) {
-      server->BufferMap[Stream].reserve(256);
-    }
 #ifdef QUIC_DEBUG
 
     printf("[strm][%p] Data received\n", Stream);
 #endif
+
+    // if (!server) {
+    //   std::cout << "We have a problem." << std::endl;
+    // }
+    // std::cout << "Server address: " << server << std::endl;
+    // std::cout << "Stream: " << Stream << std::endl;
+    // std::cout << "BufferMap Address: " << &server->BufferMap << std::endl;
+
+    // If no previous allocated Buffer let's allocate one for this Stream
+    if (server->BufferMap.find(Stream) == server->BufferMap.end()) {
+      server->BufferMap[Stream].reserve(256);
+    }
+
+    printf("[strm][%p] Data received\n", Stream);
     // Data was received from the peer on Stream.
 
     for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++) {
@@ -76,7 +85,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 
     std::string data;
 
-    HTTPServer::ParseStreamBuffer(Stream, server->BufferMap[Stream], data);
+    server->ParseStreamBuffer(Stream, server->BufferMap[Stream], data);
 
     // std::unordered_map<std::string, std::string> headersMap;
     std::cout << "HTTP3 Request:\n";
@@ -109,6 +118,10 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
               << " s";
 
     LogRequest(logStream.str());
+
+    server->DecodedHeadersMap.erase(Stream);
+    server->BufferMap.erase(Stream);
+
   }
 
   break;
@@ -139,8 +152,9 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 // The server's callback for connection events from MsQuic.
 _IRQL_requires_max_(DISPATCH_LEVEL)
     _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API
-    ServerConnectionCallback(_In_ HQUIC Connection, _In_opt_ void *Context,
-                             _Inout_ QUIC_CONNECTION_EVENT *Event) {
+    HTTPServer::ConnectionCallback(_In_ HQUIC Connection,
+                                   _In_opt_ void *Context,
+                                   _Inout_ QUIC_CONNECTION_EVENT *Event) {
   UNREFERENCED_PARAMETER(Context);
 
   // HTTPServer *server = (HTTPServer *)Context;
@@ -202,7 +216,9 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     printf("[strm][%p] Peer started\n", Event->PEER_STREAM_STARTED.Stream);
 #endif
     MsQuic->SetCallbackHandler(Event->PEER_STREAM_STARTED.Stream,
-                               (void *)ServerStreamCallback, Context);
+                               (void *)HTTPServer::StreamCallback, Context);
+
+    printf("[strm][%p] Peer started\n", Event->PEER_STREAM_STARTED.Stream);
     break;
   case QUIC_CONNECTION_EVENT_RESUMED:
 
@@ -223,8 +239,8 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 // Using context to send HTTPServer instance
 _IRQL_requires_max_(PASSIVE_LEVEL)
     _Function_class_(QUIC_LISTENER_CALLBACK) QUIC_STATUS QUIC_API
-    ServerListenerCallback(_In_ HQUIC Listener, _In_opt_ void *Context,
-                           _Inout_ QUIC_LISTENER_EVENT *Event) {
+    HTTPServer::ListenerCallback(_In_ HQUIC Listener, _In_opt_ void *Context,
+                                 _Inout_ QUIC_LISTENER_EVENT *Event) {
   UNREFERENCED_PARAMETER(Listener);
   UNREFERENCED_PARAMETER(Context);
   QUIC_STATUS Status = QUIC_STATUS_NOT_SUPPORTED;
@@ -236,7 +252,7 @@ _IRQL_requires_max_(PASSIVE_LEVEL)
     // app MUST set the callback handler before returning.
 
     MsQuic->SetCallbackHandler(Event->NEW_CONNECTION.Connection,
-                               (void *)ServerConnectionCallback, Context);
+                               (void *)HTTPServer::ConnectionCallback, Context);
     Status = MsQuic->ConnectionSetConfiguration(
         Event->NEW_CONNECTION.Connection, Configuration);
     break;

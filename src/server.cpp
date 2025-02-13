@@ -23,9 +23,9 @@
 #include <unordered_set>
 
 #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
+#include "common.hpp"
 #include "log.hpp"
 #include "router.hpp"
-#include "sCallbacks.hpp"
 #include "utils.hpp"
 
 static std::unordered_map<std::string, std::string> responseCache;
@@ -39,10 +39,6 @@ std::mutex HTTPServer::instanceMutex;
 
 int HTTPServer::dhiProcessHeader(void *hblock_ctx,
                                  struct lsxpack_header *xhdr) {
-  // printf("dhi_process_header: xhdr=%lu\n", (size_t)xhdr);
-  // printf("%.*s: %.*s\n", xhdr->name_len, (xhdr->buf + xhdr->name_offset),
-  //        xhdr->val_len, (xhdr->buf + xhdr->val_offset));
-
   std::string headerKey(xhdr->buf + xhdr->name_offset, xhdr->name_len);
   std::string headerValue(xhdr->buf + xhdr->val_offset, xhdr->val_len);
 
@@ -55,13 +51,103 @@ int HTTPServer::dhiProcessHeader(void *hblock_ctx,
   return 0;
 }
 
-void HTTPServer::UQPACKHeadersServer(HQUIC stream,
-                                     std::vector<uint8_t> &encodedHeaders) {
+unsigned char HTTPServer::LoadQUICConfiguration(
+    _In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[]) {
+  QUIC_SETTINGS Settings = {0};
+
+  // Configures the server's idle timeout.
+  Settings.IdleTimeoutMs = IdleTimeoutMs;
+  Settings.IsSet.IdleTimeoutMs = TRUE;
+
+  // Configures the server's resumption level to allow for resumption and
+  // 0-RTT.
+  Settings.ServerResumptionLevel = QUIC_SERVER_RESUME_AND_ZERORTT;
+  Settings.IsSet.ServerResumptionLevel = TRUE;
+
+  // Configures the server's settings to allow for the peer to open a single
+  // bidirectional stream. By default connections are not configured to allow
+  // any streams from the peer.
+  Settings.PeerBidiStreamCount = 2;
+  Settings.IsSet.PeerBidiStreamCount = TRUE;
+  Settings.PeerUnidiStreamCount = 2;
+  Settings.IsSet.PeerUnidiStreamCount = TRUE;
+
+  // Settings.StreamMultiReceiveEnabled = TRUE;
+
+  QUIC_CREDENTIAL_CONFIG_HELPER Config;
+  memset(&Config, 0, sizeof(Config));
+  Config.CredConfig.Flags = QUIC_CREDENTIAL_FLAG_NONE;
+
+  const char *Cert;
+  const char *KeyFile;
+  if ((Cert = GetValue(argc, argv, "cert_hash")) != NULL) {
+    // Load the server's certificate from the default certificate store,
+    // using the provided certificate hash.
+
+    uint32_t CertHashLen = DecodeHexBuffer(
+        Cert, sizeof(Config.CertHash.ShaHash), Config.CertHash.ShaHash);
+    if (CertHashLen != sizeof(Config.CertHash.ShaHash)) {
+      return FALSE;
+    }
+    Config.CredConfig.Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_HASH;
+    Config.CredConfig.CertificateHash = &Config.CertHash;
+
+  } else if ((Cert = GetValue(argc, argv, "cert_file")) != NULL &&
+             (KeyFile = GetValue(argc, argv, "key_file")) != NULL) {
+    // Loads the server's certificate from the file.
+    const char *Password = GetValue(argc, argv, "password");
+    if (Password != NULL) {
+      Config.CertFileProtected.CertificateFile = (char *)Cert;
+      Config.CertFileProtected.PrivateKeyFile = (char *)KeyFile;
+      Config.CertFileProtected.PrivateKeyPassword = (char *)Password;
+      Config.CredConfig.Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_FILE_PROTECTED;
+      Config.CredConfig.CertificateFileProtected = &Config.CertFileProtected;
+    } else {
+      Config.CertFile.CertificateFile = (char *)Cert;
+      Config.CertFile.PrivateKeyFile = (char *)KeyFile;
+      Config.CredConfig.Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_FILE;
+      Config.CredConfig.CertificateFile = &Config.CertFile;
+    }
+
+  } else {
+    printf(
+        "Must specify ['-cert_hash'] or ['cert_file' and 'key_file' (and "
+        "optionally 'password')]!\n");
+    return FALSE;
+  }
+
+  // Allocate/initialize the configuration object, with the configured ALPN
+  // and settings.
+  QUIC_STATUS Status = QUIC_STATUS_SUCCESS;
+  if (QUIC_FAILED(Status = MsQuic->ConfigurationOpen(
+                      Registration, &Alpn, 1, &Settings, sizeof(Settings), NULL,
+                      &Configuration))) {
+    std::ostringstream oss;
+    oss << "ConfigurationOpen failed, 0x" << std::hex << Status;
+    LogError(oss.str());
+
+    return FALSE;
+  }
+
+  // Loads the TLS credential part of the configuration.
+  if (QUIC_FAILED(Status = MsQuic->ConfigurationLoadCredential(
+                      Configuration, &Config.CredConfig))) {
+    std::ostringstream oss;
+    oss << "ConfigurationLoadCredential failed, 0x" << std::hex << Status;
+    LogError(oss.str());
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+void HTTPServer::DecQPACKHeaders(HQUIC stream,
+                                 std::vector<uint8_t> &encodedHeaders) {
   std::vector<struct lsqpack_dec> dec(1);
 
   struct lsqpack_dec_hset_if hset_if;
-  hset_if.dhi_unblocked = dhiUnblocked;
-  hset_if.dhi_prepare_decode = dhiPrepareDecode;
+  hset_if.dhi_unblocked = HTTPBase::dhiUnblocked;
+  hset_if.dhi_prepare_decode = HTTPBase::dhiPrepareDecode;
   hset_if.dhi_process_header = dhiProcessHeader;
 
   enum lsqpack_dec_opts dec_opts {};
@@ -110,28 +196,28 @@ void HTTPServer::ParseStreamBuffer(HQUIC Stream,
 
     // Handle the frame based on the type
     switch (frameType) {
-    case 0x01: // HEADERS frame
-      std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
+      case 0x01:  // HEADERS frame
+        std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
 
-      {
-        std::vector<uint8_t> encodedHeaders(iter, iter + frameLength);
+        {
+          std::vector<uint8_t> encodedHeaders(iter, iter + frameLength);
 
-        UQPACKHeadersServer(Stream, encodedHeaders);
+          DecQPACKHeaders(Stream, encodedHeaders);
 
-        // headers = std::string(iter, iter + frameLength);
-      }
-      break;
+          // headers = std::string(iter, iter + frameLength);
+        }
+        break;
 
-    case 0x00: // DATA frame
-      std::cout << "[strm][" << Stream << "] Received DATA frame\n";
-      // Data might have been transmitted over multiple frames
-      data += std::string(iter, iter + frameLength);
-      break;
+      case 0x00:  // DATA frame
+        std::cout << "[strm][" << Stream << "] Received DATA frame\n";
+        // Data might have been transmitted over multiple frames
+        data += std::string(iter, iter + frameLength);
+        break;
 
-    default: // Unknown frame type
-      std::cout << "[strm][" << Stream << "] Unknown frame type: 0x" << std::hex
-                << frameType << std::dec << "\n";
-      break;
+      default:  // Unknown frame type
+        std::cout << "[strm][" << Stream << "] Unknown frame type: 0x"
+                  << std::hex << frameType << std::dec << "\n";
+        break;
     }
 
     iter += frameLength;
@@ -322,7 +408,7 @@ bool compressData(const std::string &inputFile, const std::string &outputFile,
   zStream.avail_out = compressedSize;
 
   int windowBits =
-      (type == GZIP) ? 15 + 16 : 15; // 15 for Deflate, +16 for Gzip
+      (type == GZIP) ? 15 + 16 : 15;  // 15 for Deflate, +16 for Gzip
 
   if (deflateInit2(&zStream, Z_BEST_COMPRESSION, Z_DEFLATED, windowBits, 8,
                    Z_DEFAULT_STRATEGY) != Z_OK) {
@@ -696,8 +782,12 @@ void HTTPServer::Run() {
 void HTTPServer::PrintFromServer() { std::cout << "Hello from server\n"; }
 
 HTTPServer::HTTPServer(int argc, char *argv[])
-    : serverSock(socket(AF_INET, SOCK_STREAM, 0)), serverAddr(), timeout(),
-      Status(0), activeConnections(0), Listener(nullptr) {
+    : serverSock(socket(AF_INET, SOCK_STREAM, 0)),
+      serverAddr(),
+      timeout(),
+      Status(0),
+      activeConnections(0),
+      Listener(nullptr) {
   //------------------------ HTTP1 TCP SETUP----------------------
 
   SSL_load_error_strings();
@@ -756,7 +846,7 @@ HTTPServer::HTTPServer(int argc, char *argv[])
   QuicAddrSetPort(&Address, UDP_PORT);
 
   // Load the server configuration based on the command line.
-  if (!ServerLoadConfiguration(argc, argv)) {
+  if (!LoadQUICConfiguration(argc, argv)) {
     LogError("Server failed to load configuration.");
     if (Listener != NULL) {
       MsQuic->ListenerClose(Listener);
@@ -765,8 +855,8 @@ HTTPServer::HTTPServer(int argc, char *argv[])
   }
 
   // Create/allocate a new listener object.
-  if (QUIC_FAILED(Status = MsQuic->ListenerOpen(
-                      Registration, ServerListenerCallback, this, &Listener))) {
+  if (QUIC_FAILED(Status = MsQuic->ListenerOpen(Registration, ListenerCallback,
+                                                this, &Listener))) {
     LogError(std::format("ListenerStart failed, 0x{:x}!", Status));
     LogError("Server failed to load configuration.");
     if (Listener != NULL) {
@@ -778,18 +868,18 @@ HTTPServer::HTTPServer(int argc, char *argv[])
 };
 
 void HTTPServer::Initialize(int argc, char *argv[]) {
-  std::lock_guard<std::mutex> lock(instanceMutex); // Ensure thread-safety
+  std::lock_guard<std::mutex> lock(instanceMutex);  // Ensure thread-safety
   if (!instance) {
     instance = new HTTPServer(argc, argv);
   }
 }
 
 HTTPServer *HTTPServer::GetInstance() {
-  std::lock_guard<std::mutex> lock(instanceMutex); // Ensure thread-safety
+  std::lock_guard<std::mutex> lock(instanceMutex);  // Ensure thread-safety
   if (!instance) {
     return nullptr;
   }
-  return instance; // Return raw pointer to the instance
+  return instance;  // Return raw pointer to the instance
 }
 
 // if (setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO, &timeout,

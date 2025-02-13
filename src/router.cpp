@@ -37,6 +37,7 @@ STATUS_CODE Router::RouteRequest(const std::string &method,
                                  const std::string &path,
                                  const std::string &data, Protocol protocol,
                                  void *context) {
+  // std::cout << "Routing request..." << std::endl;
   std::string cacheKey = method + " " + path;
 
   std::pair<std::string, std::string> routeKey = std::make_pair(method, path);
@@ -68,17 +69,17 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
 
   {
     std::unordered_map<std::string, std::string> headersMap;
-    ResponseHTTP1ToHTTP3Headers(headers, headersMap);
+    HTTPBase::ResponseHTTP1ToHTTP3Headers(headers, headersMap);
 
     // Transform HTTP1 headers into HTTP3
     // Compress headers with QPACK
     std::vector<uint8_t> encodedHeaders;
 
-    QPACKHeaders(headersMap, encodedHeaders);
+    HTTPBase::QPACKHeaders(headersMap, encodedHeaders);
 
     std::vector<std::vector<uint8_t>> frames;
 
-    frames.emplace_back(BuildHeaderFrame(encodedHeaders));
+    frames.emplace_back(HTTPBase::BuildHeaderFrame(encodedHeaders));
 
     HQUIC Stream = (HQUIC)context;
 
@@ -112,15 +113,15 @@ void Router::SendResponse(std::string &headers, std::string &body,
 
   {
     std::unordered_map<std::string, std::string> headersMap;
-    ResponseHTTP1ToHTTP3Headers(headers, headersMap);
+    HTTPBase::ResponseHTTP1ToHTTP3Headers(headers, headersMap);
 
     std::vector<uint8_t> encodedHeaders;
 
-    QPACKHeaders(headersMap, encodedHeaders);
+    HTTPBase::QPACKHeaders(headersMap, encodedHeaders);
 
     std::vector<std::vector<uint8_t>> frames;
 
-    frames.emplace_back(BuildHeaderFrame(encodedHeaders));
+    frames.emplace_back(HTTPBase::BuildHeaderFrame(encodedHeaders));
 
     HQUIC Stream = (HQUIC)context;
 

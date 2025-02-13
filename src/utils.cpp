@@ -649,8 +649,6 @@ int SendFramesToStream(HQUIC Stream,
   QUIC_BUFFER *SendBuffer;
 
   for (auto &frame : frames) {
-    // const std::vector<uint8_t>& frame = frames[i];
-
     SendBufferRaw = (uint8_t *)malloc(sizeof(QUIC_BUFFER) + frame.size());
 
     if (SendBufferRaw == NULL) {

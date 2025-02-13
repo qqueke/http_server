@@ -58,6 +58,7 @@ typedef struct st_hblock_ctx {
   struct lsxpack_header xhdr;
   size_t buf_off;
   char buf[0x1000];
+  void *instance_ctx;
   HQUIC stream;
 } hblock_ctx_t;
 

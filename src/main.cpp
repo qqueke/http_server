@@ -6,6 +6,7 @@
 #include <ostream>
 #include <thread>
 
+#include "client.hpp"
 #include "log.hpp"
 #include "routes.cpp"
 #include "server.hpp"
@@ -22,7 +23,6 @@ extern std::atomic<bool> shouldShutdown;
 //   std::cout << "Deallocating " << size << "bytes\n";
 //   free(memory);
 // }
-// void RunClient(int argc, char *argv[]);
 
 static void signalHandler(int signal) {
   std::cout << "\nReceived signal " << signal << ". Shutting down server...\n";
@@ -71,11 +71,14 @@ int main(int argc, char *argv[]) {
 
   if (GetFlag(argc, argv, "help") || GetFlag(argc, argv, "?")) {
     PrintUsage();
-  }
-  // else if (GetFlag(argc, argv, "client")) {
-  //   RunClient(argc, argv);
-  // }
-  else if (GetFlag(argc, argv, "server")) {
+  } else if (GetFlag(argc, argv, "client")) {
+    std::unique_ptr<HTTPClient> client =
+        std::make_unique<HTTPClient>(argc, argv);
+
+    client->Run(argc, argv);
+
+    getchar();
+  } else if (GetFlag(argc, argv, "server")) {
     // RunServer(argc, argv);
     signal(SIGINT, signalHandler);  // Ctrl+C
     signal(SIGTERM, signalHandler); // Termination signal
