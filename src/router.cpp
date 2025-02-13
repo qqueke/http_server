@@ -75,7 +75,7 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
     // Compress headers with QPACK
     std::vector<uint8_t> encodedHeaders;
 
-    HTTPBase::QPACKHeaders(headersMap, encodedHeaders);
+    HTTPBase::EncQPACKHeaders(headersMap, encodedHeaders);
 
     std::vector<std::vector<uint8_t>> frames;
 
@@ -117,7 +117,7 @@ void Router::SendResponse(std::string &headers, std::string &body,
 
     std::vector<uint8_t> encodedHeaders;
 
-    HTTPBase::QPACKHeaders(headersMap, encodedHeaders);
+    HTTPBase::EncQPACKHeaders(headersMap, encodedHeaders);
 
     std::vector<std::vector<uint8_t>> frames;
 

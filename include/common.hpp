@@ -77,8 +77,8 @@ public:
   static void EncodeVarint(std::vector<uint8_t> &buffer, uint64_t value);
 
   static void
-  QPACKHeaders(std::unordered_map<std::string, std::string> &headersMap,
-               std::vector<uint8_t> &encodedHeaders);
+  EncQPACKHeaders(std::unordered_map<std::string, std::string> &headersMap,
+                  std::vector<uint8_t> &encodedHeaders);
 };
 
 #endif // HTTPBASE_HPP

@@ -325,7 +325,7 @@ uint64_t HTTPBase::ReadVarint(std::vector<uint8_t>::iterator &iter,
   return value;
 }
 
-void HTTPBase::QPACKHeaders(
+void HTTPBase::EncQPACKHeaders(
     std::unordered_map<std::string, std::string> &headersMap,
     std::vector<uint8_t> &encodedHeaders) {
   // Prepare encoding context for QPACK (Header encoding for QUIC)
@@ -333,7 +333,7 @@ void HTTPBase::QPACKHeaders(
 
   size_t stdcBufSize = 1024;
 
-  std::vector<unsigned char> sdtcBuf(1);
+  std::vector<unsigned char> sdtcBuf(1024);
 
   lsqpack_enc_opts encOpts{};
 
@@ -397,8 +397,9 @@ void HTTPBase::QPACKHeaders(
   totalHeaderSize = endHeaderSize;
   for (auto &headerInfo : encodedHeadersInfo) {
     unsigned char *headerPointer = headerInfo.first.data();
-    size_t headerSize = headerInfo.second;
-    memcpy(encodedHeaders.data() + totalHeaderSize, headerPointer, headerSize);
-    totalHeaderSize += headerSize;
+    size_t currHeaderSize = headerInfo.second;
+    memcpy(encodedHeaders.data() + totalHeaderSize, headerPointer,
+           currHeaderSize);
+    totalHeaderSize += currHeaderSize;
   }
 }
