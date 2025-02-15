@@ -91,6 +91,32 @@ To run the client, you need to specify the server's IP address and port, and ind
 ./client -client -target:<ipAddr>:<port> -unsecure
 ```
 
+You can also specify a file containing multiple HTTP requests to be sent by the client. Use the --requests argument to specify the path to the requests file:
+
+```bash
+./client -client -target:<ipAddr>:<port> -unsecure --requests:requests.txt
+```
+
+Where `requests.txt` is a file formatted as follows:
+
+```text
+GET /hello HTTP/1.1
+Host: qqueke
+User-Agent: custom-client/1.0
+Accept: */*
+
+Body: It's me Mario
+
+GET /goodbye HTTP/1.1
+Host: qqueke
+User-Agent: custom-client/1.0
+Accept: */*
+
+Body: Goodbye, World!
+```
+
+**Note**: Client is used to perform HTTP3 requests for now. It will support HTTP1 and HTTP2 requests in the future.
+
 ## Arguments Summary
 
 ### Server Arguments:
@@ -104,3 +130,4 @@ To run the client, you need to specify the server's IP address and port, and ind
 - `-client`: Run the program as a client.
 - `-target:<ipAddr>:<port>`: Target server IP address and port.
 - `-unsecure`: Use an unencrypted connection.
+- `requests:<path_to_requests_file>`: Path to a file containing HTTP requests. The file should contain a list of HTTP requests with optional Body: sections, as shown above.

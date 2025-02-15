@@ -10,9 +10,73 @@
 #include "log.hpp"
 #include "utils.hpp"
 
+void HTTPClient::ParseRequestsFromFile(const std::string &filePath) {
+  std::ifstream file(filePath);
+  std::string line;
+  std::string headers{};
+  std::string body{};
+
+  if (!file.is_open()) {
+    std::cerr << "Failed to open file: " << filePath << std::endl;
+    return;
+  }
+
+  while (std::getline(file, line)) {
+    // Skip empty lines
+    if (line.empty())
+      continue;
+
+    // If the line starts with "Body:", save the body and store the request
+    if (line.starts_with("Body:")) {
+      body = line.substr(5);
+
+      if (body.empty()) {
+        requests.emplace_back(headers, body);
+        headers.clear();
+        continue;
+      }
+
+      while (std::getline(file, line)) {
+        if (line.empty())
+          break;
+
+        body += "\r\n" + line;
+      }
+
+      if (body[0] == ' ') {
+        body.erase(0, 1);
+      }
+
+      requests.emplace_back(headers, body);
+      headers.clear();
+      body.clear();
+
+    } else {
+      headers += line + "\r\n";
+    }
+  }
+
+  if (!headers.empty() || !body.empty()) {
+    requests.emplace_back(headers, body);
+  }
+}
+
 HTTPClient::HTTPClient(int argc, char *argv[]) {
   if (!LoadQUICConfiguration(argc, argv)) {
     exit(EXIT_FAILURE);
+  }
+
+  // Load requests
+  std::string requestsFile;
+
+  if ((requestsFile = GetValue2(argc, argv, "requests")) != "") {
+    ParseRequestsFromFile(requestsFile);
+  }
+
+  for (const auto &request : requests) {
+    std::cout << "Headers:\n" << request.first << "\n";
+    std::cout << "Body:\n" << request.second << "\n";
+    std::cout << "-----------------------------\n";
   }
 }
 

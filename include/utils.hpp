@@ -88,6 +88,8 @@ _Ret_maybenull_ _Null_terminated_ const char *
 GetValue(_In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[],
          _In_z_ const char *name);
 
+std::string GetValue2(int argc, char *argv[], const std::string &name);
+
 // Helper function to convert a hex character to its decimal value.
 uint8_t DecodeHexChar(_In_ char c);
 

@@ -73,7 +73,7 @@ UTILS_OBJ = $(BUILDDIR)/utils.o
 # Targets
 # all: dependencies server 
 
-all: server dependencies 
+all: dependencies server  
 
 .PHONY: dependencies clean
 dependencies:

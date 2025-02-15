@@ -7,10 +7,15 @@
 #include "utils.hpp"
 
 class HTTPClient : public HTTPBase {
- private:
- public:
+private:
+public:
   HTTPClient(int argc, char *argv[]);
   ~HTTPClient();
+
+  // Headers, Body
+  std::vector<std::pair<std::string, std::string>> requests;
+
+  void ParseRequestsFromFile(const std::string &filePath);
 
   _IRQL_requires_max_(DISPATCH_LEVEL)
       _Function_class_(QUIC_STREAM_CALLBACK) QUIC_STATUS QUIC_API

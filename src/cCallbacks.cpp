@@ -12,72 +12,78 @@
 #include "utils.hpp"
 
 void ClientSend(_In_ HQUIC Connection, void *Context) {
+  HTTPClient *client = (HTTPClient *)Context;
   QUIC_STATUS Status;
 
-  HQUIC Stream{};
-  // Create/allocate a new bidirectional stream. The stream is just
-  // allocated and no QUIC stream identifier is assigned until it's started.
-  // std::cout << "Stream: " << i++ << "\n";
-  if (QUIC_FAILED(Status = MsQuic->StreamOpen(
-                      Connection, QUIC_STREAM_OPEN_FLAG_NONE,
-                      HTTPClient::StreamCallback, Context, &Stream))) {
-    printf("StreamOpen failed, 0x%x!\n", Status);
-    if (QUIC_FAILED(Status)) {
-      MsQuic->ConnectionShutdown(Connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE,
-                                 0);
-    }
-  }
+  int i = 0;
+  std::vector<HQUIC> Streams(client->requests.size());
 
-  printf("[strm][%p] Starting Stream...\n", Stream);
+  for (auto &[headers, body] : client->requests) {
+    HQUIC &Stream = Streams[i++];
+    // std::string headers = "GET /hello HTTP/1.1\r\n"
+    //                       "Host: qqueke\r\n"
+    //                       "User-Agent: custom-client/1.0\r\n"
+    //                       "Accept: */*\r\n";
+    //
+    // std::string body = "It's me Mario";
 
-  // Starts the bidirectional stream. By default, the peer is not notified of
-  // the stream being started until data is sent on the stream.
-  //  QUIC_STREAM_START_FLAG_NONE
-  // QUIC_STREAM_START_FLAG_IMMEDIATE
-  if (QUIC_FAILED(
-          Status = MsQuic->StreamStart(Stream, QUIC_STREAM_START_FLAG_NONE))) {
-    printf("StreamStart failed, 0x%x!\n", Status);
-
-    std::cout << "Shutting down Stream..." << std::endl;
-    MsQuic->StreamClose(Stream);
-    if (QUIC_FAILED(Status)) {
-      MsQuic->ConnectionShutdown(Connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE,
-                                 0);
-      return;
-    }
-  }
-
-  std::string headers = "GET /hello HTTP/1.1\r\n"
-                        "Host: qqueke\r\n"
-                        "User-Agent: custom-client/1.0\r\n"
-                        "Accept: */*\r\n";
-
-  std::string body = "It's me Mario";
-
-  {
-    std::unordered_map<std::string, std::string> headersMap;
-
-    // Change this function to work for response and request
-    HTTPBase::RequestHTTP1ToHTTP3Headers(headers, headersMap);
-
-    std::cout << "Headers before encoding\n";
-    for (auto &[key, value] : headersMap) {
-      std::cout << key << " " << value << "\n";
+    // Create/allocate a new bidirectional stream. The stream is just
+    // allocated and no QUIC stream identifier is assigned until it's started.
+    // std::cout << "Stream: " << i++ << "\n";
+    if (QUIC_FAILED(Status = MsQuic->StreamOpen(
+                        Connection, QUIC_STREAM_OPEN_FLAG_NONE,
+                        HTTPClient::StreamCallback, Context, &Stream))) {
+      printf("StreamOpen failed, 0x%x!\n", Status);
+      if (QUIC_FAILED(Status)) {
+        MsQuic->ConnectionShutdown(Connection,
+                                   QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+      }
     }
 
-    std::vector<uint8_t> encodedHeaders;
-    HTTPBase::EncQPACKHeaders(headersMap, encodedHeaders);
+    printf("[strm][%p] Starting Stream...\n", Stream);
 
-    // Put header frame and data frames in frames response
-    std::vector<std::vector<uint8_t>> frames;
+    // Starts the bidirectional stream. By default, the peer is not notified of
+    // the stream being started until data is sent on the stream.
+    //  QUIC_STREAM_START_FLAG_NONE
+    // QUIC_STREAM_START_FLAG_IMMEDIATE
+    if (QUIC_FAILED(Status = MsQuic->StreamStart(
+                        Stream, QUIC_STREAM_START_FLAG_NONE))) {
+      printf("StreamStart failed, 0x%x!\n", Status);
 
-    // Build frames
-    frames.emplace_back(HTTPBase::BuildHeaderFrame(encodedHeaders));
+      std::cout << "Shutting down Stream..." << std::endl;
+      MsQuic->StreamClose(Stream);
+      if (QUIC_FAILED(Status)) {
+        MsQuic->ConnectionShutdown(Connection,
+                                   QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+        return;
+      }
+    }
 
-    frames.emplace_back(HTTPBase::BuildDataFrame(body));
+    {
+      std::unordered_map<std::string, std::string> headersMap;
 
-    if (HTTPBase::SendFramesToNewConn(Connection, Stream, frames) == -1) {
-      return;
+      // Change this function to work for response and request
+      HTTPBase::RequestHTTP1ToHTTP3Headers(headers, headersMap);
+
+      std::cout << "Headers before encoding\n";
+      for (auto &[key, value] : headersMap) {
+        std::cout << key << " " << value << "\n";
+      }
+
+      std::vector<uint8_t> encodedHeaders;
+      HTTPBase::EncQPACKHeaders(headersMap, encodedHeaders);
+
+      // Put header frame and data frames in frames response
+      std::vector<std::vector<uint8_t>> frames;
+
+      // Build frames
+      frames.emplace_back(HTTPBase::BuildHeaderFrame(encodedHeaders));
+
+      frames.emplace_back(HTTPBase::BuildDataFrame(body));
+
+      if (HTTPBase::SendFramesToNewConn(Connection, Stream, frames) == -1) {
+        return;
+      }
     }
   }
 }

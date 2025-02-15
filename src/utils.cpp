@@ -73,14 +73,14 @@ void PrintBytes(void *buf, size_t len) {
 
 void PrintUsage() {
   printf("\n"
-         "quicsample runs a simple client or server.\n"
+         "Server runs a simple client or server.\n"
          "\n"
          "Usage:\n"
          "\n"
-         "  quicsample.exe -client -unsecure -target:{IPAddress|Hostname} "
+         "  ./server -client -unsecure -target:{IPAddress|Hostname} "
          "[-ticket:<ticket>]\n"
-         "  quicsample.exe -server -cert_hash:<...>\n"
-         "  quicsample.exe -server -cert_file:<...> -key_file:<...> "
+         "  ./server -server -cert_hash:<...>\n"
+         "  ./server -server -cert_file:<...> -key_file:<...> "
          "[-password:<...>]\n");
 }
 
@@ -110,6 +110,23 @@ GetValue(_In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[],
     }
   }
   return NULL;
+}
+
+std::string GetValue2(int argc, char *argv[], const std::string &name) {
+  const size_t nameLen = name.length();
+
+  for (int i = 0; i < argc; i++) {
+    std::string arg = argv[i];
+
+    // Check if the argument starts with '-' and has the name we're looking for
+    if (arg.size() > nameLen + 1 && arg[0] == '-' &&
+        arg.substr(1, nameLen) == name && arg[nameLen + 1] == ':') {
+      return arg.substr(
+          nameLen + 2); // Skip "-name:" and return the value after the colon
+    }
+  }
+
+  return ""; // Return an empty string if the value isn't found
 }
 
 // Helper function to convert a hex character to its decimal value.
