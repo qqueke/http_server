@@ -1,8 +1,16 @@
 # Ignore executables in the root directory
 # /*
 
+
+# Ignore clang-tidy
+.clang-tidy
+
 # Ignore everything in lib/
-lib/ 
+lib/
+
+# Ignore static files
+static/
+
 # Ignore everything in build/
 build/
 
