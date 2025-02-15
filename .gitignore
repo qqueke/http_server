@@ -1,8 +1,5 @@
 # Ignore executables in the root directory
 
-# Ignore files in static
-static/
-
 # Ignore clang-tidy
 .clang-tidy
 
@@ -16,13 +13,13 @@ server
 lib/
 
 # Ignore static files
-static/
+static/*
 
 # Ignore everything in build/
-build/
+build/*
 
 # Ignore everything in .cache/
 .cache/
 
 # Ignore everything in logs/
-logs/
+logs/*
