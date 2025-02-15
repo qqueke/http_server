@@ -1,15 +1,18 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
 
+#include <lsqpack.h>
+#include <lsxpack_header.h>
+#include <msquic.h>
+
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-#include "/home/QQueke/Documents/Repositories/ls-qpack/lsqpack.h"
-#include "/home/QQueke/Documents/Repositories/ls-qpack/lsxpack_header.h"
-#include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
+// #include "/home/QQueke/Documents/Repositories/ls-qpack/lsqpack.h"
+// #include "/home/QQueke/Documents/Repositories/ls-qpack/lsxpack_header.h"
+// #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 #include "crypto.h"
 
 #define _CRT_SECURE_NO_WARNINGS 1

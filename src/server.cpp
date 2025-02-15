@@ -1,5 +1,6 @@
 #include "server.hpp"
 
+#include <msquic.h>
 #include <netinet/in.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
@@ -21,8 +22,7 @@
 #include <string>
 #include <thread>
 #include <unordered_set>
-
-#include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
+// #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 #include "common.hpp"
 #include "log.hpp"
 #include "router.hpp"
@@ -110,9 +110,8 @@ unsigned char HTTPServer::LoadQUICConfiguration(
     }
 
   } else {
-    printf(
-        "Must specify ['-cert_hash'] or ['cert_file' and 'key_file' (and "
-        "optionally 'password')]!\n");
+    printf("Must specify ['-cert_hash'] or ['cert_file' and 'key_file' (and "
+           "optionally 'password')]!\n");
     return FALSE;
   }
 
@@ -196,28 +195,28 @@ void HTTPServer::ParseStreamBuffer(HQUIC Stream,
 
     // Handle the frame based on the type
     switch (frameType) {
-      case 0x01:  // HEADERS frame
-        std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
+    case 0x01: // HEADERS frame
+      std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
 
-        {
-          std::vector<uint8_t> encodedHeaders(iter, iter + frameLength);
+      {
+        std::vector<uint8_t> encodedHeaders(iter, iter + frameLength);
 
-          DecQPACKHeaders(Stream, encodedHeaders);
+        DecQPACKHeaders(Stream, encodedHeaders);
 
-          // headers = std::string(iter, iter + frameLength);
-        }
-        break;
+        // headers = std::string(iter, iter + frameLength);
+      }
+      break;
 
-      case 0x00:  // DATA frame
-        std::cout << "[strm][" << Stream << "] Received DATA frame\n";
-        // Data might have been transmitted over multiple frames
-        data += std::string(iter, iter + frameLength);
-        break;
+    case 0x00: // DATA frame
+      std::cout << "[strm][" << Stream << "] Received DATA frame\n";
+      // Data might have been transmitted over multiple frames
+      data += std::string(iter, iter + frameLength);
+      break;
 
-      default:  // Unknown frame type
-        std::cout << "[strm][" << Stream << "] Unknown frame type: 0x"
-                  << std::hex << frameType << std::dec << "\n";
-        break;
+    default: // Unknown frame type
+      std::cout << "[strm][" << Stream << "] Unknown frame type: 0x" << std::hex
+                << frameType << std::dec << "\n";
+      break;
     }
 
     iter += frameLength;
@@ -408,7 +407,7 @@ bool compressData(const std::string &inputFile, const std::string &outputFile,
   zStream.avail_out = compressedSize;
 
   int windowBits =
-      (type == GZIP) ? 15 + 16 : 15;  // 15 for Deflate, +16 for Gzip
+      (type == GZIP) ? 15 + 16 : 15; // 15 for Deflate, +16 for Gzip
 
   if (deflateInit2(&zStream, Z_BEST_COMPRESSION, Z_DEFLATED, windowBits, 8,
                    Z_DEFAULT_STRATEGY) != Z_OK) {
@@ -782,12 +781,8 @@ void HTTPServer::Run() {
 void HTTPServer::PrintFromServer() { std::cout << "Hello from server\n"; }
 
 HTTPServer::HTTPServer(int argc, char *argv[])
-    : serverSock(socket(AF_INET, SOCK_STREAM, 0)),
-      serverAddr(),
-      timeout(),
-      Status(0),
-      activeConnections(0),
-      Listener(nullptr) {
+    : serverSock(socket(AF_INET, SOCK_STREAM, 0)), serverAddr(), timeout(),
+      Status(0), activeConnections(0), Listener(nullptr) {
   //------------------------ HTTP1 TCP SETUP----------------------
 
   SSL_load_error_strings();
@@ -868,18 +863,18 @@ HTTPServer::HTTPServer(int argc, char *argv[])
 };
 
 void HTTPServer::Initialize(int argc, char *argv[]) {
-  std::lock_guard<std::mutex> lock(instanceMutex);  // Ensure thread-safety
+  std::lock_guard<std::mutex> lock(instanceMutex); // Ensure thread-safety
   if (!instance) {
     instance = new HTTPServer(argc, argv);
   }
 }
 
 HTTPServer *HTTPServer::GetInstance() {
-  std::lock_guard<std::mutex> lock(instanceMutex);  // Ensure thread-safety
+  std::lock_guard<std::mutex> lock(instanceMutex); // Ensure thread-safety
   if (!instance) {
     return nullptr;
   }
-  return instance;  // Return raw pointer to the instance
+  return instance; // Return raw pointer to the instance
 }
 
 // if (setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO, &timeout,

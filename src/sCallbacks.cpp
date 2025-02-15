@@ -3,7 +3,9 @@
 #include <sstream>
 #include <string>
 
-#include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
+// #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
+#include <msquic.h>
+
 #include "log.hpp"
 #include "server.hpp"
 #include "utils.hpp"

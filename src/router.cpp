@@ -1,6 +1,7 @@
 #include "router.hpp"
 
 #include <fcntl.h>
+#include <msquic.h>
 #include <netinet/in.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
@@ -20,7 +21,6 @@
 #include <utility>
 
 #include "log.hpp"
-#include "msquic.h"
 #include "server.hpp"
 #include "utils.hpp"
 

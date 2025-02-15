@@ -10,9 +10,6 @@
 #include "log.hpp"
 #include "utils.hpp"
 
-extern std::unordered_map<HQUIC, std::unordered_map<std::string, std::string>>
-    DecodedHeadersMap;
-
 HTTPClient::HTTPClient(int argc, char *argv[]) {
   if (!LoadQUICConfiguration(argc, argv)) {
     exit(EXIT_FAILURE);
@@ -29,7 +26,7 @@ unsigned char HTTPClient::LoadQUICConfiguration(int argc, char *argv[]) {
   // Configures the client's idle timeout.
   Settings.IdleTimeoutMs = IdleTimeoutMs;
   Settings.IsSet.IdleTimeoutMs = TRUE;
-  Settings.StreamMultiReceiveEnabled = TRUE;
+  // Settings.StreamMultiReceiveEnabled = TRUE;
 
   // Configures a default client configuration, optionally disabling
   // server certificate validation.
@@ -203,29 +200,29 @@ void HTTPClient::ParseStreamBuffer(HQUIC Stream,
 
     // Handle the frame based on the type
     switch (frameType) {
-      case 0x01:  // HEADERS frame
-        std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
+    case 0x01: // HEADERS frame
+      std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
 
-        {
-          std::vector<uint8_t> encodedHeaders(iter, iter + frameLength);
+      {
+        std::vector<uint8_t> encodedHeaders(iter, iter + frameLength);
 
-          HTTPClient::DecQPACKHeaders(Stream, encodedHeaders);
+        HTTPClient::DecQPACKHeaders(Stream, encodedHeaders);
 
-          // headers = std::string(iter, iter + frameLength);
-        }
+        // headers = std::string(iter, iter + frameLength);
+      }
 
-        break;
+      break;
 
-      case 0x00:  // DATA frame
-        std::cout << "[strm][" << Stream << "] Received DATA frame\n";
-        // Data might have been transmitted over multiple frames
-        data += std::string(iter, iter + frameLength);
-        break;
+    case 0x00: // DATA frame
+      std::cout << "[strm][" << Stream << "] Received DATA frame\n";
+      // Data might have been transmitted over multiple frames
+      data += std::string(iter, iter + frameLength);
+      break;
 
-      default:  // Unknown frame type
-        std::cout << "[strm][" << Stream << "] Unknown frame type: 0x"
-                  << std::hex << frameType << std::dec << "\n";
-        break;
+    default: // Unknown frame type
+      std::cout << "[strm][" << Stream << "] Unknown frame type: 0x" << std::hex
+                << frameType << std::dec << "\n";
+      break;
     }
 
     iter += frameLength;

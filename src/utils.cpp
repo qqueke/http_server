@@ -1,5 +1,7 @@
 #include "utils.hpp"
 
+#include <msquic.h>
+
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -15,7 +17,7 @@
 
 #include "/home/QQueke/Documents/Repositories/ls-qpack/lsqpack.h"
 #include "/home/QQueke/Documents/Repositories/ls-qpack/lsxpack_header.h"
-#include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
+// #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 #include "log.hpp"
 
 // The (optional) registration configuration for the app. This sets a name for

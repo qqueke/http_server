@@ -1,6 +1,8 @@
 # Ignore executables in the root directory
 # /*
 
+# Ignore everything in lib/
+lib/ 
 # Ignore everything in build/
 build/
 

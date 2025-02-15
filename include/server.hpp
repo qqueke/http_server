@@ -2,6 +2,7 @@
 #ifndef HTTPSERVER_HPP
 #define HTTPSERVER_HPP
 
+#include <msquic.h>
 #include <netinet/in.h>
 #include <openssl/ssl.h>
 #include <poll.h>
@@ -18,7 +19,7 @@
 #include <mutex>
 #include <string>
 
-#include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
+// #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 #include "common.hpp"
 #include "router.hpp"
 

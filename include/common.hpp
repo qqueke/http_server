@@ -1,13 +1,15 @@
 #ifndef HTTPBASE_HPP
 #define HTTPBASE_HPP
 
+#include <msquic.h>
+
 #include <cstdint>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
+// #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 // #include "msquic.h"
 class HTTPBase {
 protected:

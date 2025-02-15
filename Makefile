@@ -1,4 +1,3 @@
-
 MAKEFLAGS += -j$(nproc)
 
 # Compiler
@@ -7,19 +6,32 @@ CXX = g++
 SRCDIR = src
 INCDIR = include
 BUILDDIR = build
+LIBDIR = lib
 TESTDIR = tests
 
+# Dependencies
+OPENSSL_DIR ?= /usr/include/openssl
+LS_QPACK_REPO = https://github.com/litespeedtech/ls-qpack.git
+MSQUIC_REPO = https://github.com/microsoft/msquic.git
+LS_QPACK_DIR = $(LIBDIR)/ls-qpack
+MSQUIC_DIR = $(LIBDIR)/msquic
+
+# Lib build directories
+LS_QPACK_BUILD = $(LS_QPACK_DIR)/build
+MSQUIC_BUILD = $(MSQUIC_DIR)/build
+
+# Compiler flags
 CXXFLAGS += -O0 -g -std=c++20
 
 # Include directories
 CXXFLAGS += -I$(INCDIR)          
-CXXFLAGS += -I/usr/include/openssl       
-CXXFLAGS += -I/home/QQueke/Documents/Repositories/ls-qpack 
-CXXFLAGS += -I/home/QQueke/Documents/Repositories/msquic/src/inc  
+CXXFLAGS += -I$(OPENSSL_DIR)
+CXXFLAGS += -I$(LS_QPACK_DIR)
+CXXFLAGS += -I$(MSQUIC_DIR)/src/inc  
 
 # Library paths 
-LDFLAGS += -L/home/QQueke/Documents/Repositories/ls-qpack/build 
-LDFLAGS += -L/home/QQueke/Documents/Repositories/msquic/build/bin/Release  
+LDFLAGS += -L$(LS_QPACK_BUILD)
+LDFLAGS += -L$(MSQUIC_BUILD)/bin/Release  
 
 # Linked libraries 
 LDFLAGS += -lssl -lcrypto -lz
@@ -59,7 +71,41 @@ COMMON_OBJ = $(BUILDDIR)/common.o
 UTILS_OBJ = $(BUILDDIR)/utils.o
 
 # Targets
-all: server 
+# all: dependencies server 
+
+all: server dependencies 
+
+.PHONY: dependencies clean
+dependencies:
+	# Create the LIBDIR directory
+	mkdir -p lib
+
+	# Clone or update ls-qpack repository
+	@if [ ! -d "lib/ls-qpack" ]; then \
+		git clone --depth 1 $(LS_QPACK_REPO) lib/ls-qpack; \
+		mkdir -p $(LS_QPACK_BUILD); \
+		cd $(LS_QPACK_BUILD) && cmake .. && make; \
+	else \
+		cd lib/ls-qpack && git pull; \
+		if ! git diff --quiet; then \
+			mkdir -p $(LS_QPACK_BUILD); \
+			cd $(LS_QPACK_BUILD) && cmake .. && make; \
+		fi; \
+	fi
+
+	# Clone or update msquic repository
+	@if [ ! -d "lib/msquic" ]; then \
+		git clone --depth 1 $(MSQUIC_REPO) lib/msquic; \
+		cd lib/msquic && git submodule update --init --recursive; \
+		mkdir -p $(MSQUIC_BUILD); \
+		cd $(MSQUIC_BUILD) && cmake .. && make; \
+	else \
+		cd lib/ls-qpack && git pull; \
+		if ! git diff --quiet; then \
+			mkdir -p $(MSQUIC_BUILD); \
+			cd $(MSQUIC_BUILD) && cmake .. && make; \
+		fi; \
+	fi
 
 # Build the main executable
 server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(S_CALLBACKS_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(COMMON_OBJ) $(CLIENT_OBJ) $(C_CALLBACKS_OBJ)
@@ -100,7 +146,7 @@ $(BUILDDIR)/utils.o: $(UTILS_SRC) $(INCDIR)/utils.hpp
 clean:
 	rm -f $(BUILDDIR)/*.o server client
 
-# Testing target (example, customize as needed)
+# Testing target 
 test:
 	$(CXX) $(CXXFLAGS) $(TESTDIR)/*.cpp -o $(BUILDDIR)/tests && ./$(BUILDDIR)/tests
 
