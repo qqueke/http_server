@@ -10,7 +10,10 @@ compile_commands.json
 server
 
 # Ignore everything in lib/
-lib/
+lib/*
+
+# Ignore certificates
+certificates/*
 
 # Ignore static files
 static/*
