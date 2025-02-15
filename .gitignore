@@ -1,9 +1,16 @@
 # Ignore executables in the root directory
-# /*
 
+# Ignore files in static
+static/
 
 # Ignore clang-tidy
 .clang-tidy
+
+# Ignore compile_commands.json
+compile_commands.json
+
+# Ignore server bin
+server
 
 # Ignore everything in lib/
 lib/
