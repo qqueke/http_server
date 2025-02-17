@@ -27,7 +27,18 @@ const QUIC_REGISTRATION_CONFIG RegConfig = {"quicsample",
                                             QUIC_EXECUTION_PROFILE_LOW_LATENCY};
 
 // The protocol name used in the Application Layer Protocol Negotiation (ALPN).
-const QUIC_BUFFER Alpn = {sizeof("sample") - 1, (uint8_t *)"sample"};
+const QUIC_BUFFER Alpn = {sizeof("h3") - 1, (uint8_t *)"h3"};
+
+// const uint8_t AlpnProtocols[] = {
+//     // HTTP/1.1
+//     8, (uint8_t*)"http/1.1",  // length 8 for "http/1.1"
+//
+//     // HTTP/2
+//     2, (uint8_t*)"h2",        // length 2 for "h2"
+//
+//     // HTTP/3
+//     2, (uint8_t*)"h3"         // length 2 for "h3"
+// };
 
 // The UDP port used by the server side of the protocol.
 const uint16_t UdpPort = 4567;

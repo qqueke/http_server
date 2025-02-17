@@ -1,10 +1,9 @@
+#include <msquic.h>
+
 #include <cstdint>
 #include <iostream>
 #include <sstream>
 #include <string>
-
-// #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
-#include <msquic.h>
 
 #include "log.hpp"
 #include "server.hpp"
@@ -37,13 +36,6 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 
     printf("[strm][%p] Data received\n", Stream);
 #endif
-
-    // if (!server) {
-    //   std::cout << "We have a problem." << std::endl;
-    // }
-    // std::cout << "Server address: " << server << std::endl;
-    // std::cout << "Stream: " << Stream << std::endl;
-    // std::cout << "BufferMap Address: " << &server->BufferMap << std::endl;
 
     // If no previous allocated Buffer let's allocate one for this Stream
     if (server->BufferMap.find(Stream) == server->BufferMap.end()) {

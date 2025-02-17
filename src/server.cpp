@@ -67,7 +67,7 @@ unsigned char HTTPServer::LoadQUICConfiguration(
   // Configures the server's settings to allow for the peer to open a single
   // bidirectional stream. By default connections are not configured to allow
   // any streams from the peer.
-  Settings.PeerBidiStreamCount = 2;
+  Settings.PeerBidiStreamCount = 100;
   Settings.IsSet.PeerBidiStreamCount = TRUE;
   Settings.PeerUnidiStreamCount = 2;
   Settings.IsSet.PeerUnidiStreamCount = TRUE;

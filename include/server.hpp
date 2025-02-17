@@ -53,6 +53,8 @@ private:
   void RunHTTP2();
   void RunHTTP3();
 
+  std::unordered_map<HQUIC, std::vector<uint8_t>> ConnectionSettings;
+
 public:
   // std::unordered_map<HQUIC, std::vector<uint8_t>> BufferMap;
   // std::unordered_map<HQUIC, std::unordered_map<std::string, std::string>>

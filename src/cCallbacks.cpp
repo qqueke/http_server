@@ -20,16 +20,10 @@ void ClientSend(_In_ HQUIC Connection, void *Context) {
 
   for (auto &[headers, body] : client->requests) {
     HQUIC &Stream = Streams[i++];
-    // std::string headers = "GET /hello HTTP/1.1\r\n"
-    //                       "Host: qqueke\r\n"
-    //                       "User-Agent: custom-client/1.0\r\n"
-    //                       "Accept: */*\r\n";
-    //
-    // std::string body = "It's me Mario";
 
     // Create/allocate a new bidirectional stream. The stream is just
     // allocated and no QUIC stream identifier is assigned until it's started.
-    // std::cout << "Stream: " << i++ << "\n";
+    // QUIC_STREAM_OPEN_FLAG_UNIDIRECTIONAL
     if (QUIC_FAILED(Status = MsQuic->StreamOpen(
                         Connection, QUIC_STREAM_OPEN_FLAG_NONE,
                         HTTPClient::StreamCallback, Context, &Stream))) {
@@ -42,9 +36,9 @@ void ClientSend(_In_ HQUIC Connection, void *Context) {
 
     printf("[strm][%p] Starting Stream...\n", Stream);
 
-    // Starts the bidirectional stream. By default, the peer is not notified of
+    // Starts the stream. By default, the peer is not notified of
     // the stream being started until data is sent on the stream.
-    //  QUIC_STREAM_START_FLAG_NONE
+    // QUIC_STREAM_START_FLAG_NONE
     // QUIC_STREAM_START_FLAG_IMMEDIATE
     if (QUIC_FAILED(Status = MsQuic->StreamStart(
                         Stream, QUIC_STREAM_START_FLAG_NONE))) {
