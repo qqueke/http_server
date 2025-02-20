@@ -10,33 +10,42 @@ LIBDIR = lib
 TESTDIR = tests
 
 # Dependencies
-OPENSSL_DIR ?= /usr/include/openssl
+OPENSSL_DIR = /usr/include/openssl
 LS_QPACK_REPO = https://github.com/litespeedtech/ls-qpack.git
+LS_HPACK_REPO = https://github.com/litespeedtech/ls-hpack.git
 MSQUIC_REPO = https://github.com/microsoft/msquic.git
+
+
 LS_QPACK_DIR = $(LIBDIR)/ls-qpack
+LS_HPACK_DIR = $(LIBDIR)/ls-hpack
 MSQUIC_DIR = $(LIBDIR)/msquic
 
 # Lib build directories
 LS_QPACK_BUILD = $(LS_QPACK_DIR)/build
+LS_HPACK_BUILD = $(LS_HPACK_DIR)/build
 MSQUIC_BUILD = $(MSQUIC_DIR)/build
 
 # Compiler flags
-CXXFLAGS += -O0 -g -std=c++20
+CXXFLAGS += -O0 -g -std=c++20 -fsanitize=address
 
 # Include directories
 CXXFLAGS += -I$(INCDIR)          
 CXXFLAGS += -I$(OPENSSL_DIR)
 CXXFLAGS += -I$(LS_QPACK_DIR)
+CXXFLAGS += -I$(LS_HPACK_DIR)
 CXXFLAGS += -I$(MSQUIC_DIR)/src/inc  
 
 # Library paths 
 LDFLAGS += -L$(LS_QPACK_BUILD)
+LDFLAGS += -L$(LS_HPACK_BUILD)
 LDFLAGS += -L$(MSQUIC_BUILD)/bin/Release  
 
-# Linked libraries 
+# Linked libraries
+LDFLAGS += -lasan
 LDFLAGS += -lssl -lcrypto -lz
 LDFLAGS += -lmsquic
 LDFLAGS += -lls-qpack
+LDFLAGS += -lls-hpack
 
 # Source files for server
 MAIN_SRC = $(SRCDIR)/main.cpp
@@ -71,9 +80,9 @@ COMMON_OBJ = $(BUILDDIR)/common.o
 UTILS_OBJ = $(BUILDDIR)/utils.o
 
 # Targets
-# all: dependencies server 
+all: server 
 
-all: dependencies server  
+# all: dependencies server  
 
 .PHONY: dependencies clean
 dependencies:
@@ -81,31 +90,44 @@ dependencies:
 	mkdir -p lib
 
 	# Clone or update ls-qpack repository
-	@if [ ! -d "lib/ls-qpack" ]; then \
-		git clone --depth 1 $(LS_QPACK_REPO) lib/ls-qpack; \
-		mkdir -p $(LS_QPACK_BUILD); \
-		cd $(LS_QPACK_BUILD) && cmake .. && make; \
-	else \
-		cd lib/ls-qpack && git pull; \
-		if ! git diff --quiet; then \
-			mkdir -p $(LS_QPACK_BUILD); \
-			cd $(LS_QPACK_BUILD) && cmake .. && make; \
-		fi; \
-	fi
+	# @if [ ! -d "lib/ls-qpack" ]; then \
+	# 	git clone --depth 1 $(LS_QPACK_REPO) lib/ls-qpack; \
+	# 	mkdir -p $(LS_QPACK_BUILD); \
+	# 	cd $(LS_QPACK_BUILD) && cmake .. && make; \
+	# else \
+	# 	cd lib/ls-qpack && git pull; \
+	# 	if ! git diff --quiet; then \
+	# 		mkdir -p $(LS_QPACK_BUILD); \
+	# 		cd $(LS_QPACK_BUILD) && cmake .. && make; \
+	# 	fi; \
+	# fi
+
+	# Clone or update ls-hpack repository
+	# @if [ ! -d "lib/ls-hpack" ]; then \
+	# 	git clone --depth 1 $(LS_HPACK_REPO) lib/ls-hpack; \
+	# 	mkdir -p $(LS_HPACK_BUILD); \
+	# 	cd $(LS_HPACK_BUILD) && cmake .. && make; \
+	# else \
+	# 	cd lib/ls-hpack && git pull; \
+	# 	if ! git diff --quiet; then \
+	# 		mkdir -p $(LS_HPACK_BUILD); \
+	# 		cd $(LS_HPACK_BUILD) && cmake .. && make; \
+	# 	fi; \
+	# fi
 
 	# Clone or update msquic repository
-	@if [ ! -d "lib/msquic" ]; then \
-		git clone --depth 1 $(MSQUIC_REPO) lib/msquic; \
-		cd lib/msquic && git submodule update --init --recursive; \
-		mkdir -p $(MSQUIC_BUILD); \
-		cd $(MSQUIC_BUILD) && cmake .. && make; \
-	else \
-		cd lib/ls-qpack && git pull; \
-		if ! git diff --quiet; then \
-			mkdir -p $(MSQUIC_BUILD); \
-			cd $(MSQUIC_BUILD) && cmake .. && make; \
-		fi; \
-	fi
+	# @if [ ! -d "lib/msquic" ]; then \
+	# 	git clone --depth 1 $(MSQUIC_REPO) lib/msquic; \
+	# 	cd lib/msquic && git submodule update --init --recursive; \
+	# 	mkdir -p $(MSQUIC_BUILD); \
+	# 	cd $(MSQUIC_BUILD) && cmake .. && make; \
+	# else \
+	# 	cd lib/msquic && git pull; \
+	# 	if ! git diff --quiet; then \
+	# 		mkdir -p $(MSQUIC_BUILD); \
+	# 		cd $(MSQUIC_BUILD) && cmake .. && make; \
+	# 	fi; \
+	# fi
 
 # Build the main executable
 server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(S_CALLBACKS_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(COMMON_OBJ) $(CLIENT_OBJ) $(C_CALLBACKS_OBJ)

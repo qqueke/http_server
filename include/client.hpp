@@ -32,7 +32,7 @@ public:
 
   unsigned char LoadQUICConfiguration(int argc, char *argv[]) override;
 
-  void DecQPACKHeaders(HQUIC stream,
+  void QPACK_DecodeHeaders(HQUIC stream,
                        std::vector<uint8_t> &encodedHeaders) override;
 
   void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,

@@ -99,6 +99,7 @@ unsigned char HTTPClient::LoadQUICConfiguration(int argc, char *argv[]) {
   CredConfig.Type = QUIC_CREDENTIAL_TYPE_NONE;
   CredConfig.Flags = QUIC_CREDENTIAL_FLAG_CLIENT;
   if (Unsecure) {
+    std::cout << "Unsecure connection\n";
     CredConfig.Flags |= QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION;
   }
 
@@ -137,7 +138,7 @@ int HTTPClient::dhiProcessHeader(void *hblock_ctx,
   hblock_ctx_t *block_ctx = (hblock_ctx_t *)hblock_ctx;
   HTTPClient *instance = (HTTPClient *)block_ctx->instance_ctx;
 
-  instance->DecodedHeadersMap[block_ctx->stream][headerKey] = headerValue;
+  instance->QuicDecodedHeadersMap[block_ctx->stream][headerKey] = headerValue;
 
   return 0;
 }
@@ -207,8 +208,8 @@ Error:
   }
 }
 
-void HTTPClient::DecQPACKHeaders(HQUIC stream,
-                                 std::vector<uint8_t> &encodedHeaders) {
+void HTTPClient::QPACK_DecodeHeaders(HQUIC stream,
+                                     std::vector<uint8_t> &encodedHeaders) {
   std::vector<struct lsqpack_dec> dec(1);
 
   struct lsqpack_dec_hset_if hset_if;
@@ -235,6 +236,8 @@ void HTTPClient::DecQPACKHeaders(HQUIC stream,
   readStatus =
       lsqpack_dec_header_in(dec.data(), &blockCtx.back(), 100, totalHeaderSize,
                             &encodedHeadersPtr, totalHeaderSize, NULL, NULL);
+
+  lsqpack_dec_cleanup(dec.data());
 }
 
 // Parses stream buffer to retrieve headers payload and data payload
@@ -270,7 +273,7 @@ void HTTPClient::ParseStreamBuffer(HQUIC Stream,
       {
         std::vector<uint8_t> encodedHeaders(iter, iter + frameLength);
 
-        HTTPClient::DecQPACKHeaders(Stream, encodedHeaders);
+        HTTPClient::QPACK_DecodeHeaders(Stream, encodedHeaders);
 
         // headers = std::string(iter, iter + frameLength);
       }

@@ -38,13 +38,11 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 #endif
 
     // If no previous allocated Buffer let's allocate one for this Stream
-    if (server->BufferMap.find(Stream) == server->BufferMap.end()) {
-      server->BufferMap[Stream].reserve(256);
+    if (server->QuicBufferMap.find(Stream) == server->QuicBufferMap.end()) {
+      server->QuicBufferMap[Stream].reserve(256);
     }
 
-    printf("[strm][%p] Data received\n", Stream);
     // Data was received from the peer on Stream.
-
     for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++) {
       const QUIC_BUFFER *buffer = &Event->RECEIVE.Buffers[i];
 
@@ -52,7 +50,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
       uint8_t *bufferEnd = buffer->Buffer + buffer->Length;
 
       if (buffer->Length > 0) {
-        auto &streamBuffer = server->BufferMap[Stream];
+        auto &streamBuffer = server->QuicBufferMap[Stream];
         streamBuffer.insert(streamBuffer.end(), bufferPointer, bufferEnd);
       }
     }
@@ -67,7 +65,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 #endif
     // The peer gracefully shut down its send direction of the stream.
 
-    if (server->BufferMap.find(Stream) == server->BufferMap.end()) {
+    if (server->QuicBufferMap.find(Stream) == server->QuicBufferMap.end()) {
       std::ostringstream oss;
       oss << " No BufferMap found for Stream: " << Stream << "!";
       LogError(oss.str());
@@ -79,23 +77,23 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 
     std::string data;
 
-    server->ParseStreamBuffer(Stream, server->BufferMap[Stream], data);
+    server->ParseStreamBuffer(Stream, server->QuicBufferMap[Stream], data);
 
     // std::unordered_map<std::string, std::string> headersMap;
     std::cout << "HTTP3 Request:\n";
-    for (const auto &header : server->DecodedHeadersMap[Stream]) {
+    for (const auto &header : server->QuicDecodedHeadersMap[Stream]) {
       std::cout << header.first << ": " << header.second << "\n";
     }
     std::cout << data << std::endl;
     // bool acceptEncoding;
 
     // Validate Request
-    HTTPServer::ValidateHeadersHTTP3(server->DecodedHeadersMap[Stream]);
+    HTTPServer::ValidatePseudoHeaders(server->QuicDecodedHeadersMap[Stream]);
 
     // Route Request
     std::string status = server->ServerRouter->RouteRequest(
-        server->DecodedHeadersMap[Stream][":method"],
-        server->DecodedHeadersMap[Stream][":path"], data, Protocol::HTTP3,
+        server->QuicDecodedHeadersMap[Stream][":method"],
+        server->QuicDecodedHeadersMap[Stream][":path"], data, Protocol::HTTP3,
         (void *)Stream);
 
     auto endTime = std::chrono::high_resolution_clock::now();
@@ -106,15 +104,15 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     // seconds\n";
     std::ostringstream logStream;
     logStream << "Protocol: HTTP3 "
-              << "Method: " << server->DecodedHeadersMap[Stream][":method"]
-              << " Path: " << server->DecodedHeadersMap[Stream][":path"]
+              << "Method: " << server->QuicDecodedHeadersMap[Stream][":method"]
+              << " Path: " << server->QuicDecodedHeadersMap[Stream][":path"]
               << " Status: " << status << " Elapsed time: " << elapsed.count()
               << " s";
 
     LogRequest(logStream.str());
 
-    server->DecodedHeadersMap.erase(Stream);
-    server->BufferMap.erase(Stream);
+    server->QuicDecodedHeadersMap.erase(Stream);
+    server->QuicBufferMap.erase(Stream);
 
   }
 

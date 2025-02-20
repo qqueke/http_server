@@ -10,9 +10,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-// #include "/home/QQueke/Documents/Repositories/ls-qpack/lsqpack.h"
-// #include "/home/QQueke/Documents/Repositories/ls-qpack/lsxpack_header.h"
-// #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
+
 #include "crypto.h"
 
 #define _CRT_SECURE_NO_WARNINGS 1
@@ -31,10 +29,17 @@ enum class Protocol { HTTP1, HTTP2, HTTP3 };
 enum : int {
   BUFFER_SIZE = 1024,
   ERROR = -1,
-  TIMEOUT_SECONDS = 60,
+  TIMEOUT_SECONDS = 5,
   MAX_CONNECTIONS = 100,
   MAX_PENDING_CONNECTIONS = 100,
   HTTP_PORT = 4433,
+};
+
+struct HTTP2Context {
+  SSL *ssl;
+  uint32_t streamId;
+
+  HTTP2Context(SSL *s, uint32_t id) : ssl(s), streamId(id) {}
 };
 
 extern const QUIC_API_TABLE *MsQuic;

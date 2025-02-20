@@ -57,7 +57,7 @@ void ClientSend(_In_ HQUIC Connection, void *Context) {
       std::unordered_map<std::string, std::string> headersMap;
 
       // Change this function to work for response and request
-      HTTPBase::RequestHTTP1ToHTTP3Headers(headers, headersMap);
+      HTTPBase::ReqHeaderToPseudoHeader(headers, headersMap);
 
       std::cout << "Headers before encoding\n";
       for (auto &[key, value] : headersMap) {
@@ -65,17 +65,18 @@ void ClientSend(_In_ HQUIC Connection, void *Context) {
       }
 
       std::vector<uint8_t> encodedHeaders;
-      HTTPBase::EncQPACKHeaders(headersMap, encodedHeaders);
+      HTTPBase::QPACK_EncodeHeaders(headersMap, encodedHeaders);
 
       // Put header frame and data frames in frames response
       std::vector<std::vector<uint8_t>> frames;
 
       // Build frames
-      frames.emplace_back(HTTPBase::BuildHeaderFrame(encodedHeaders));
+      frames.emplace_back(HTTPBase::HTTP3_BuildHeaderFrame(encodedHeaders));
 
-      frames.emplace_back(HTTPBase::BuildDataFrame(body));
+      frames.emplace_back(HTTPBase::HTTP3_BuildDataFrame(body));
 
-      if (HTTPBase::SendFramesToNewConn(Connection, Stream, frames) == -1) {
+      if (HTTPBase::HTTP3_SendFramesToNewConn(Connection, Stream, frames) ==
+          -1) {
         return;
       }
     }
@@ -105,8 +106,8 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     // Data was received from the peer on the stream.
     printf("[strm][%p] Data received\n", Stream);
 
-    if (client->BufferMap.find(Stream) == client->BufferMap.end()) {
-      client->BufferMap[Stream].reserve(256);
+    if (client->QuicBufferMap.find(Stream) == client->QuicBufferMap.end()) {
+      client->QuicBufferMap[Stream].reserve(256);
     }
 
     for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++) {
@@ -117,7 +118,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 
       printf("[strm][%p] Data received\n", Stream);
       if (buffer->Length > 0) {
-        auto &streamBuffer = client->BufferMap[Stream];
+        auto &streamBuffer = client->QuicBufferMap[Stream];
         streamBuffer.insert(streamBuffer.end(), bufferPointer, bufferEnd);
       }
     }
@@ -134,7 +135,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     // The peer aborted its send direction of the stream.
     printf("[strm][%p] Peer shut down\n", Stream);
 
-    if (client->BufferMap.find(Stream) == client->BufferMap.end()) {
+    if (client->QuicBufferMap.find(Stream) == client->QuicBufferMap.end()) {
       std::cout << "Error: no buffer found for Stream:" << Stream << "\n";
       break;
     }
@@ -143,19 +144,20 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
       std::string headers;
       std::string data;
 
-      client->ParseStreamBuffer(Stream, client->BufferMap[Stream], data);
+      client->ParseStreamBuffer(Stream, client->QuicBufferMap[Stream], data);
 
-      if (client->DecodedHeadersMap[Stream].find(":status") ==
-          client->DecodedHeadersMap[Stream].end()) {
+      if (client->QuicDecodedHeadersMap[Stream].find(":status") ==
+          client->QuicDecodedHeadersMap[Stream].end()) {
         std::cout << "Error: Response missing :status field\n";
       } else {
-        std::cout << "Status: " << client->DecodedHeadersMap[Stream][":status"]
-                  << " " << data << std::endl;
+        std::cout << "Status: "
+                  << client->QuicDecodedHeadersMap[Stream][":status"] << " "
+                  << data << std::endl;
       }
     }
 
-    client->DecodedHeadersMap.erase(Stream);
-    client->BufferMap.erase(Stream);
+    client->QuicDecodedHeadersMap.erase(Stream);
+    client->QuicBufferMap.erase(Stream);
 
     break;
   case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:

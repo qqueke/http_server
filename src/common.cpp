@@ -1,8 +1,13 @@
 #include "common.hpp"
 
+#include <lshpack.h>
+
+#include <algorithm>
+#include <cstdint>
 #include <iostream>
 
 #include "log.hpp"
+#include "lsqpack.h"
 #include "sstream"
 #include "utils.hpp"
 
@@ -23,7 +28,7 @@ struct lsxpack_header *HTTPBase::dhiPrepareDecode(void *hblock_ctx_p,
 }
 
 // HTTP1 Request Formatted String to HTTP3 Headers Map
-void HTTPBase::RequestHTTP1ToHTTP3Headers(
+void HTTPBase::ReqHeaderToPseudoHeader(
     const std::string &http1Headers,
     std::unordered_map<std::string, std::string> &headersMap) {
   std::istringstream stream(http1Headers);
@@ -63,20 +68,71 @@ void HTTPBase::RequestHTTP1ToHTTP3Headers(
       } else {
         key = line.substr(0, firstSpace - 1);
         value = line.substr(firstSpace + 1);
+        std::transform(key.begin(), key.end(), key.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
 
         // Remove "Connection" header
-        if (key != "Connection")
+        if (key != "connection")
           headersMap[key] = value;
-        // headers.emplace_back(key, value);
       }
     }
   }
 }
 
+void HTTPBase::HPACK_DecodeHeaders(uint32_t streamId,
+                                   std::vector<uint8_t> &encodedHeaders) {
+  // std::cout << "encodedHeaders size: " << std::dec << encodedHeaders.size()
+  //           << std::endl;
+  std::unordered_map<std::string, std::string> decodedHeaders;
+  struct lshpack_dec dec{};
+  lshpack_dec_init(&dec);
+
+  const unsigned char *src = const_cast<unsigned char *>(encodedHeaders.data());
+  const unsigned char *end = src + encodedHeaders.size();
+
+  struct lsxpack_header headerFormat;
+  char headerBuffer[2048];
+  memset(headerBuffer, 0, sizeof(headerBuffer));
+
+  char name[256], value[1024];
+
+  while (src < end) {
+    lsxpack_header_prepare_decode(&headerFormat, headerBuffer, 0,
+                                  sizeof(headerBuffer));
+
+    int ret = lshpack_dec_decode(&dec, &src, end, &headerFormat);
+    if (ret < 0) {
+      std::cerr << "Failed to decode HPACK headers" << std::endl;
+      break;
+    }
+
+    int decodedSize = headerFormat.name_len + headerFormat.val_len +
+                      lshpack_dec_extra_bytes(dec);
+
+    // Copy decoded name and value
+    strncpy(name, headerFormat.buf + headerFormat.name_offset,
+            headerFormat.name_len);
+    name[headerFormat.name_len] = '\0';
+
+    strncpy(value, headerFormat.buf + headerFormat.val_offset,
+            headerFormat.val_len);
+    value[headerFormat.val_len] = '\0';
+
+    TcpDecodedHeadersMap[streamId][name] = value;
+    // decodedHeaders[name] = value;
+  }
+
+  for (const auto &header : TcpDecodedHeadersMap[streamId]) {
+    std::cout << header.first << ": " << header.second << std::endl;
+  }
+
+  lshpack_dec_cleanup(&dec);
+}
+
 // HTTP1 Response Formatted String to HTTP3 Headers Map
-void HTTPBase::ResponseHTTP1ToHTTP3Headers(
+void HTTPBase::RespHeaderToPseudoHeader(
     const std::string &http1Headers,
-    std::unordered_map<std::string, std::string> &headerMap) {
+    std::unordered_map<std::string, std::string> &headersMap) {
   std::istringstream stream(http1Headers);
   std::string line;
   std::string key{};
@@ -97,22 +153,25 @@ void HTTPBase::ResponseHTTP1ToHTTP3Headers(
         key = ":status";
         value = line.substr(firstSpace + 1, secondSpace - firstSpace - 1);
         // headers.emplace_back(key, value);
-        headerMap[key] = value;
+        headersMap[key] = value;
 
       } else {
         key = line.substr(0, firstSpace - 1);
         value = line.substr(firstSpace + 1);
 
+        std::transform(key.begin(), key.end(), key.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+
         // Remove "Connection" header
-        if (key != "Connection")
-          headerMap[key] = value;
+        if (key != "connection")
+          headersMap[key] = value;
         // headers.emplace_back(key, value);
       }
     }
   }
 }
 
-int HTTPBase::SendFramesToStream(
+int HTTPBase::HTTP3_SendFramesToStream(
     HQUIC Stream, const std::vector<std::vector<uint8_t>> &frames) {
   QUIC_STATUS Status;
   uint8_t *SendBufferRaw;
@@ -150,14 +209,14 @@ int HTTPBase::SendFramesToStream(
       if (QUIC_FAILED(Status)) {
         MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
 
-        return -1;
+        return ERROR;
       }
     }
   }
   return 0;
 }
 
-int HTTPBase::SendFramesToNewConn(
+int HTTPBase::HTTP3_SendFramesToNewConn(
     _In_ HQUIC Connection, HQUIC Stream,
     const std::vector<std::vector<uint8_t>> &frames) {
   QUIC_STATUS Status;
@@ -209,7 +268,7 @@ int HTTPBase::SendFramesToNewConn(
   return frames.size();
 }
 
-std::vector<uint8_t> HTTPBase::BuildDataFrame(std::string &data) {
+std::vector<uint8_t> HTTPBase::HTTP3_BuildDataFrame(std::string &data) {
   // Construct the frame header for Headers
   uint8_t frameType = 0x00; // 0x00 for DATA frame
   size_t payloadLength = data.size();
@@ -239,7 +298,7 @@ std::vector<uint8_t> HTTPBase::BuildDataFrame(std::string &data) {
 }
 
 std::vector<uint8_t>
-HTTPBase::BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders) {
+HTTPBase::HTTP3_BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders) {
   // Construct the frame header for Headers
   uint8_t frameType = 0x01; // 0x01 for HEADERS frame
   size_t payloadLength = encodedHeaders.size();
@@ -255,6 +314,141 @@ HTTPBase::BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders) {
   // Frame payload for Headers
   // std::vector<uint8_t> framePayload(payloadLength);
   // memcpy(framePayload.data(), encodedHeaders.c_str(), payloadLength);
+
+  // Combine the Frame Header and Payload into one buffer
+  size_t totalFrameSize = frameHeader.size() + payloadLength;
+
+  // Complete Header frame (frame header + frame payload)
+  std::vector<uint8_t> headerFrame(totalFrameSize);
+  headerFrame.resize(totalFrameSize);
+  memcpy(headerFrame.data(), frameHeader.data(), frameHeader.size());
+  memcpy(headerFrame.data() + frameHeader.size(), encodedHeaders.data(),
+         payloadLength);
+
+  return headerFrame;
+}
+
+std::vector<uint8_t> HTTPBase::HTTP2_BuildDataFrame(std::string &data,
+                                                    uint32_t streamID) {
+  // Could be more if negotiated in SETTINGS frame
+  // (Would also require a readjustment in the frame header)
+  const size_t MAX_FRAME_SIZE = 16384;
+
+  // Construct the frame header for Headers
+  uint8_t frameType = 0x00; // 0x00 for DATA frame
+  // uint8_t flags = 0x00; // No flags
+
+  uint8_t flags = 0x01; // END_STREAM
+  size_t payloadLength = data.size();
+
+  // Header Frame : Type, Length
+  std::vector<uint8_t> frameHeader(9, 0); // 9 bytes total
+
+  frameHeader[0] = (payloadLength >> 16) & 0xFF;
+  frameHeader[1] = (payloadLength >> 8) & 0xFF;
+  frameHeader[2] = payloadLength & 0xFF;
+
+  frameHeader[3] = frameType;
+
+  frameHeader[4] = flags;
+
+  frameHeader[5] = (streamID >> 24) & 0xFF;
+  frameHeader[6] = (streamID >> 16) & 0xFF;
+  frameHeader[7] = (streamID >> 8) & 0xFF;
+  frameHeader[8] = streamID & 0xFF;
+
+  // Frame payload for Headers
+  std::vector<uint8_t> framePayload(payloadLength);
+  memcpy(framePayload.data(), data.c_str(), payloadLength);
+
+  // Combine the Frame Header and Payload into one buffer
+  size_t totalFrameSize = frameHeader.size() + framePayload.size();
+
+  // Complete Header frame (frame header + frame payload)
+  std::vector<uint8_t> dataFrame(totalFrameSize);
+  memcpy(dataFrame.data(), frameHeader.data(), frameHeader.size());
+  memcpy(dataFrame.data() + frameHeader.size(), framePayload.data(),
+         payloadLength);
+
+  return dataFrame;
+}
+
+std::vector<uint8_t> HTTPBase::HTTP2_BuildSettingsFrame(uint8_t frameFlags) {
+  uint32_t streamId = 0;
+  // Construct the frame header for Headers
+  uint8_t frameType = 0x04; // 0x01 for HEADERS frame
+  std::vector<uint8_t> payload = {
+      0x00, 0x03,            // Setting ID: SETTINGS_MAX_CONCURRENT_STREAMS
+      0x00, 0x00, 0x00, 0x64 // Value: 100
+  };
+
+  // size_t payloadLength = payload.size();
+
+  size_t payloadLength = 0;
+  // Header can carry END_STREAM and still have CONTINUATION frames
+  // sent next
+  // 0x01
+  std::vector<uint8_t> frameHeader(9, 0); // 9 bytes total
+
+  frameHeader[0] = (payloadLength >> 16) & 0xFF;
+  frameHeader[1] = (payloadLength >> 8) & 0xFF;
+  frameHeader[2] = payloadLength & 0xFF;
+
+  frameHeader[3] = frameType;
+
+  frameHeader[4] = frameFlags;
+
+  frameHeader[5] = (streamId >> 24) & 0xFF;
+  frameHeader[6] = (streamId >> 16) & 0xFF;
+  frameHeader[7] = (streamId >> 8) & 0xFF;
+  frameHeader[8] = streamId & 0xFF;
+
+  // Combine the Frame Header and Payload into one buffer
+  size_t totalFrameSize = frameHeader.size() + payloadLength;
+
+  std::vector<uint8_t> settingsFrame;
+  settingsFrame.insert(settingsFrame.end(), frameHeader.begin(),
+                       frameHeader.end());
+  // settingsFrame.insert(settingsFrame.end(), payload.begin(), payload.end());
+
+  return frameHeader;
+  // Complete Header frame (frame header + frame payload)
+  // std::vector<uint8_t> headerFrame(totalFrameSize);
+  // headerFrame.resize(totalFrameSize);
+  // memcpy(headerFrame.data(), frameHeader.data(), frameHeader.size());
+
+  // memcpy(headerFrame.data() + frameHeader.size(), encodedHeaders.data(),
+  //        payloadLength);
+
+  // return headerFrame;
+}
+
+std::vector<uint8_t>
+HTTPBase::HTTP2_BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders,
+                                 uint32_t streamId) {
+  // Construct the frame header for Headers
+  uint8_t frameType = 0x01; // 0x01 for HEADERS frame
+  size_t payloadLength = encodedHeaders.size();
+  // streamId++;
+  // Header can carry END_STREAM and still have CONTINUATION frames
+  // sent next
+  uint8_t flags = 0x04; // END_HEADERS
+  // flags |= (1 << 0);
+
+  std::vector<uint8_t> frameHeader(9, 0); // 9 bytes total
+
+  frameHeader[0] = (payloadLength >> 16) & 0xFF;
+  frameHeader[1] = (payloadLength >> 8) & 0xFF;
+  frameHeader[2] = payloadLength & 0xFF;
+
+  frameHeader[3] = frameType;
+
+  frameHeader[4] = flags;
+
+  frameHeader[5] = (streamId >> 24) & 0xFF;
+  frameHeader[6] = (streamId >> 16) & 0xFF;
+  frameHeader[7] = (streamId >> 8) & 0xFF;
+  frameHeader[8] = streamId & 0xFF;
 
   // Combine the Frame Header and Payload into one buffer
   size_t totalFrameSize = frameHeader.size() + payloadLength;
@@ -325,7 +519,54 @@ uint64_t HTTPBase::ReadVarint(std::vector<uint8_t>::iterator &iter,
   return value;
 }
 
-void HTTPBase::EncQPACKHeaders(
+void HTTPBase::HPACK_EncodeHeaders(
+    std::unordered_map<std::string, std::string> &headersMap,
+    std::vector<uint8_t> &encodedHeaders) {
+  struct lshpack_enc enc{};
+
+  unsigned char buf[1024]; // Buffer for encoded headers
+  unsigned char *dst = buf;
+  unsigned char *end = buf + sizeof(buf);
+
+  lshpack_enc_init(&enc);
+
+  {
+    const std::string &name = ":status";
+    const std::string &value = headersMap[":status"];
+
+    std::string combinedHeader = name + ": " + value;
+    // std::cout << "Encoding header: " << combinedHeader << std::endl;
+    struct lsxpack_header headerFormat;
+    lsxpack_header_set_offset2(&headerFormat, combinedHeader.c_str(), 0,
+                               name.length(), name.length() + 2, value.size());
+
+    dst = lshpack_enc_encode(&enc, dst, end, &headerFormat);
+  }
+
+  for (const auto &header : headersMap) {
+    if (header.first == ":status") {
+      continue;
+    }
+
+    // auto header = headersMap.begin();
+    const std::string &name = header.first;
+    const std::string &value = header.second;
+
+    std::string combinedHeader = name + ": " + value;
+    // std::cout << "Encoding header: " << combinedHeader << std::endl;
+    struct lsxpack_header headerFormat;
+    lsxpack_header_set_offset2(&headerFormat, combinedHeader.c_str(), 0,
+                               name.length(), name.length() + 2, value.size());
+
+    dst = lshpack_enc_encode(&enc, dst, end, &headerFormat);
+  }
+
+  encodedHeaders.assign(buf, dst);
+
+  lshpack_enc_cleanup(&enc);
+}
+
+void HTTPBase::QPACK_EncodeHeaders(
     std::unordered_map<std::string, std::string> &headersMap,
     std::vector<uint8_t> &encodedHeaders) {
   // Prepare encoding context for QPACK (Header encoding for QUIC)
@@ -346,6 +587,8 @@ void HTTPBase::EncQPACKHeaders(
     return;
   }
 
+  //
+  // HERE
   ret = lsqpack_enc_start_header(enc.data(), 100, 0);
 
   enum lsqpack_enc_status encStatus;
@@ -355,8 +598,39 @@ void HTTPBase::EncQPACKHeaders(
 
   size_t headerSize = 1024;
   size_t totalHeaderSize = 0;
+
+  // Status needs to be sent first (curl HTTP2 seems to not work otherwise)
+  {
+    const std::string &name = ":status";
+    const std::string &value = headersMap[":status"];
+
+    std::string combinedHeader = name + ": " + value;
+
+    struct lsxpack_header headerFormat;
+    lsxpack_header_set_offset2(&headerFormat, combinedHeader.c_str(), 0,
+                               name.length(), name.length() + 2, value.size());
+
+    size_t encSize = 1024;
+    std::vector<unsigned char> encBuf(encSize);
+
+    lsqpack_enc_flags enc_flags{};
+
+    encodedHeadersInfo.emplace_back(std::vector<unsigned char>(headerSize),
+                                    headerSize);
+
+    encStatus = lsqpack_enc_encode(enc.data(), encBuf.data(), &encSize,
+                                   encodedHeadersInfo.back().first.data(),
+                                   &encodedHeadersInfo.back().second,
+                                   &headerFormat, enc_flags);
+
+    totalHeaderSize += encodedHeadersInfo.back().second;
+  }
+
   for (const auto &header : headersMap) {
     // auto header = headersMap.begin();
+    if (header.first == ":status")
+      continue;
+
     const std::string &name = header.first;
     const std::string &value = header.second;
 
@@ -402,4 +676,6 @@ void HTTPBase::EncQPACKHeaders(
            currHeaderSize);
     totalHeaderSize += currHeaderSize;
   }
+
+  lsqpack_enc_cleanup(enc.data());
 }

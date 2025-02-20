@@ -26,7 +26,7 @@
 
 // Default initializer adds default routes
 Router::Router() { AddRoute("BR", "", handleBadRequest); };
-Router::~Router() { std::cout << "Deconstructed router\n"; }
+Router::~Router() = default;
 
 void Router::AddRoute(const std::string &method, const std::string &path,
                       const ROUTE_HANDLER &handler) {
@@ -37,6 +37,17 @@ STATUS_CODE Router::RouteRequest(const std::string &method,
                                  const std::string &path,
                                  const std::string &data, Protocol protocol,
                                  void *context) {
+  std::cout << "Method: " << method << " Path: " << path << " Data: " << data
+            << std::endl;
+
+  bool acceptEncoding = false;
+
+  // if (path.starts_with("/static/")) {
+  //   std::string filePath = "static" + path.substr(7);
+  //   // Check how to proceed in here
+  //   staticFileHandler(ssl, filePath, acceptEncoding);
+  // }
+
   // std::cout << "Routing request..." << std::endl;
   std::string cacheKey = method + " " + path;
 
@@ -62,24 +73,46 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
   }
 
   break;
-    // case Protocol::HTTP2:
-    //   return handleHTTP2Request(method, path, static_cast<SSL *>(context));
+  case Protocol::HTTP2:
 
+  {
+    HTTP2Context *ctx = (HTTP2Context *)context;
+
+    SSL *clientSSL = ctx->ssl;
+    uint32_t streamId = ctx->streamId;
+
+    std::unordered_map<std::string, std::string> headersMap;
+
+    HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
+
+    std::vector<uint8_t> encodedHeaders;
+
+    HTTPBase::HPACK_EncodeHeaders(headersMap, encodedHeaders);
+
+    std::vector<std::vector<uint8_t>> frames;
+
+    frames.emplace_back(
+        HTTPBase::HTTP2_BuildHeaderFrame(encodedHeaders, streamId));
+
+    HTTPServer::SendHTTP2Response(clientSSL, frames);
+  }
+
+  break;
   case Protocol::HTTP3:
 
   {
     std::unordered_map<std::string, std::string> headersMap;
-    HTTPBase::ResponseHTTP1ToHTTP3Headers(headers, headersMap);
+    HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
 
     // Transform HTTP1 headers into HTTP3
     // Compress headers with QPACK
     std::vector<uint8_t> encodedHeaders;
 
-    HTTPBase::EncQPACKHeaders(headersMap, encodedHeaders);
+    HTTPBase::QPACK_EncodeHeaders(headersMap, encodedHeaders);
 
     std::vector<std::vector<uint8_t>> frames;
 
-    frames.emplace_back(HTTPBase::BuildHeaderFrame(encodedHeaders));
+    frames.emplace_back(HTTPBase::HTTP3_BuildHeaderFrame(encodedHeaders));
 
     HQUIC Stream = (HQUIC)context;
 
@@ -106,22 +139,49 @@ void Router::SendResponse(std::string &headers, std::string &body,
   }
 
   break;
-    // case Protocol::HTTP2:
-    //   return handleHTTP2Request(method, path, static_cast<SSL *>(context));
+  case Protocol::HTTP2:
+
+  {
+    HTTP2Context *ctx = (HTTP2Context *)context;
+
+    SSL *clientSSL = ctx->ssl;
+    uint32_t streamId = ctx->streamId;
+
+    std::unordered_map<std::string, std::string> headersMap;
+
+    HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
+
+    std::vector<uint8_t> encodedHeaders;
+
+    HTTPBase::HPACK_EncodeHeaders(headersMap, encodedHeaders);
+
+    std::vector<std::vector<uint8_t>> frames;
+
+    frames.emplace_back(
+        HTTPBase::HTTP2_BuildHeaderFrame(encodedHeaders, streamId));
+
+    frames.emplace_back(HTTPBase::HTTP2_BuildDataFrame(body, streamId));
+
+    HTTPServer::SendHTTP2Response(clientSSL, frames);
+  }
+
+  break;
 
   case Protocol::HTTP3:
 
   {
     std::unordered_map<std::string, std::string> headersMap;
-    HTTPBase::ResponseHTTP1ToHTTP3Headers(headers, headersMap);
+    HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
 
     std::vector<uint8_t> encodedHeaders;
 
-    HTTPBase::EncQPACKHeaders(headersMap, encodedHeaders);
+    HTTPBase::QPACK_EncodeHeaders(headersMap, encodedHeaders);
 
     std::vector<std::vector<uint8_t>> frames;
 
-    frames.emplace_back(HTTPBase::BuildHeaderFrame(encodedHeaders));
+    frames.emplace_back(HTTPBase::HTTP3_BuildHeaderFrame(encodedHeaders));
+
+    frames.emplace_back(HTTPBase::HTTP3_BuildDataFrame(body));
 
     HQUIC Stream = (HQUIC)context;
 

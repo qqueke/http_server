@@ -19,7 +19,6 @@
 #include <mutex>
 #include <string>
 
-// #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 #include "common.hpp"
 #include "router.hpp"
 
@@ -47,30 +46,22 @@ private:
 
   HTTPServer(int argc, char *argv[]);
 
-  void HTTP1RequestHandlerThread(int clientSock);
+  void HandleHTTP1Request(SSL *clientSSL);
 
-  void RunHTTP1();
-  void RunHTTP2();
-  void RunHTTP3();
+  void HandleHTTP2Request(SSL *clientSSL);
+
+  void RequestThreadHandler(int clientSock);
+
+  void RunTCP();
+  void RunQUIC();
 
   std::unordered_map<HQUIC, std::vector<uint8_t>> ConnectionSettings;
 
 public:
-  // std::unordered_map<HQUIC, std::vector<uint8_t>> BufferMap;
-  // std::unordered_map<HQUIC, std::unordered_map<std::string, std::string>>
-  //     DecodedHeadersMap;
-
-  // std::unordered_map<HQUIC, std::vector<uint8_t>> BufferMap;
-  // std::unordered_map<HQUIC, std::unordered_map<std::string, std::string>>
-  //     DecodedHeadersMap;
-
   static void Initialize(int argc, char *argv[]);
   static HTTPServer *GetInstance();
 
-  // std::unordered_map<HQUIC, std::vector<uint8_t>> BufferMap;
   std::unique_ptr<Router> ServerRouter;
-  // std::unordered_map<HQUIC, std::unordered_map<std::string, std::string>>
-  //     DecodedHeadersMap;
 
   HTTPServer(const HTTPServer &) = delete;
   HTTPServer(HTTPServer &&) = delete;
@@ -78,7 +69,7 @@ public:
   HTTPServer &operator=(HTTPServer &&) = delete;
   ~HTTPServer();
 
-  static int dhiProcessHeader(void *hblock_ctx, struct lsxpack_header *xhdr);
+  static int QPACK_ProcessHeader(void *hblock_ctx, struct lsxpack_header *xhdr);
 
   // The server's callback for stream events from MsQuic.
   _IRQL_requires_max_(DISPATCH_LEVEL)
@@ -103,8 +94,8 @@ public:
   unsigned char LoadQUICConfiguration(
       _In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[]) override;
 
-  void DecQPACKHeaders(HQUIC stream,
-                       std::vector<uint8_t> &encodedHeaders) override;
+  void QPACK_DecodeHeaders(HQUIC stream,
+                           std::vector<uint8_t> &encodedHeaders) override;
 
   void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
                          std::string &data) override;
@@ -122,14 +113,17 @@ public:
                 const ROUTE_HANDLER &handler);
   void Run();
 
-  static int ValidateRequestsHTTP1(const std::string &request,
-                                   std::string &method, std::string &path,
-                                   std::string &body, bool &acceptEncoding);
+  static void ValidateHeaders(const std::string &request, std::string &method,
+                              std::string &path, std::string &body,
+                              bool &acceptEncoding);
 
-  static void ValidateHeadersHTTP3(
+  static void ValidatePseudoHeaders(
       std::unordered_map<std::string, std::string> &headersMap);
 
   static int SendHTTP1Response(SSL *clientSSL, const std::string &response);
+
+  static int SendHTTP2Response(SSL *clientSSL,
+                               std::vector<std::vector<uint8_t>> &frames);
 
   static int SendHTTP3Response(HQUIC Stream,
                                std::vector<std::vector<uint8_t>> &frames);

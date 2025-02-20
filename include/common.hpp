@@ -33,17 +33,23 @@ protected:
 
   // Define virtual for run
 
-  virtual void DecQPACKHeaders(HQUIC stream,
-                               std::vector<uint8_t> &encodedHeaders) = 0;
+  virtual void QPACK_DecodeHeaders(HQUIC stream,
+                                   std::vector<uint8_t> &encodedHeaders) = 0;
+
+  // virtual void HPACK_DecodeHeaders(uint32_t streamId,
+  //                                  std::vector<uint8_t> &encodedHeaders) = 0;
 
   virtual void ParseStreamBuffer(HQUIC Stream,
                                  std::vector<uint8_t> &streamBuffer,
                                  std::string &data) = 0;
 
 public:
-  std::unordered_map<HQUIC, std::vector<uint8_t>> BufferMap;
+  std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
+      TcpDecodedHeadersMap;
+
+  std::unordered_map<HQUIC, std::vector<uint8_t>> QuicBufferMap;
   std::unordered_map<HQUIC, std::unordered_map<std::string, std::string>>
-      DecodedHeadersMap;
+      QuicDecodedHeadersMap;
 
   virtual ~HTTPBase() = default;
 
@@ -54,33 +60,50 @@ public:
                                                  struct lsxpack_header *xhdr,
                                                  size_t space);
 
-  static void ResponseHTTP1ToHTTP3Headers(
+  static void RespHeaderToPseudoHeader(
       const std::string &http1Headers,
       std::unordered_map<std::string, std::string> &headerMap);
 
-  static void RequestHTTP1ToHTTP3Headers(
+  static void ReqHeaderToPseudoHeader(
       const std::string &http1Headers,
       std::unordered_map<std::string, std::string> &headersMap);
 
   static int
-  SendFramesToStream(HQUIC Stream,
-                     const std::vector<std::vector<uint8_t>> &frames);
+  HTTP3_SendFramesToStream(HQUIC Stream,
+                           const std::vector<std::vector<uint8_t>> &frames);
   static int
-  SendFramesToNewConn(HQUIC Connection, HQUIC Stream,
-                      const std::vector<std::vector<uint8_t>> &frames);
+  HTTP3_SendFramesToNewConn(HQUIC Connection, HQUIC Stream,
+                            const std::vector<std::vector<uint8_t>> &frames);
 
-  static std::vector<uint8_t> BuildDataFrame(std::string &data);
+  static std::vector<uint8_t> HTTP3_BuildDataFrame(std::string &data);
 
   static std::vector<uint8_t>
-  BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders);
+  HTTP3_BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders);
 
+  static std::vector<uint8_t> HTTP2_BuildDataFrame(std::string &data,
+                                                   uint32_t streamID);
+
+  std::vector<uint8_t> HTTP2_BuildSettingsFrame(uint8_t frameFlags);
+
+  static std::vector<uint8_t>
+  HTTP2_BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders,
+                         uint32_t streamID);
+
+  /*----------------QPACK helper functions-------------------------*/
   static uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
                              const std::vector<uint8_t>::iterator &end);
   static void EncodeVarint(std::vector<uint8_t> &buffer, uint64_t value);
 
+  /*------------- Encoding and Decoding functions------------------*/
   static void
-  EncQPACKHeaders(std::unordered_map<std::string, std::string> &headersMap,
-                  std::vector<uint8_t> &encodedHeaders);
+  QPACK_EncodeHeaders(std::unordered_map<std::string, std::string> &headersMap,
+                      std::vector<uint8_t> &encodedHeaders);
+  static void
+  HPACK_EncodeHeaders(std::unordered_map<std::string, std::string> &headersMap,
+                      std::vector<uint8_t> &encodedHeaders);
+
+  void HPACK_DecodeHeaders(uint32_t streamId,
+                           std::vector<uint8_t> &encodedHeaders);
 };
 
 #endif // HTTPBASE_HPP

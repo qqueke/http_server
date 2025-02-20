@@ -1,5 +1,6 @@
 #include "server.hpp"
 
+#include <lshpack.h>
 #include <msquic.h>
 #include <netinet/in.h>
 #include <openssl/err.h>
@@ -10,9 +11,11 @@
 #include <unistd.h>
 #include <zlib.h>
 
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 #include <format>
 #include <iostream>
@@ -21,6 +24,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 // #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 #include "common.hpp"
@@ -37,8 +41,33 @@ std::atomic<bool> shouldShutdown(false);
 HTTPServer *HTTPServer::instance = nullptr;
 std::mutex HTTPServer::instanceMutex;
 
-int HTTPServer::dhiProcessHeader(void *hblock_ctx,
-                                 struct lsxpack_header *xhdr) {
+std::vector<std::string> serverProtocols = {"h2", "http/1.1"};
+
+int alpnSelectCallback(SSL *ssl, const unsigned char **out,
+                       unsigned char *outlen, const unsigned char *in,
+                       unsigned int inlen, void *arg) {
+  std::unordered_set<std::string> clientProtocols;
+
+  for (size_t i = 0; i < inlen;) {
+    unsigned char len = in[i];
+    clientProtocols.insert(
+        std::string(reinterpret_cast<const char *>(&in[i + 1]), len));
+    i += len + 1;
+  }
+
+  for (const auto &serverProtocol : serverProtocols) {
+    if (clientProtocols.find(serverProtocol) != clientProtocols.end()) {
+      *out = (const unsigned char *)(serverProtocol.c_str());
+      *outlen = (unsigned char)(serverProtocol.size());
+      return SSL_TLSEXT_ERR_OK;
+    }
+  }
+
+  return SSL_TLSEXT_ERR_NOACK;
+}
+
+int HTTPServer::QPACK_ProcessHeader(void *hblock_ctx,
+                                    struct lsxpack_header *xhdr) {
   std::string headerKey(xhdr->buf + xhdr->name_offset, xhdr->name_len);
   std::string headerValue(xhdr->buf + xhdr->val_offset, xhdr->val_len);
 
@@ -46,7 +75,7 @@ int HTTPServer::dhiProcessHeader(void *hblock_ctx,
   // block_ctx->stream
   HTTPServer *server = HTTPServer::GetInstance();
 
-  server->DecodedHeadersMap[block_ctx->stream][headerKey] = headerValue;
+  server->QuicDecodedHeadersMap[block_ctx->stream][headerKey] = headerValue;
 
   return 0;
 }
@@ -140,14 +169,67 @@ unsigned char HTTPServer::LoadQUICConfiguration(
   return TRUE;
 }
 
-void HTTPServer::DecQPACKHeaders(HQUIC stream,
-                                 std::vector<uint8_t> &encodedHeaders) {
+// Here we need to put headers map in the HTTP2RequestMap
+// void HTTPServer::HPACK_DecodeHeaders(uint32_t streamId,
+//                                      std::vector<uint8_t> &encodedHeaders) {
+//   // std::cout << "encodedHeaders size: " << std::dec <<
+//   encodedHeaders.size()
+//   //           << std::endl;
+//   std::unordered_map<std::string, std::string> decodedHeaders;
+//   struct lshpack_dec dec{};
+//   lshpack_dec_init(&dec);
+//
+//   const unsigned char *src = const_cast<unsigned char
+//   *>(encodedHeaders.data()); const unsigned char *end = src +
+//   encodedHeaders.size();
+//
+//   struct lsxpack_header headerFormat;
+//   char headerBuffer[2048];
+//   memset(headerBuffer, 0, sizeof(headerBuffer));
+//
+//   char name[256], value[1024];
+//
+//   while (src < end) {
+//     lsxpack_header_prepare_decode(&headerFormat, headerBuffer, 0,
+//                                   sizeof(headerBuffer));
+//
+//     int ret = lshpack_dec_decode(&dec, &src, end, &headerFormat);
+//     if (ret < 0) {
+//       std::cerr << "Failed to decode HPACK headers" << std::endl;
+//       break;
+//     }
+//
+//     int decodedSize = headerFormat.name_len + headerFormat.val_len +
+//                       lshpack_dec_extra_bytes(dec);
+//
+//     // Copy decoded name and value
+//     strncpy(name, headerFormat.buf + headerFormat.name_offset,
+//             headerFormat.name_len);
+//     name[headerFormat.name_len] = '\0';
+//
+//     strncpy(value, headerFormat.buf + headerFormat.val_offset,
+//             headerFormat.val_len);
+//     value[headerFormat.val_len] = '\0';
+//
+//     TcpDecodedHeadersMap[streamId][name] = value;
+//     // decodedHeaders[name] = value;
+//   }
+//
+//   // for (const auto &header : decodedHeaders) {
+//   //   std::cout << header.first << ": " << header.second << std::endl;
+//   // }
+//
+//   lshpack_dec_cleanup(&dec);
+// }
+
+void HTTPServer::QPACK_DecodeHeaders(HQUIC stream,
+                                     std::vector<uint8_t> &encodedHeaders) {
   std::vector<struct lsqpack_dec> dec(1);
 
   struct lsqpack_dec_hset_if hset_if;
   hset_if.dhi_unblocked = HTTPBase::dhiUnblocked;
   hset_if.dhi_prepare_decode = HTTPBase::dhiPrepareDecode;
-  hset_if.dhi_process_header = dhiProcessHeader;
+  hset_if.dhi_process_header = QPACK_ProcessHeader;
 
   enum lsqpack_dec_opts dec_opts {};
   lsqpack_dec_init(dec.data(), NULL, 0x1000, 0, &hset_if, dec_opts);
@@ -167,6 +249,8 @@ void HTTPServer::DecQPACKHeaders(HQUIC stream,
   readStatus =
       lsqpack_dec_header_in(dec.data(), &blockCtx.back(), 100, totalHeaderSize,
                             &encodedHeadersPtr, totalHeaderSize, NULL, NULL);
+
+  lsqpack_dec_cleanup(dec.data());
 }
 
 void HTTPServer::ParseStreamBuffer(HQUIC Stream,
@@ -201,7 +285,7 @@ void HTTPServer::ParseStreamBuffer(HQUIC Stream,
       {
         std::vector<uint8_t> encodedHeaders(iter, iter + frameLength);
 
-        DecQPACKHeaders(Stream, encodedHeaders);
+        QPACK_DecodeHeaders(Stream, encodedHeaders);
 
         // headers = std::string(iter, iter + frameLength);
       }
@@ -467,27 +551,77 @@ void HTTPServer::storeInCache(const std::string &cacheKey,
 }
 
 int HTTPServer::SendHTTP1Response(SSL *clientSSL, const std::string &response) {
-  ssize_t bytesSent =
-      SSL_write(clientSSL, response.data(), (int)response.size());
-  if (bytesSent <= 0) {
-    LogError("Failed to reply to client");
-    return ERROR;
+  std::cout << "Sending HTTP1 response" << std::endl;
+
+  size_t totalBytesSent = 0;
+  size_t frameSize = response.size();
+
+  while (totalBytesSent < frameSize) {
+    int sentBytes = SSL_write(clientSSL, response.data() + totalBytesSent,
+                              (int)(frameSize - totalBytesSent));
+
+    if (sentBytes > 0) {
+      totalBytesSent += sentBytes;
+    } else {
+      int error = SSL_get_error(clientSSL, sentBytes);
+      if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
+        std::cout << "SSL buffer full, retrying..." << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        continue;
+      } else {
+        LogError("Failed to send HTTP1 response");
+        return ERROR;
+      }
+    }
   }
+  return 0;
+}
+
+int HTTPServer::SendHTTP2Response(SSL *clientSSL,
+                                  std::vector<std::vector<uint8_t>> &frames) {
+  std::cout << "Sending HTTP2 response" << std::endl;
+
+  for (auto &frame : frames) {
+    size_t totalBytesSent = 0;
+    size_t frameSize = frame.size();
+
+    while (totalBytesSent < frameSize) {
+      int sentBytes = SSL_write(clientSSL, frame.data() + totalBytesSent,
+                                (int)(frameSize - totalBytesSent));
+
+      if (sentBytes > 0) {
+        totalBytesSent += sentBytes;
+      } else {
+        int error = SSL_get_error(clientSSL, sentBytes);
+        if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
+          std::cout << "SSL buffer full, retrying..." << std::endl;
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          continue;
+        } else {
+          LogError("Failed to send HTTP2 frame");
+          return ERROR;
+        }
+      }
+    }
+  }
+
   return 0;
 }
 
 int HTTPServer::SendHTTP3Response(HQUIC Stream,
                                   std::vector<std::vector<uint8_t>> &frames) {
-  if (SendFramesToStream(Stream, frames) == ERROR) {
+  std::cout << "Sending HTTP3 response" << std::endl;
+  if (HTTP3_SendFramesToStream(Stream, frames) == ERROR) {
+    LogError("Failed to send HTTP3 response");
     return ERROR;
   }
 
   return 0;
 }
 
-int HTTPServer::ValidateRequestsHTTP1(const std::string &request,
-                                      std::string &method, std::string &path,
-                                      std::string &body, bool &acceptEncoding) {
+void HTTPServer::ValidateHeaders(const std::string &request,
+                                 std::string &method, std::string &path,
+                                 std::string &body, bool &acceptEncoding) {
   std::istringstream requestStream(request);
   std::string line;
 
@@ -497,15 +631,21 @@ int HTTPServer::ValidateRequestsHTTP1(const std::string &request,
   requestLine >> method >> path >> protocol;
 
   if (method != "GET" && method != "POST" && method != "PUT") {
-    return ERROR;
+    LogError("Request validation was unsuccessful");
+    method = "BR";
+    return;
   }
 
   if (path.empty() || path[0] != '/' || path.find("../") != std::string::npos) {
-    return ERROR;
+    LogError("Request validation was unsuccessful");
+    method = "BR";
+    return;
   }
 
   if (protocol != "HTTP/1.1" && protocol != "HTTP/2") {
-    return ERROR;
+    LogError("Request validation was unsuccessful");
+    method = "BR";
+    return;
   }
 
   // header, value
@@ -517,7 +657,9 @@ int HTTPServer::ValidateRequestsHTTP1(const std::string &request,
 
     auto colonPos = line.find(": ");
     if (colonPos == std::string::npos) {
-      return ERROR;
+      LogError("Request validation was unsuccessful");
+      method = "BR";
+      return;
     }
 
     std::string key = line.substr(0, colonPos);
@@ -530,12 +672,16 @@ int HTTPServer::ValidateRequestsHTTP1(const std::string &request,
 
   // If we don't  find  host then it is a bad request
   if (headers.find("Host") == headers.end()) {
-    return ERROR;
+    LogError("Request validation was unsuccessful");
+    method = "BR";
+    return;
   }
 
   // If is a POST and has  no content length it is a bad request
   if (method == "POST" && headers.find("Content-Length") == headers.end()) {
-    return ERROR;
+    LogError("Request validation was unsuccessful");
+    method = "BR";
+    return;
   }
 
   // Parse Body (if has content-length)
@@ -547,7 +693,9 @@ int HTTPServer::ValidateRequestsHTTP1(const std::string &request,
 
     // If body size  doesnt match the content length defined then bad request
     if (body.size() != contentLength) {
-      return ERROR;
+      LogError("Request validation was unsuccessful");
+      method = "BR";
+      return;
     }
   }
 
@@ -558,21 +706,16 @@ int HTTPServer::ValidateRequestsHTTP1(const std::string &request,
 
   // If all validations pass
   std::cout << "Request successfully validated!\n";
-
-  return 0;
 }
 
-void HTTPServer::ValidateHeadersHTTP3(
+void HTTPServer::ValidatePseudoHeaders(
     std::unordered_map<std::string, std::string> &headersMap) {
-  // Should probably be a variable within the class
-  std::unordered_set<std::string> requiredHeaders;
-  requiredHeaders.insert(":method");
-  requiredHeaders.insert(":scheme");
-  requiredHeaders.insert(":path");
+  std::unordered_set<std::string> requiredHeaders = {":method", ":scheme",
+                                                     ":path"};
 
   for (const auto &header : requiredHeaders) {
     if (headersMap.find(header) == headersMap.end()) {
-      LogError("Failed to validate HTTP3 request (missing header field)");
+      LogError("Failed to validate pseudo-headers (missing header field)");
       headersMap["method"] = "BR";
       headersMap["path"] = "";
       return;
@@ -580,38 +723,267 @@ void HTTPServer::ValidateHeadersHTTP3(
   }
 
   // If all validations pass
-  std::cout << "Request successfully validated for HTTP/3!\n";
+  std::cout << "Request successfully validated pseudo-headers!\n";
 }
 
-void HTTPServer::HTTP1RequestHandlerThread(int clientSock) {
+enum HTTP2FrameFlags {
+  NONE = 0x0,             // No flags set
+  END_STREAM = (1 << 0),  // Bit 0: END_STREAM flag (0x1)
+  END_HEADERS = (1 << 2), // Bit 2: END_HEADERS flag (0x4)
+  PADDED = (1 << 3),      // Bit 3: PADDED flag (0x8)
+  PRIORITY = (1 << 4),    // Bit 4: PRIORITY flag (0x10)
+                          // Add other flags as needed
+};
+
+// Function to check if a specific flag is set
+bool isFlagSet(uint8_t flags, HTTP2FrameFlags flag) {
+  return (flags & flag) != 0;
+}
+
+void HTTPServer::HandleHTTP2Request(SSL *ssl) {
+  auto startTime = std::chrono::high_resolution_clock::now();
+  std::vector<uint8_t> buffer;
+  std::vector<uint8_t> tmpBuffer(BUFFER_SIZE);
+
+  // Buffer headers?
+  std::unordered_map<uint32_t, std::vector<uint8_t>> EncodedHeadersBufferMap;
+
+  std::unordered_map<uint32_t, std::string> TcpDataMap;
+
+  std::string method{};
+  std::string path{};
+  std::string status{};
+
+  const std::array<uint8_t, 24> HTTP2_PrefaceBytes = {
+      0x50, 0x52, 0x49, 0x20, 0x2A, 0x20, 0x48, 0x54, 0x54, 0x50, 0x2F, 0x32,
+      0x2E, 0x30, 0x0D, 0x0A, 0x0D, 0x0A, 0x53, 0x4D, 0x0D, 0x0A, 0x0D, 0x0A};
+
+  bool receivedPreface = false;
+
+  const size_t PREFACE_LENGTH = 24;
+  const size_t FRAME_HEADER_LENGTH = 9;
+  int offset = 0;
+
+  while (!shouldShutdown) {
+    ssize_t bytesReceived =
+        SSL_read(ssl, tmpBuffer.data(), (int)tmpBuffer.size());
+
+    if (bytesReceived == 0) {
+      LogError("Client closed the connection");
+      std::cout << "Client closed the connection" << std::endl;
+      break;
+    } else if (bytesReceived < 0) {
+      LogError("Failed to receive data");
+      std::cout << "Failed to receive data" << std::endl;
+      break;
+    }
+
+    buffer.insert(buffer.end(), tmpBuffer.begin(),
+                  tmpBuffer.begin() + bytesReceived);
+
+    if (!receivedPreface) {
+      if (buffer.size() < PREFACE_LENGTH) {
+        continue;
+      }
+
+      if (memcmp(HTTP2_PrefaceBytes.data(), buffer.data(), 24) != 0) {
+        LogError("Invalid HTTP/2 preface, closing connection.");
+        std::cout << "Invalid HTTP/2 preface, closing connection." << std::endl;
+        continue;
+      }
+
+      std::cout << "HTTP/2 Connection Preface received!" << std::endl;
+      receivedPreface = true;
+      offset = 24;
+    }
+
+    // If we received atleast the frame header
+    while (offset + FRAME_HEADER_LENGTH <= buffer.size()) {
+      uint8_t *framePtr = buffer.data() + offset;
+
+      uint32_t payloadLength = (static_cast<uint32_t>(framePtr[0]) << 16) |
+                               (static_cast<uint32_t>(framePtr[1]) << 8) |
+                               static_cast<uint32_t>(framePtr[2]);
+
+      if (offset + FRAME_HEADER_LENGTH + payloadLength > buffer.size()) {
+        break;
+      }
+
+      uint8_t frameType = framePtr[3];
+
+      uint8_t frameFlags = framePtr[4];
+
+      uint32_t frameStream = (framePtr[5] << 24) | (framePtr[6] << 16) |
+                             (framePtr[7] << 8) | framePtr[8];
+
+      std::cout << "Payload Length: " << std::dec << (int)payloadLength
+                << std::hex << ", Flags: " << (int)frameFlags << " ";
+
+      switch (frameType) {
+      case 0x00:
+        std::cout << "[strm][" << frameStream << "] DATA frame\n";
+
+        TcpDataMap[frameStream] += std::string(
+            reinterpret_cast<const char *>(framePtr + FRAME_HEADER_LENGTH),
+            payloadLength);
+
+        std::cout << TcpDataMap[frameStream] << std::endl;
+
+        if (isFlagSet(frameFlags, END_STREAM)) {
+          HTTPServer::ValidatePseudoHeaders(TcpDecodedHeadersMap[frameStream]);
+
+          HTTP2Context context(ssl, frameStream);
+          status = ServerRouter->RouteRequest(
+              TcpDecodedHeadersMap[frameStream][":method"],
+              TcpDecodedHeadersMap[frameStream][":path"],
+              TcpDataMap[frameStream], Protocol::HTTP2, &context);
+
+          TcpDecodedHeadersMap.erase(frameStream);
+          EncodedHeadersBufferMap.erase(frameStream);
+        }
+        break;
+      case 0x01:
+        std::cout << "[strm][" << frameStream << "] HEADERS frame\n";
+
+        {
+          EncodedHeadersBufferMap[frameStream].insert(
+              EncodedHeadersBufferMap[frameStream].end(),
+              framePtr + FRAME_HEADER_LENGTH,
+              framePtr + FRAME_HEADER_LENGTH + payloadLength);
+
+          if (isFlagSet(frameFlags, END_STREAM) &&
+              isFlagSet(frameFlags, END_HEADERS)) {
+            // Decode and dispatch request
+            HPACK_DecodeHeaders(frameStream,
+                                EncodedHeadersBufferMap[frameStream]);
+
+            HTTPServer::ValidatePseudoHeaders(
+                TcpDecodedHeadersMap[frameStream]);
+
+            HTTP2Context context(ssl, frameStream);
+            status = ServerRouter->RouteRequest(
+                TcpDecodedHeadersMap[frameStream][":method"],
+                TcpDecodedHeadersMap[frameStream][":path"],
+                TcpDataMap[frameStream], Protocol::HTTP2, &context);
+
+            TcpDecodedHeadersMap.erase(frameStream);
+            EncodedHeadersBufferMap.erase(frameStream);
+
+          } else if (isFlagSet(frameFlags, END_HEADERS)) {
+            // Decode and wait for request body
+            HPACK_DecodeHeaders(frameStream,
+                                EncodedHeadersBufferMap[frameStream]);
+          }
+        }
+        break;
+      case 0x02:
+        std::cout << "[strm][" << frameStream << "] PRIORITY frame\n";
+
+        break;
+      case 0x03:
+        std::cout << "[strm][" << frameStream
+                  << "] Received RST_STREAM frame\n";
+
+        TcpDecodedHeadersMap.erase(frameStream);
+        EncodedHeadersBufferMap.erase(frameStream);
+        break;
+
+      case 0x04:
+
+        std::cout << "[strm][" << frameStream << "] SETTINGS frame\n";
+        {
+          std::vector<uint8_t> frame =
+              HTTPBase::HTTP2_BuildSettingsFrame(frameFlags);
+
+          int sentBytes = SSL_write(ssl, frame.data(), (int)frame.size());
+          if (sentBytes <= 0) {
+            LogError("Failed to send SETTINGS frame");
+          }
+        }
+
+        break;
+      case 0x07:
+
+        std::cout << "[strm][" << frameStream << "] GOAWAY frame\n";
+
+        TcpDecodedHeadersMap.erase(frameStream);
+        EncodedHeadersBufferMap.erase(frameStream);
+        break;
+
+      case 0x08:
+
+        std::cout << "[strm][" << frameStream << "] WINDOW_UPDATE frame\n";
+
+        break;
+
+      case 0x09:
+
+        std::cout << "[strm][" << frameStream << "] CONTINUATION frame\n";
+        {
+          EncodedHeadersBufferMap[frameStream].insert(
+              EncodedHeadersBufferMap[frameStream].end(),
+              framePtr + FRAME_HEADER_LENGTH,
+              framePtr + FRAME_HEADER_LENGTH + payloadLength);
+
+          if (isFlagSet(frameFlags, END_STREAM) &&
+              isFlagSet(frameFlags, END_HEADERS)) {
+            // Decode and dispatch request
+            HPACK_DecodeHeaders(frameStream,
+                                EncodedHeadersBufferMap[frameStream]);
+
+            HTTPServer::ValidatePseudoHeaders(
+                TcpDecodedHeadersMap[frameStream]);
+            HTTP2Context context(ssl, frameStream);
+            status = ServerRouter->RouteRequest(
+                TcpDecodedHeadersMap[frameStream][":method"],
+                TcpDecodedHeadersMap[frameStream][":path"],
+                TcpDataMap[frameStream], Protocol::HTTP2, &context);
+
+            TcpDecodedHeadersMap.erase(frameStream);
+            EncodedHeadersBufferMap.erase(frameStream);
+          } else if (isFlagSet(frameFlags, END_HEADERS)) {
+            // Decode and wait for request body
+            HPACK_DecodeHeaders(frameStream,
+                                EncodedHeadersBufferMap[frameStream]);
+          }
+        }
+        break;
+
+      default:
+        std::cout << "[strm][" << frameStream << "] Unknown frame type: 0x"
+                  << std::dec << frameType << std::dec << "\n";
+        break;
+      }
+      // Move the offset to the next frame
+      offset += FRAME_HEADER_LENGTH + payloadLength;
+    }
+
+    if (offset == buffer.size()) {
+      buffer.clear();
+      offset = 0;
+    }
+  }
+
+  std::string body;
+
+  // Timer should end  here and log it to the file
+  auto endTime = std::chrono::high_resolution_clock::now();
+
+  std::chrono::duration<double> elapsed = endTime - startTime;
+
+  std::ostringstream logStream;
+  logStream << "Protocol: HTTP2 "
+            << "Method: " << method << " Path: " << path
+            << " Status: " << status << " Elapsed time: " << elapsed.count()
+            << " s";
+
+  LogRequest(logStream.str());
+}
+
+void HTTPServer::HandleHTTP1Request(SSL *ssl) {
   auto startTime = std::chrono::high_resolution_clock::now();
   std::array<char, BUFFER_SIZE> buffer{};
   std::string request;
-
-  // Create SSL object
-  SSL *ssl = SSL_new(ctx);
-
-  //  sets the file descriptor clientSock as the input/output facility for
-  // theTLS/SSL
-  SSL_set_fd(ssl, clientSock);
-
-  // TLS/SSL handshake
-  if (SSL_accept(ssl) <= 0) {
-    LogError("SSL handshake failed");
-    SSL_free(ssl);
-    close(clientSock);
-    return;
-  }
-
-  if (activeConnections >= MAX_CONNECTIONS) {
-    ServerRouter->RouteRequest("BR", "", "", Protocol::HTTP1, ssl);
-    LogError("Connections limit exceeded");
-    SSL_free(ssl);
-    close(clientSock);
-    return;
-  }
-
-  activeConnections++;
 
   std::string method{};
   std::string path{};
@@ -636,16 +1008,6 @@ void HTTPServer::HTTP1RequestHandlerThread(int clientSock) {
     request.append(buffer.data(), bytesReceived);
 
     while (bytesReceived == BUFFER_SIZE && !shouldShutdown) {
-      // struct pollfd pollFds(clientSock, POLLIN, 0);
-      //
-      // int polling = poll(&pollFds, 1, 0.5 * 1000);
-      // if (polling == 0) {
-      //   LogError("No more data to read");
-      //   break;
-      // } else if (polling == -1) {
-      //   LogError("Poll error, attempting to recv data");
-      // }
-
       if (SSL_pending(ssl) == 0) {
         LogError("No more data to read");
         break;
@@ -659,18 +1021,8 @@ void HTTPServer::HTTP1RequestHandlerThread(int clientSock) {
 
     std::string body;
     bool acceptEncoding = false;
-    if (ValidateRequestsHTTP1(request, method, path, body, acceptEncoding) ==
-        ERROR) {
-      LogError("Request validation was unsuccessful");
-      continue;
-    }
 
-    if (path.starts_with("/static/")) {
-      std::string filePath = "static" + path.substr(7);
-      // Check how to proceed in here
-      staticFileHandler(ssl, filePath, acceptEncoding);
-      continue;
-    }
+    ValidateHeaders(request, method, path, body, acceptEncoding);
 
     status =
         ServerRouter->RouteRequest(method, path, body, Protocol::HTTP1, ssl);
@@ -688,17 +1040,67 @@ void HTTPServer::HTTP1RequestHandlerThread(int clientSock) {
             << " s";
 
   LogRequest(logStream.str());
+}
 
-  SSL_shutdown(ssl);
-  SSL_free(ssl);
-  activeConnections--;
+std::mutex sslMutex;
+void HTTPServer::RequestThreadHandler(int clientSock) {
+  std::lock_guard<std::mutex> lock(sslMutex);
+  // Create SSL object
+  SSL *ssl = SSL_new(ctx);
+
+  //  sets the file descriptor clientSock as the input/output facility for
+  // theTLS/SSL
+  SSL_set_fd(ssl, clientSock);
+
+  // TLS/SSL handshake
+  if (SSL_accept(ssl) <= 0) {
+    LogError("SSL handshake failed");
+    SSL_free(ssl);
+    close(clientSock);
+    return;
+  }
+
+  if (activeConnections >= MAX_CONNECTIONS) {
+    ServerRouter->RouteRequest("BR", "", "", Protocol::HTTP1, ssl);
+    LogError("Connections limit exceeded");
+    // SSL_free(ssl);
+    close(clientSock);
+    return;
+  }
+
+  activeConnections++;
+
+  // Protocol must not be freed
+  const unsigned char *protocol = NULL;
+  unsigned int protocolLen = 0;
+  SSL_get0_alpn_selected(ssl, &protocol, &protocolLen);
+
+  if (protocolLen == 2 && memcmp(protocol, "h2", 2) == 0) {
+    std::cout << "Routing to HTTP2" << std::endl;
+    HandleHTTP2Request(ssl);
+  } else if (protocolLen == 8 && memcmp(protocol, "http/1.1", 8) == 0) {
+    HandleHTTP1Request(ssl);
+  } else {
+    LogError("Unsupported protocol or ALPN negotiation failed");
+  }
+
+  // SSL_shutdown(ssl);
+  // SSL_free(ssl);
   close(clientSock);
+  activeConnections--;
 }
 
 HTTPServer::~HTTPServer() {
-  if (serverSock != -1) {
-    close(serverSock);
+  // if (serverSock != -1) {
+  //   close(serverSock);
+  // }
+
+  // Wait for TCP thread to close the socket and set it to -1
+  while (serverSock != -1) {
   }
+
+  SSL_CTX_free(ctx);
+
   LogError("Server shutdown.");
   std::cout << "Server shutdown gracefully" << std::endl;
 }
@@ -708,7 +1110,7 @@ void HTTPServer::AddRoute(const std::string &method, const std::string &path,
   ServerRouter->AddRoute(method, path, handler);
 }
 
-void HTTPServer::RunHTTP1() {
+void HTTPServer::RunTCP() {
   if (listen(serverSock, MAX_PENDING_CONNECTIONS) == ERROR) {
     LogError(threadSafeStrerror(errno));
     return;
@@ -735,22 +1137,29 @@ void HTTPServer::RunHTTP1() {
 
     // Timer should start here
     if (setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO, &timeout,
-                   sizeof timeout) == -1) {
+                   sizeof timeout) == ERROR) {
       LogError(threadSafeStrerror(errno));
     }
 
     if (setsockopt(clientSock, SOL_SOCKET, SO_SNDTIMEO, &timeout,
-                   sizeof timeout) == -1) {
+                   sizeof timeout) == ERROR) {
       LogError(threadSafeStrerror(errno));
     }
 
+    // RequestThreadHandler(clientSock);
+
     std::thread([this, clientSock]() {
-      HTTP1RequestHandlerThread(clientSock);
+      RequestThreadHandler(clientSock);
     }).detach();
   }
+
+  if (serverSock != -1) {
+    close(serverSock);
+  }
+  serverSock = -1;
 }
 
-void HTTPServer::RunHTTP3() {
+void HTTPServer::RunQUIC() {
   // Starts listening for incoming connections.
   if (QUIC_FAILED(Status =
                       MsQuic->ListenerStart(Listener, &Alpn, 1, &Address))) {
@@ -768,11 +1177,11 @@ void HTTPServer::RunHTTP3() {
 }
 
 void HTTPServer::Run() {
-  std::thread http1Thread(&HTTPServer::RunHTTP1, this);
-  http1Thread.detach();
+  std::thread tcpThread(&HTTPServer::RunTCP, this);
+  tcpThread.detach();
 
-  std::thread http3Thread(&HTTPServer::RunHTTP3, this);
-  http3Thread.detach();
+  std::thread quicThread(&HTTPServer::RunQUIC, this);
+  quicThread.detach();
 
   while (!shouldShutdown) {
   }
@@ -811,6 +1220,13 @@ HTTPServer::HTTPServer(int argc, char *argv[])
     LogError("Private key does not match the certificate");
     exit(EXIT_FAILURE);
   }
+
+  const unsigned char alpnProtos[] = {
+      2, 'h', '2',                              // HTTP/2 ("h2")
+      8, 'h', 't', 't', 'p', '/', '1', '.', '1' // HTTP/1.1 ("http/1.1")
+  };
+
+  SSL_CTX_set_alpn_select_cb(ctx, alpnSelectCallback, NULL);
 
   if (serverSock == ERROR) {
     LogError(threadSafeStrerror(errno));
@@ -876,17 +1292,3 @@ HTTPServer *HTTPServer::GetInstance() {
   }
   return instance; // Return raw pointer to the instance
 }
-
-// if (setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO, &timeout,
-//                sizeof timeout) == -1) {
-//   LogError(threadSafeStrerror(errno));
-// }
-//
-// if (setsockopt(clientSock, SOL_SOCKET, SO_SNDTIMEO, &timeout,
-//                sizeof timeout) == -1) {
-//   LogError(threadSafeStrerror(errno));
-// }
-
-// std::thread([this, clientSock, startTime]() {
-//   clientHandlerThread(clientSock, startTime);
-// }).detach();
