@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <iostream>
+#include <thread>
 
 #include "log.hpp"
 #include "lsqpack.h"
@@ -122,9 +123,9 @@ void HTTPBase::HPACK_DecodeHeaders(uint32_t streamId,
     // decodedHeaders[name] = value;
   }
 
-  for (const auto &header : TcpDecodedHeadersMap[streamId]) {
-    std::cout << header.first << ": " << header.second << std::endl;
-  }
+  // for (const auto &header : TcpDecodedHeadersMap[streamId]) {
+  //   std::cout << header.first << ": " << header.second << std::endl;
+  // }
 
   lshpack_dec_cleanup(&dec);
 }
@@ -268,7 +269,7 @@ int HTTPBase::HTTP3_SendFramesToNewConn(
   return frames.size();
 }
 
-std::vector<uint8_t> HTTPBase::HTTP3_BuildDataFrame(std::string &data) {
+std::vector<uint8_t> HTTPBase::HTTP3_BuildDataFrame(const std::string &data) {
   // Construct the frame header for Headers
   uint8_t frameType = 0x00; // 0x00 for DATA frame
   size_t payloadLength = data.size();
@@ -328,7 +329,7 @@ HTTPBase::HTTP3_BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders) {
   return headerFrame;
 }
 
-std::vector<uint8_t> HTTPBase::HTTP2_BuildDataFrame(std::string &data,
+std::vector<uint8_t> HTTPBase::HTTP2_BuildDataFrame(const std::string &data,
                                                     uint32_t streamID) {
   // Could be more if negotiated in SETTINGS frame
   // (Would also require a readjustment in the frame header)
@@ -373,6 +374,53 @@ std::vector<uint8_t> HTTPBase::HTTP2_BuildDataFrame(std::string &data,
   return dataFrame;
 }
 
+std::vector<uint8_t> HTTPBase::HTTP2_BuildGoAwayFrame(uint32_t streamId,
+                                                      uint32_t errorCode) {
+  uint8_t frameType = 0x07;
+
+  std::vector<uint8_t> payload(8, 0);
+
+  payload[0] = (streamId >> 24) & 0x7F; // 7-bit prefix for reserved bit
+  payload[1] = (streamId >> 16) & 0xFF;
+  payload[2] = (streamId >> 8) & 0xFF;
+  payload[3] = streamId & 0xFF;
+
+  // Error Code
+  payload[4] = (errorCode >> 24) & 0xFF;
+  payload[5] = (errorCode >> 16) & 0xFF;
+  payload[6] = (errorCode >> 8) & 0xFF;
+  payload[7] = errorCode & 0xFF;
+
+  size_t payloadLength = payload.size();
+
+  // size_t payloadLength = payload.size();
+  uint8_t frameFlags = 0x0;
+
+  std::vector<uint8_t> frameHeader(9, 0); // 9 bytes total
+
+  frameHeader[0] = (payloadLength >> 16) & 0xFF;
+  frameHeader[1] = (payloadLength >> 8) & 0xFF;
+  frameHeader[2] = payloadLength & 0xFF;
+
+  frameHeader[3] = frameType;
+
+  frameHeader[4] = frameFlags;
+
+  frameHeader[5] = (streamId >> 24) & 0xFF;
+  frameHeader[6] = (streamId >> 16) & 0xFF;
+  frameHeader[7] = (streamId >> 8) & 0xFF;
+  frameHeader[8] = streamId & 0xFF;
+
+  // Combine the Frame Header and Payload into one buffer
+  size_t totalFrameSize = frameHeader.size() + payloadLength;
+
+  std::vector<uint8_t> frame;
+  frame.insert(frame.end(), frameHeader.begin(), frameHeader.end());
+  frame.insert(frame.end(), payload.begin(), payload.end());
+
+  return frame;
+}
+
 std::vector<uint8_t> HTTPBase::HTTP2_BuildSettingsFrame(uint8_t frameFlags) {
   uint32_t streamId = 0;
   // Construct the frame header for Headers
@@ -412,15 +460,6 @@ std::vector<uint8_t> HTTPBase::HTTP2_BuildSettingsFrame(uint8_t frameFlags) {
   // settingsFrame.insert(settingsFrame.end(), payload.begin(), payload.end());
 
   return frameHeader;
-  // Complete Header frame (frame header + frame payload)
-  // std::vector<uint8_t> headerFrame(totalFrameSize);
-  // headerFrame.resize(totalFrameSize);
-  // memcpy(headerFrame.data(), frameHeader.data(), frameHeader.size());
-
-  // memcpy(headerFrame.data() + frameHeader.size(), encodedHeaders.data(),
-  //        payloadLength);
-
-  // return headerFrame;
 }
 
 std::vector<uint8_t>
@@ -461,6 +500,75 @@ HTTPBase::HTTP2_BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders,
          payloadLength);
 
   return headerFrame;
+}
+
+int HTTPBase::SendHTTP1Response(SSL *clientSSL, const std::string &response) {
+  std::cout << "Sending HTTP1 response" << std::endl;
+
+  size_t totalBytesSent = 0;
+  size_t frameSize = response.size();
+
+  while (totalBytesSent < frameSize) {
+    int sentBytes = SSL_write(clientSSL, response.data() + totalBytesSent,
+                              (int)(frameSize - totalBytesSent));
+
+    if (sentBytes > 0) {
+      totalBytesSent += sentBytes;
+    } else {
+      int error = SSL_get_error(clientSSL, sentBytes);
+      if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
+        std::cout << "SSL buffer full, retrying..." << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        continue;
+      } else {
+        LogError("Failed to send HTTP1 response");
+        return ERROR;
+      }
+    }
+  }
+  return 0;
+}
+
+int HTTPBase::SendHTTP2Response(SSL *clientSSL,
+                                std::vector<std::vector<uint8_t>> &frames) {
+  std::cout << "Sending HTTP2 response" << std::endl;
+
+  for (auto &frame : frames) {
+    size_t totalBytesSent = 0;
+    size_t frameSize = frame.size();
+
+    while (totalBytesSent < frameSize) {
+      int sentBytes = SSL_write(clientSSL, frame.data() + totalBytesSent,
+                                (int)(frameSize - totalBytesSent));
+
+      if (sentBytes > 0) {
+        totalBytesSent += sentBytes;
+      } else {
+        int error = SSL_get_error(clientSSL, sentBytes);
+        if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
+          std::cout << "SSL buffer full, retrying..." << std::endl;
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          continue;
+        } else {
+          LogError("Failed to send HTTP2 frame");
+          return ERROR;
+        }
+      }
+    }
+  }
+
+  return 0;
+}
+
+int HTTPBase::SendHTTP3Response(HQUIC Stream,
+                                std::vector<std::vector<uint8_t>> &frames) {
+  std::cout << "Sending HTTP3 response" << std::endl;
+  if (HTTP3_SendFramesToStream(Stream, frames) == ERROR) {
+    LogError("Failed to send HTTP3 response");
+    return ERROR;
+  }
+
+  return 0;
 }
 
 void HTTPBase::EncodeVarint(std::vector<uint8_t> &buffer, uint64_t value) {

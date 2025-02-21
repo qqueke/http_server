@@ -2,6 +2,7 @@
 #define HTTPBASE_HPP
 
 #include <msquic.h>
+#include <openssl/ssl.h>
 
 #include <cstdint>
 #include <mutex>
@@ -44,6 +45,11 @@ protected:
                                  std::string &data) = 0;
 
 public:
+  int TCP_Socket;
+  sockaddr_in TCP_SocketAddr;
+  struct timeval timeout;
+  SSL_CTX *SSL_ctx;
+
   std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
       TcpDecodedHeadersMap;
 
@@ -75,12 +81,14 @@ public:
   HTTP3_SendFramesToNewConn(HQUIC Connection, HQUIC Stream,
                             const std::vector<std::vector<uint8_t>> &frames);
 
-  static std::vector<uint8_t> HTTP3_BuildDataFrame(std::string &data);
+  static std::vector<uint8_t> HTTP3_BuildDataFrame(const std::string &data);
 
+  static std::vector<uint8_t> HTTP2_BuildGoAwayFrame(uint32_t streamId,
+                                                     uint32_t errorCode);
   static std::vector<uint8_t>
   HTTP3_BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders);
 
-  static std::vector<uint8_t> HTTP2_BuildDataFrame(std::string &data,
+  static std::vector<uint8_t> HTTP2_BuildDataFrame(const std::string &data,
                                                    uint32_t streamID);
 
   std::vector<uint8_t> HTTP2_BuildSettingsFrame(uint8_t frameFlags);
@@ -88,6 +96,14 @@ public:
   static std::vector<uint8_t>
   HTTP2_BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders,
                          uint32_t streamID);
+
+  static int SendHTTP1Response(SSL *clientSSL, const std::string &response);
+
+  static int SendHTTP2Response(SSL *clientSSL,
+                               std::vector<std::vector<uint8_t>> &frames);
+
+  static int SendHTTP3Response(HQUIC Stream,
+                               std::vector<std::vector<uint8_t>> &frames);
 
   /*----------------QPACK helper functions-------------------------*/
   static uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,

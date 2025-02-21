@@ -32,10 +32,10 @@ private:
   std::atomic<int> activeConnections;
 
   // TCP stuff
-  int serverSock;
-  sockaddr_in serverAddr;
-  struct timeval timeout;
-  SSL_CTX *ctx;
+  // int serverSock;
+  // sockaddr_in serverAddr;
+  // struct timeval timeout;
+  // SSL_CTX *ctx;
 
   // QUIC stuff
   QUIC_STATUS Status;
@@ -119,14 +119,6 @@ public:
 
   static void ValidatePseudoHeaders(
       std::unordered_map<std::string, std::string> &headersMap);
-
-  static int SendHTTP1Response(SSL *clientSSL, const std::string &response);
-
-  static int SendHTTP2Response(SSL *clientSSL,
-                               std::vector<std::vector<uint8_t>> &frames);
-
-  static int SendHTTP3Response(HQUIC Stream,
-                               std::vector<std::vector<uint8_t>> &frames);
 };
 
 #endif // HTTPSERVER_HPP

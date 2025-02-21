@@ -71,6 +71,9 @@ QUIC_TLS_SECRETS ClientSecrets = {0};
 // used to get the path to the ssl key log file.
 const char *SslKeyLogEnvVar = "SSLKEYLOGFILE";
 
+// Function to check if a specific flag is set
+bool isFlagSet(uint8_t flags, HTTP2Flags flag) { return (flags & flag) != 0; }
+
 void PrintBytes(void *buf, size_t len) {
   unsigned char *cbuf = (unsigned char *)buf;
   for (size_t i = 0; i < len; ++i) {

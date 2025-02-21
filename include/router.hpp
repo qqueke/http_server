@@ -56,7 +56,7 @@ private:
   static void SendResponse(std::string &headers, Protocol protocol,
                            void *context);
 
-  static void SendResponse(std::string &headers, std::string &body,
+  static void SendResponse(std::string &headers, const std::string &body,
                            Protocol protocol, void *context);
 };
 

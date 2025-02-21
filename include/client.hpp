@@ -1,6 +1,8 @@
 #ifndef CLIENT_HPP
 #define CLIENT_HPP
 
+#include <atomic>
+#include <cstddef>
 #include <unordered_map>
 
 #include "common.hpp"
@@ -12,8 +14,11 @@ public:
   HTTPClient(int argc, char *argv[]);
   ~HTTPClient();
 
+  std::atomic<size_t> nRequests;
   // Headers, Body
   std::vector<std::pair<std::string, std::string>> requests;
+
+  void ReceiveHTTP2Responses(SSL *ssl);
 
   void ParseRequestsFromFile(const std::string &filePath);
 
@@ -33,7 +38,7 @@ public:
   unsigned char LoadQUICConfiguration(int argc, char *argv[]) override;
 
   void QPACK_DecodeHeaders(HQUIC stream,
-                       std::vector<uint8_t> &encodedHeaders) override;
+                           std::vector<uint8_t> &encodedHeaders) override;
 
   void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
                          std::string &data) override;

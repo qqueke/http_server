@@ -69,7 +69,7 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
   {
     std::string response = headers;
     SSL *clientSSL = (SSL *)context;
-    HTTPServer::SendHTTP1Response(clientSSL, response);
+    HTTPBase::SendHTTP1Response(clientSSL, response);
   }
 
   break;
@@ -94,7 +94,7 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
     frames.emplace_back(
         HTTPBase::HTTP2_BuildHeaderFrame(encodedHeaders, streamId));
 
-    HTTPServer::SendHTTP2Response(clientSSL, frames);
+    HTTPBase::SendHTTP2Response(clientSSL, frames);
   }
 
   break;
@@ -116,7 +116,7 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
 
     HQUIC Stream = (HQUIC)context;
 
-    HTTPServer::SendHTTP3Response(Stream, frames);
+    HTTPBase::SendHTTP3Response(Stream, frames);
   }
 
   break;
@@ -127,7 +127,7 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
 }
 
 // In final version should expect headers and data formatted in HTTP1 style
-void Router::SendResponse(std::string &headers, std::string &body,
+void Router::SendResponse(std::string &headers, const std::string &body,
                           Protocol protocol, void *context) {
   switch (protocol) {
   case Protocol::HTTP1:
@@ -135,7 +135,7 @@ void Router::SendResponse(std::string &headers, std::string &body,
   {
     std::string response = headers + body;
     SSL *clientSSL = (SSL *)context;
-    HTTPServer::SendHTTP1Response(clientSSL, response);
+    HTTPBase::SendHTTP1Response(clientSSL, response);
   }
 
   break;
@@ -162,7 +162,7 @@ void Router::SendResponse(std::string &headers, std::string &body,
 
     frames.emplace_back(HTTPBase::HTTP2_BuildDataFrame(body, streamId));
 
-    HTTPServer::SendHTTP2Response(clientSSL, frames);
+    HTTPBase::SendHTTP2Response(clientSSL, frames);
   }
 
   break;
@@ -185,7 +185,7 @@ void Router::SendResponse(std::string &headers, std::string &body,
 
     HQUIC Stream = (HQUIC)context;
 
-    HTTPServer::SendHTTP3Response(Stream, frames);
+    HTTPBase::SendHTTP3Response(Stream, frames);
   }
 
   break;

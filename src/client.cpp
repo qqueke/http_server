@@ -1,10 +1,13 @@
 #include "client.hpp"
 
+#include <array>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <sstream>
+#include <thread>
 #include <unordered_map>
 
 #include "log.hpp"
@@ -61,7 +64,55 @@ void HTTPClient::ParseRequestsFromFile(const std::string &filePath) {
   }
 }
 
-HTTPClient::HTTPClient(int argc, char *argv[]) {
+HTTPClient::HTTPClient(int argc, char *argv[]) : nRequests(0) {
+  TCP_Socket = socket(AF_INET, SOCK_STREAM, 0);
+  TCP_SocketAddr = {};
+  timeout = {};
+
+  SSL_load_error_strings();
+  SSL_library_init();
+  OpenSSL_add_all_algorithms();
+
+  SSL_ctx = SSL_CTX_new(SSLv23_client_method());
+  if (!SSL_ctx) {
+    LogError("Failed to create SSL context");
+    exit(EXIT_FAILURE);
+  }
+
+  std::string serverAddr;
+  if ((serverAddr = GetValue2(argc, argv, "target")) == "") {
+    std::cout
+        << "No target specified (-target:addr). Defaulting to localhost\n";
+    serverAddr = "127.0.0.1";
+  }
+
+  TCP_SocketAddr.sin_family = AF_INET;
+  TCP_SocketAddr.sin_port = htons(HTTP_PORT);
+
+  // Need to convert string to uint32_t
+  if (inet_pton(AF_INET, serverAddr.c_str(), &TCP_SocketAddr.sin_addr) != 1) {
+    LogError("Failed to convert serverAddr from text to binary");
+    exit(EXIT_FAILURE);
+  }
+
+  if (GetFlag(argc, argv, "unsecure")) {
+    SSL_CTX_set_verify(SSL_ctx, SSL_VERIFY_NONE, NULL);
+  }
+  // else{
+  //
+  // }
+  const unsigned char alpnProtos[] = {
+      2, 'h', '2',                              // HTTP/2
+      8, 'h', 't', 't', 'p', '/', '1', '.', '1' // HTTP/1.1
+  };
+
+  // Set ALPN protocols
+  if (SSL_CTX_set_alpn_protos(SSL_ctx, alpnProtos, sizeof(alpnProtos)) != 0) {
+    std::cerr << "Failed to set ALPN protocols\n";
+    exit(EXIT_FAILURE);
+  }
+
+  // Quic configuration
   if (!LoadQUICConfiguration(argc, argv)) {
     exit(EXIT_FAILURE);
   }
@@ -143,69 +194,354 @@ int HTTPClient::dhiProcessHeader(void *hblock_ctx,
   return 0;
 }
 
+void HTTPClient::ReceiveHTTP2Responses(SSL *ssl) {
+  std::unordered_map<uint32_t, std::vector<uint8_t>> EncodedHeadersBufferMap;
+
+  std::unordered_map<uint32_t, std::string> TcpDataMap;
+  std::vector<uint8_t> buffer;
+  std::vector<uint8_t> tmpBuffer(BUFFER_SIZE);
+  const size_t PREFACE_LENGTH = 24;
+  const size_t FRAME_HEADER_LENGTH = 9;
+  int offset = 0;
+
+  bool GOAWAY = false;
+  size_t nResponses = 0;
+  while (nResponses < nRequests && !GOAWAY) {
+    ssize_t bytesReceived =
+        SSL_read(ssl, tmpBuffer.data(), (int)tmpBuffer.size());
+
+    if (bytesReceived == 0) {
+      LogError("Peer closed the connection");
+      std::cout << "Peer closed the connection" << std::endl;
+      break;
+    } else if (bytesReceived < 0) {
+      LogError("Failed to receive data");
+      std::cout << "Failed to receive data" << std::endl;
+      break;
+    }
+
+    buffer.insert(buffer.end(), tmpBuffer.begin(),
+                  tmpBuffer.begin() + bytesReceived);
+
+    // If we received atleast the frame header
+    while (offset + FRAME_HEADER_LENGTH <= buffer.size() && !GOAWAY) {
+      uint8_t *framePtr = buffer.data() + offset;
+
+      uint32_t payloadLength = (static_cast<uint32_t>(framePtr[0]) << 16) |
+                               (static_cast<uint32_t>(framePtr[1]) << 8) |
+                               static_cast<uint32_t>(framePtr[2]);
+
+      if (offset + FRAME_HEADER_LENGTH + payloadLength > buffer.size()) {
+        break;
+      }
+
+      uint8_t frameType = framePtr[3];
+
+      uint8_t frameFlags = framePtr[4];
+
+      uint32_t frameStream = (framePtr[5] << 24) | (framePtr[6] << 16) |
+                             (framePtr[7] << 8) | framePtr[8];
+
+      std::cout << "Payload Length: " << std::dec << (int)payloadLength
+                << std::hex << ", Flags: " << (int)frameFlags << " ";
+
+      switch (frameType) {
+      case Frame::DATA:
+        std::cout << "[strm][" << frameStream << "] DATA frame\n";
+
+        TcpDataMap[frameStream] += std::string(
+            reinterpret_cast<const char *>(framePtr + FRAME_HEADER_LENGTH),
+            payloadLength);
+
+        std::cout << TcpDataMap[frameStream] << std::endl;
+
+        if (isFlagSet(frameFlags, END_STREAM_FLAG)) {
+          // HTTPServer::ValidatePseudoHeaders(TcpDecodedHeadersMap[frameStream]);
+
+          std::cout << "Response:\n";
+          for (const auto &[key, value] : TcpDecodedHeadersMap[frameStream]) {
+            std::cout << key << ": " << value << "\n";
+          }
+          std::cout << TcpDataMap[frameStream] << "\n";
+
+          TcpDecodedHeadersMap.erase(frameStream);
+          EncodedHeadersBufferMap.erase(frameStream);
+          ++nResponses;
+        }
+        break;
+      case Frame::HEADERS:
+        std::cout << "[strm][" << frameStream << "] HEADERS frame\n";
+
+        {
+          EncodedHeadersBufferMap[frameStream].insert(
+              EncodedHeadersBufferMap[frameStream].end(),
+              framePtr + FRAME_HEADER_LENGTH,
+              framePtr + FRAME_HEADER_LENGTH + payloadLength);
+
+          if (isFlagSet(frameFlags, END_STREAM_FLAG) &&
+              isFlagSet(frameFlags, END_HEADERS_FLAG)) {
+            // Decode and dispatch request
+            HPACK_DecodeHeaders(frameStream,
+                                EncodedHeadersBufferMap[frameStream]);
+
+            // HTTPServer::ValidatePseudoHeaders(
+            //     TcpDecodedHeadersMap[frameStream]);
+
+            std::cout << "Response:\n";
+            for (const auto &[key, value] : TcpDecodedHeadersMap[frameStream]) {
+              std::cout << key << ": " << value << "\n";
+            }
+
+            TcpDecodedHeadersMap.erase(frameStream);
+            EncodedHeadersBufferMap.erase(frameStream);
+            ++nResponses;
+          } else if (isFlagSet(frameFlags, END_HEADERS_FLAG)) {
+            // Decode and wait for request body
+            HPACK_DecodeHeaders(frameStream,
+                                EncodedHeadersBufferMap[frameStream]);
+          }
+        }
+        break;
+      case Frame::PRIORITY:
+        std::cout << "[strm][" << frameStream << "] PRIORITY frame\n";
+
+        break;
+      case 0x03:
+        std::cout << "[strm][" << frameStream
+                  << "] Received RST_STREAM frame\n";
+
+        TcpDecodedHeadersMap.erase(frameStream);
+        EncodedHeadersBufferMap.erase(frameStream);
+        break;
+
+      case Frame::SETTINGS:
+
+        std::cout << "[strm][" << frameStream << "] SETTINGS frame\n";
+        {
+          // Only respond with an ACK to their SETTINGS frame with no ACK
+          if (frameFlags == HTTP2Flags::NONE_FLAG) {
+            std::vector<uint8_t> frame = HTTPBase::HTTP2_BuildSettingsFrame(
+                HTTP2Flags::SETTINGS_ACK_FLAG);
+
+            int sentBytes = SSL_write(ssl, frame.data(), (int)frame.size());
+            if (sentBytes <= 0) {
+              LogError("Failed to send SETTINGS frame");
+            }
+          }
+        }
+
+        break;
+      case Frame::GOAWAY:
+
+        std::cout << "[strm][" << frameStream << "] GOAWAY frame\n";
+        GOAWAY = true;
+        TcpDecodedHeadersMap.erase(frameStream);
+        EncodedHeadersBufferMap.erase(frameStream);
+        break;
+
+      case Frame::WINDOW_UPDATE:
+
+        std::cout << "[strm][" << frameStream << "] WINDOW_UPDATE frame\n";
+
+        break;
+
+      case Frame::CONTINUATION:
+
+        std::cout << "[strm][" << frameStream << "] CONTINUATION frame\n";
+        {
+          EncodedHeadersBufferMap[frameStream].insert(
+              EncodedHeadersBufferMap[frameStream].end(),
+              framePtr + FRAME_HEADER_LENGTH,
+              framePtr + FRAME_HEADER_LENGTH + payloadLength);
+
+          if (isFlagSet(frameFlags, END_STREAM_FLAG) &&
+              isFlagSet(frameFlags, END_HEADERS_FLAG)) {
+            // Decode and dispatch request
+            HPACK_DecodeHeaders(frameStream,
+                                EncodedHeadersBufferMap[frameStream]);
+
+            std::cout << "Response:\n";
+            for (const auto &[key, value] : TcpDecodedHeadersMap[frameStream]) {
+              std::cout << key << ": " << value << "\n";
+            }
+
+            TcpDecodedHeadersMap.erase(frameStream);
+            EncodedHeadersBufferMap.erase(frameStream);
+            ++nResponses;
+          } else if (isFlagSet(frameFlags, END_HEADERS_FLAG)) {
+            // Decode and wait for request body
+            HPACK_DecodeHeaders(frameStream,
+                                EncodedHeadersBufferMap[frameStream]);
+          }
+        }
+        break;
+
+      default:
+        std::cout << "[strm][" << frameStream << "] Unknown frame type: 0x"
+                  << std::dec << frameType << std::dec << "\n";
+        break;
+      }
+      // Move the offset to the next frame
+      offset += FRAME_HEADER_LENGTH + payloadLength;
+    }
+
+    if (offset == buffer.size()) {
+      buffer.clear();
+      offset = 0;
+    }
+  }
+}
+
 void HTTPClient::Run(int argc, char *argv[]) {
-  QUIC_STATUS Status;
-  const char *ResumptionTicketString = NULL;
-  const char *SslKeyLogFile = getenv(SslKeyLogEnvVar);
-  HQUIC Connection = NULL;
-
-  // Allocate a new connection object.
-  if (QUIC_FAILED(Status = MsQuic->ConnectionOpen(
-                      Registration, HTTPClient::ConnectionCallback, this,
-                      &Connection))) {
-    printf("ConnectionOpen failed, 0x%x!\n", Status);
-    goto Error;
+  if (connect(TCP_Socket, (const struct sockaddr *)&TCP_SocketAddr,
+              (socklen_t)sizeof(TCP_SocketAddr)) == ERROR) {
+    LogError("Failed to connect to server");
+    close(TCP_Socket);
+    SSL_CTX_free(SSL_ctx);
+    exit(EXIT_FAILURE);
   }
 
-  if ((ResumptionTicketString = GetValue(argc, argv, "ticket")) != NULL) {
-    //
-    // If provided at the command line, set the resumption ticket that can
-    // be used to resume a previous session.
-    //
-    uint8_t ResumptionTicket[10240];
-    uint16_t TicketLength = (uint16_t)DecodeHexBuffer(
-        ResumptionTicketString, sizeof(ResumptionTicket), ResumptionTicket);
-    if (QUIC_FAILED(Status = MsQuic->SetParam(
-                        Connection, QUIC_PARAM_CONN_RESUMPTION_TICKET,
-                        TicketLength, ResumptionTicket))) {
-      printf("SetParam(QUIC_PARAM_CONN_RESUMPTION_TICKET) failed, 0x%x!\n",
-             Status);
-      goto Error;
-    }
+  SSL *ssl = SSL_new(SSL_ctx);
+  SSL_set_fd(ssl, TCP_Socket);
+
+  // Negotiate version
+  if (SSL_connect(ssl) != 1) {
+    LogError("SSL connection failed");
+    SSL_free(ssl);
+    close(TCP_Socket);
+    SSL_CTX_free(SSL_ctx);
+    exit(EXIT_FAILURE);
   }
 
-  if (SslKeyLogFile != NULL) {
-    if (QUIC_FAILED(
-            Status = MsQuic->SetParam(Connection, QUIC_PARAM_CONN_TLS_SECRETS,
-                                      sizeof(ClientSecrets), &ClientSecrets))) {
-      printf("SetParam(QUIC_PARAM_CONN_TLS_SECRETS) failed, 0x%x!\n", Status);
-      goto Error;
-    }
+  std::thread SSL_ReadThread(&HTTPClient::ReceiveHTTP2Responses, this, ssl);
+  // SSL_ReadThread.detach();
+
+  // Send Preface, Window and SETTINGS
+  const std::array<uint8_t, 24> HTTP2_PrefaceBytes = {
+      0x50, 0x52, 0x49, 0x20, 0x2A, 0x20, 0x48, 0x54, 0x54, 0x50, 0x2F, 0x32,
+      0x2E, 0x30, 0x0D, 0x0A, 0x0D, 0x0A, 0x53, 0x4D, 0x0D, 0x0A, 0x0D, 0x0A};
+
+  int sentBytes2 =
+      SSL_write(ssl, HTTP2_PrefaceBytes.data(), (int)HTTP2_PrefaceBytes.size());
+  if (sentBytes2 <= 0) {
+    std::cout << "Failed to send HTTP2 PREFACE\n";
   }
 
-  // Get the target / server name or IP from the command line.
-  const char *Target;
-  if ((Target = GetValue(argc, argv, "target")) == NULL) {
-    printf("Must specify '-target' argument!\n");
-    Status = QUIC_STATUS_INVALID_PARAMETER;
-    goto Error;
+  nRequests = requests.size();
+
+  uint8_t flags = 0;
+  std::vector<uint8_t> settingsFrame =
+      HTTPBase::HTTP2_BuildSettingsFrame(flags);
+
+  sentBytes2 = SSL_write(ssl, settingsFrame.data(), (int)settingsFrame.size());
+  if (sentBytes2 <= 0) {
+    std::cout << "Failed to send SETTINGS frame\n";
   }
 
-  printf("[conn][%p] Connecting...\n", Connection);
+  uint32_t streamId = 1;
+  for (const auto &request : requests) {
+    const std::string &headers = request.first;
+    const std::string &body = request.second;
 
-  // Start the connection to the server.
-  if (QUIC_FAILED(Status = MsQuic->ConnectionStart(Connection, Configuration,
-                                                   QUIC_ADDRESS_FAMILY_UNSPEC,
-                                                   Target, UDP_PORT))) {
-    printf("ConnectionStart failed, 0x%x!\n", Status);
-    goto Error;
+    std::unordered_map<std::string, std::string> headersMap;
+
+    HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
+
+    std::vector<uint8_t> encodedHeaders;
+
+    HTTPBase::HPACK_EncodeHeaders(headersMap, encodedHeaders);
+
+    std::vector<std::vector<uint8_t>> frames;
+
+    frames.emplace_back(
+        HTTPBase::HTTP2_BuildHeaderFrame(encodedHeaders, streamId));
+
+    frames.emplace_back(HTTPBase::HTTP2_BuildDataFrame(body, streamId));
+
+    HTTPBase::SendHTTP2Response(ssl, frames);
+    streamId += 2;
   }
 
-Error:
+  SSL_ReadThread.join();
+  std::vector<uint8_t> frame =
+      HTTPBase::HTTP2_BuildGoAwayFrame(streamId, HTTP2ErrorCode::NO_ERROR);
 
-  if (QUIC_FAILED(Status) && Connection != NULL) {
-    MsQuic->ConnectionClose(Connection);
+  int sentBytes = SSL_write(ssl, frame.data(), (int)frame.size());
+  if (sentBytes <= 0) {
+    LogError("Failed to send SETTINGS frame");
   }
+
+  SSL_free(ssl);
+  close(TCP_Socket);
+
+  SSL_CTX_free(SSL_ctx);
+
+  //   QUIC_STATUS Status;
+  //   const char *ResumptionTicketString = NULL;
+  //   const char *SslKeyLogFile = getenv(SslKeyLogEnvVar);
+  //   HQUIC Connection = NULL;
+  //
+  //   // Allocate a new connection object.
+  //   if (QUIC_FAILED(Status = MsQuic->ConnectionOpen(
+  //                       Registration, HTTPClient::ConnectionCallback, this,
+  //                       &Connection))) {
+  //     printf("ConnectionOpen failed, 0x%x!\n", Status);
+  //     goto Error;
+  //   }
+  //
+  //   if ((ResumptionTicketString = GetValue(argc, argv, "ticket")) != NULL) {
+  //     //
+  //     // If provided at the command line, set the resumption ticket that can
+  //     // be used to resume a previous session.
+  //     //
+  //     uint8_t ResumptionTicket[10240];
+  //     uint16_t TicketLength = (uint16_t)DecodeHexBuffer(
+  //         ResumptionTicketString, sizeof(ResumptionTicket),
+  //         ResumptionTicket);
+  //     if (QUIC_FAILED(Status = MsQuic->SetParam(
+  //                         Connection, QUIC_PARAM_CONN_RESUMPTION_TICKET,
+  //                         TicketLength, ResumptionTicket))) {
+  //       printf("SetParam(QUIC_PARAM_CONN_RESUMPTION_TICKET) failed, 0x%x!\n",
+  //              Status);
+  //       goto Error;
+  //     }
+  //   }
+  //
+  //   if (SslKeyLogFile != NULL) {
+  //     if (QUIC_FAILED(
+  //             Status = MsQuic->SetParam(Connection,
+  //             QUIC_PARAM_CONN_TLS_SECRETS,
+  //                                       sizeof(ClientSecrets),
+  //                                       &ClientSecrets))) {
+  //       printf("SetParam(QUIC_PARAM_CONN_TLS_SECRETS) failed, 0x%x!\n",
+  //       Status); goto Error;
+  //     }
+  //   }
+  //
+  //   // Get the target / server name or IP from the command line.
+  //   const char *Target;
+  //   if ((Target = GetValue(argc, argv, "target")) == NULL) {
+  //     printf("Must specify '-target' argument!\n");
+  //     Status = QUIC_STATUS_INVALID_PARAMETER;
+  //     goto Error;
+  //   }
+  //
+  //   printf("[conn][%p] Connecting...\n", Connection);
+  //
+  //   // Start the connection to the server.
+  //   if (QUIC_FAILED(Status = MsQuic->ConnectionStart(Connection,
+  //   Configuration,
+  //                                                    QUIC_ADDRESS_FAMILY_UNSPEC,
+  //                                                    Target, UDP_PORT))) {
+  //     printf("ConnectionStart failed, 0x%x!\n", Status);
+  //     goto Error;
+  //   }
+  //
+  // Error:
+  //
+  //   if (QUIC_FAILED(Status) && Connection != NULL) {
+  //     MsQuic->ConnectionClose(Connection);
+  //   }
 }
 
 void HTTPClient::QPACK_DecodeHeaders(HQUIC stream,
