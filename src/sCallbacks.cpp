@@ -9,7 +9,7 @@
 #include "server.hpp"
 #include "utils.hpp"
 
-#define QUIC_DEBUG
+// #define QUIC_DEBUG
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
     _Function_class_(QUIC_STREAM_CALLBACK) QUIC_STATUS QUIC_API

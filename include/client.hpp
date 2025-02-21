@@ -33,6 +33,10 @@ public:
                                 _Inout_ QUIC_CONNECTION_EVENT *Event);
 
   void PrintFromServer();
+
+  void RunHTTP1(int argc, char *argv[]);
+  void RunHTTP2(int argc, char *argv[]);
+
   void Run(int argc, char *argv[]);
 
   unsigned char LoadQUICConfiguration(int argc, char *argv[]) override;

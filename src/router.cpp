@@ -67,6 +67,13 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
   case Protocol::HTTP1:
 
   {
+    // Defaulted to 24hours
+    std::string altSvcHeader = "Alt-Svc: h3=\":4567\"; ma=86400\r\n";
+    size_t headerEnd = headers.find("\r\n\r\n");
+    if (headerEnd != std::string::npos) {
+      headers.insert(headerEnd + 2, altSvcHeader);
+    }
+
     std::string response = headers;
     SSL *clientSSL = (SSL *)context;
     HTTPBase::SendHTTP1Response(clientSSL, response);
@@ -80,6 +87,12 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
 
     SSL *clientSSL = ctx->ssl;
     uint32_t streamId = ctx->streamId;
+
+    std::string altSvcHeader = "Alt-Svc: h3=\":4567\"; ma=86400\r\n";
+    size_t headerEnd = headers.find("\r\n\r\n");
+    if (headerEnd != std::string::npos) {
+      headers.insert(headerEnd + 2, altSvcHeader);
+    }
 
     std::unordered_map<std::string, std::string> headersMap;
 
@@ -101,6 +114,8 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
   case Protocol::HTTP3:
 
   {
+    HQUIC Stream = (HQUIC)context;
+
     std::unordered_map<std::string, std::string> headersMap;
     HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
 
@@ -108,13 +123,18 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
     // Compress headers with QPACK
     std::vector<uint8_t> encodedHeaders;
 
-    HTTPBase::QPACK_EncodeHeaders(headersMap, encodedHeaders);
+    uint64_t streamId{};
+    uint32_t len = (uint32_t)sizeof(streamId);
+    if (QUIC_FAILED(
+            MsQuic->GetParam(Stream, QUIC_PARAM_STREAM_ID, &len, &streamId))) {
+      LogError("Failed to acquire stream id");
+    }
+
+    HTTPBase::QPACK_EncodeHeaders(streamId, headersMap, encodedHeaders);
 
     std::vector<std::vector<uint8_t>> frames;
 
     frames.emplace_back(HTTPBase::HTTP3_BuildHeaderFrame(encodedHeaders));
-
-    HQUIC Stream = (HQUIC)context;
 
     HTTPBase::SendHTTP3Response(Stream, frames);
   }
@@ -147,9 +167,22 @@ void Router::SendResponse(std::string &headers, const std::string &body,
     SSL *clientSSL = ctx->ssl;
     uint32_t streamId = ctx->streamId;
 
+    std::string altSvcHeader = "Alt-Svc: h3=\":4567\"; ma=86400\r\n";
+    size_t headerEnd = headers.find("\r\n\r\n");
+    if (headerEnd != std::string::npos) {
+      headers.insert(headerEnd + 2, altSvcHeader);
+    }
+
+    // std::cout << "headers:\n" << headers << std::endl;
+
     std::unordered_map<std::string, std::string> headersMap;
 
     HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
+
+    // std::cout << "Headers map:\n";
+    // for (auto &[key, value] : headersMap) {
+    //   std::cout << key << ": " << value << "\n";
+    // }
 
     std::vector<uint8_t> encodedHeaders;
 
@@ -170,20 +203,26 @@ void Router::SendResponse(std::string &headers, const std::string &body,
   case Protocol::HTTP3:
 
   {
+    HQUIC Stream = (HQUIC)context;
     std::unordered_map<std::string, std::string> headersMap;
     HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
 
     std::vector<uint8_t> encodedHeaders;
 
-    HTTPBase::QPACK_EncodeHeaders(headersMap, encodedHeaders);
+    uint64_t streamId{};
+    uint32_t len = (uint32_t)sizeof(streamId);
+    if (QUIC_FAILED(
+            MsQuic->GetParam(Stream, QUIC_PARAM_STREAM_ID, &len, &streamId))) {
+      LogError("Failed to acquire stream id");
+    }
+
+    HTTPBase::QPACK_EncodeHeaders(streamId, headersMap, encodedHeaders);
 
     std::vector<std::vector<uint8_t>> frames;
 
     frames.emplace_back(HTTPBase::HTTP3_BuildHeaderFrame(encodedHeaders));
 
     frames.emplace_back(HTTPBase::HTTP3_BuildDataFrame(body));
-
-    HQUIC Stream = (HQUIC)context;
 
     HTTPBase::SendHTTP3Response(Stream, frames);
   }
@@ -207,11 +246,11 @@ STATUS_CODE Router::handleBadRequest(const std::string &data, Protocol protocol,
 
   std::string headers = "HTTP/1.1 400 Bad Request\r\n"
                         "Content-Type: text/plain\r\n"
-                        "Content-Length: 11\r\n"
+                        "Content-Length: 12\r\n"
                         "Connection: close\r\n"
                         "\r\n";
 
-  std::string body = "Bad Request";
+  std::string body = "Bad Request\n";
 
   Router::SendResponse(headers, body, protocol, context);
   return "400 Bad Request";

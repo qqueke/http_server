@@ -9,7 +9,10 @@
 #include <vector>
 
 #include "client.hpp"
+#include "log.hpp"
 #include "utils.hpp"
+
+// #define QUIC_DEBUG
 
 void ClientSend(_In_ HQUIC Connection, void *Context) {
   HTTPClient *client = (HTTPClient *)Context;
@@ -34,8 +37,9 @@ void ClientSend(_In_ HQUIC Connection, void *Context) {
       }
     }
 
+#ifdef QUIC_DEBUG
     printf("[strm][%p] Starting Stream...\n", Stream);
-
+#endif
     // Starts the stream. By default, the peer is not notified of
     // the stream being started until data is sent on the stream.
     // QUIC_STREAM_START_FLAG_NONE
@@ -44,7 +48,6 @@ void ClientSend(_In_ HQUIC Connection, void *Context) {
                         Stream, QUIC_STREAM_START_FLAG_NONE))) {
       printf("StreamStart failed, 0x%x!\n", Status);
 
-      std::cout << "Shutting down Stream..." << std::endl;
       MsQuic->StreamClose(Stream);
       if (QUIC_FAILED(Status)) {
         MsQuic->ConnectionShutdown(Connection,
@@ -59,13 +62,16 @@ void ClientSend(_In_ HQUIC Connection, void *Context) {
       // Change this function to work for response and request
       HTTPBase::ReqHeaderToPseudoHeader(headers, headersMap);
 
-      std::cout << "Headers before encoding\n";
-      for (auto &[key, value] : headersMap) {
-        std::cout << key << " " << value << "\n";
+      std::vector<uint8_t> encodedHeaders;
+
+      uint64_t streamId{};
+      uint32_t len = (uint32_t)sizeof(streamId);
+      if (QUIC_FAILED(MsQuic->GetParam(Stream, QUIC_PARAM_STREAM_ID, &len,
+                                       &streamId))) {
+        LogError("Failed to acquire stream id");
       }
 
-      std::vector<uint8_t> encodedHeaders;
-      HTTPBase::QPACK_EncodeHeaders(headersMap, encodedHeaders);
+      HTTPBase::QPACK_EncodeHeaders(streamId, headersMap, encodedHeaders);
 
       // Put header frame and data frames in frames response
       std::vector<std::vector<uint8_t>> frames;
@@ -99,13 +105,17 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 
     // We set the send context to be the pointer that we can latter free
     free(Event->SEND_COMPLETE.ClientContext);
-    printf("[strm][%p] Data sent\n", Stream);
 
+#ifdef QUIC_DEBUG
+    printf("[strm][%p] Data sent\n", Stream);
+#endif
     break;
   case QUIC_STREAM_EVENT_RECEIVE:
     // Data was received from the peer on the stream.
-    printf("[strm][%p] Data received\n", Stream);
+#ifdef QUIC_DEBUG
 
+    printf("[strm][%p] Data received\n", Stream);
+#endif
     if (client->QuicBufferMap.find(Stream) == client->QuicBufferMap.end()) {
       client->QuicBufferMap[Stream].reserve(256);
     }
@@ -116,27 +126,29 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
       uint8_t *bufferPointer = buffer->Buffer;
       uint8_t *bufferEnd = buffer->Buffer + buffer->Length;
 
-      printf("[strm][%p] Data received\n", Stream);
       if (buffer->Length > 0) {
         auto &streamBuffer = client->QuicBufferMap[Stream];
         streamBuffer.insert(streamBuffer.end(), bufferPointer, bufferEnd);
       }
     }
 
-    printf("[strm][%p] Data received\n", Stream);
     break;
   case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
 
     // The peer gracefully shut down its send direction of the stream.
+#ifdef QUIC_DEBUG
 
     printf("[strm][%p] Peer aborted\n", Stream);
+#endif
     break;
   case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
     // The peer aborted its send direction of the stream.
-    printf("[strm][%p] Peer shut down\n", Stream);
+#ifdef QUIC_DEBUG
 
+    printf("[strm][%p] Peer shut down\n", Stream);
+#endif
     if (client->QuicBufferMap.find(Stream) == client->QuicBufferMap.end()) {
-      std::cout << "Error: no buffer found for Stream:" << Stream << "\n";
+      LogError("No buffer found for Stream");
       break;
     }
 
@@ -163,10 +175,12 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
   case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
     // Both directions of the stream have been shut down and MsQuic is done
     // with the stream. It can now be safely cleaned up.
-    printf("[strm][%p] Stream is officially closed\n", Stream);
-    if (!Event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
-      std::cout << "Shutting down Stream..." << std::endl;
 
+#ifdef QUIC_DEBUG
+
+    printf("[strm][%p] Stream is officially closed\n", Stream);
+#endif
+    if (!Event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
       MsQuic->StreamClose(Stream);
     }
     break;
@@ -193,10 +207,12 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 
   switch (Event->Type) {
   case QUIC_CONNECTION_EVENT_CONNECTED:
-    //
-    // The handshake has completed for the connection.
-    //
+//
+// The handshake has completed for the connection.
+#ifdef QUIC_DEBUG
+
     printf("[conn][%p] Connected\n", Connection);
+#endif
 
     ClientSend(Connection, Context);
     break;
@@ -213,24 +229,33 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     }
     break;
   case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
+#ifdef QUIC_DEBUG
 
-    // The connection was explicitly shut down by the peer.
     printf("[conn][%p] Shut down by peer, 0x%llu\n", Connection,
            (unsigned long long)Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
+#endif
+    // The connection was explicitly shut down by the peer.
     break;
   case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
     // The connection has completed the shutdown process and is ready to
     // be safely cleaned up.
+
+#ifdef QUIC_DEBUG
+
     printf("[conn][%p] Connection officially closed\n", Connection);
+#endif
     if (!Event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
       MsQuic->ConnectionClose(Connection);
     }
     break;
   case QUIC_CONNECTION_EVENT_RESUMPTION_TICKET_RECEIVED:
-    // A resumption ticket (also called New Session Ticket or NST) was
-    // received from the server.
+// A resumption ticket (also called New Session Ticket or NST) was
+// received from the server.
+#ifdef QUIC_DEBUG
     printf("[conn][%p] Resumption ticket received (%u bytes):\n", Connection,
            Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength);
+#endif
+
     // for (uint32_t i = 0;
     //      i < Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength;
     //      i++)

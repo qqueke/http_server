@@ -112,7 +112,8 @@ public:
 
   /*------------- Encoding and Decoding functions------------------*/
   static void
-  QPACK_EncodeHeaders(std::unordered_map<std::string, std::string> &headersMap,
+  QPACK_EncodeHeaders(uint64_t streamId,
+                      std::unordered_map<std::string, std::string> &headersMap,
                       std::vector<uint8_t> &encodedHeaders);
   static void
   HPACK_EncodeHeaders(std::unordered_map<std::string, std::string> &headersMap,

@@ -169,62 +169,16 @@ unsigned char HTTPServer::LoadQUICConfiguration(
   return TRUE;
 }
 
-// Here we need to put headers map in the HTTP2RequestMap
-// void HTTPServer::HPACK_DecodeHeaders(uint32_t streamId,
-//                                      std::vector<uint8_t> &encodedHeaders) {
-//   // std::cout << "encodedHeaders size: " << std::dec <<
-//   encodedHeaders.size()
-//   //           << std::endl;
-//   std::unordered_map<std::string, std::string> decodedHeaders;
-//   struct lshpack_dec dec{};
-//   lshpack_dec_init(&dec);
-//
-//   const unsigned char *src = const_cast<unsigned char
-//   *>(encodedHeaders.data()); const unsigned char *end = src +
-//   encodedHeaders.size();
-//
-//   struct lsxpack_header headerFormat;
-//   char headerBuffer[2048];
-//   memset(headerBuffer, 0, sizeof(headerBuffer));
-//
-//   char name[256], value[1024];
-//
-//   while (src < end) {
-//     lsxpack_header_prepare_decode(&headerFormat, headerBuffer, 0,
-//                                   sizeof(headerBuffer));
-//
-//     int ret = lshpack_dec_decode(&dec, &src, end, &headerFormat);
-//     if (ret < 0) {
-//       std::cerr << "Failed to decode HPACK headers" << std::endl;
-//       break;
-//     }
-//
-//     int decodedSize = headerFormat.name_len + headerFormat.val_len +
-//                       lshpack_dec_extra_bytes(dec);
-//
-//     // Copy decoded name and value
-//     strncpy(name, headerFormat.buf + headerFormat.name_offset,
-//             headerFormat.name_len);
-//     name[headerFormat.name_len] = '\0';
-//
-//     strncpy(value, headerFormat.buf + headerFormat.val_offset,
-//             headerFormat.val_len);
-//     value[headerFormat.val_len] = '\0';
-//
-//     TcpDecodedHeadersMap[streamId][name] = value;
-//     // decodedHeaders[name] = value;
-//   }
-//
-//   // for (const auto &header : decodedHeaders) {
-//   //   std::cout << header.first << ": " << header.second << std::endl;
-//   // }
-//
-//   lshpack_dec_cleanup(&dec);
-// }
-
 void HTTPServer::QPACK_DecodeHeaders(HQUIC stream,
                                      std::vector<uint8_t> &encodedHeaders) {
   std::vector<struct lsqpack_dec> dec(1);
+
+  uint64_t streamId{};
+  uint32_t len = (uint32_t)sizeof(streamId);
+  if (QUIC_FAILED(
+          MsQuic->GetParam(stream, QUIC_PARAM_STREAM_ID, &len, &streamId))) {
+    LogError("Failed to acquire stream id");
+  }
 
   struct lsqpack_dec_hset_if hset_if;
   hset_if.dhi_unblocked = HTTPBase::dhiUnblocked;
@@ -246,9 +200,9 @@ void HTTPServer::QPACK_DecodeHeaders(HQUIC stream,
 
   enum lsqpack_read_header_status readStatus;
 
-  readStatus =
-      lsqpack_dec_header_in(dec.data(), &blockCtx.back(), 100, totalHeaderSize,
-                            &encodedHeadersPtr, totalHeaderSize, NULL, NULL);
+  readStatus = lsqpack_dec_header_in(dec.data(), &blockCtx.back(), streamId,
+                                     totalHeaderSize, &encodedHeadersPtr,
+                                     totalHeaderSize, NULL, NULL);
 
   lsqpack_dec_cleanup(dec.data());
 }
@@ -280,7 +234,7 @@ void HTTPServer::ParseStreamBuffer(HQUIC Stream,
     // Handle the frame based on the type
     switch (frameType) {
     case 0x01: // HEADERS frame
-      std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
+      // std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
 
       {
         std::vector<uint8_t> encodedHeaders(iter, iter + frameLength);
@@ -292,7 +246,7 @@ void HTTPServer::ParseStreamBuffer(HQUIC Stream,
       break;
 
     case 0x00: // DATA frame
-      std::cout << "[strm][" << Stream << "] Received DATA frame\n";
+      // std::cout << "[strm][" << Stream << "] Received DATA frame\n";
       // Data might have been transmitted over multiple frames
       data += std::string(iter, iter + frameLength);
       break;
@@ -734,12 +688,12 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
       uint32_t frameStream = (framePtr[5] << 24) | (framePtr[6] << 16) |
                              (framePtr[7] << 8) | framePtr[8];
 
-      std::cout << "Payload Length: " << std::dec << (int)payloadLength
-                << std::hex << ", Flags: " << (int)frameFlags << " ";
+      // std::cout << "Payload Length: " << std::dec << (int)payloadLength
+      //           << std::hex << ", Flags: " << (int)frameFlags << " ";
 
       switch (frameType) {
       case 0x00:
-        std::cout << "[strm][" << frameStream << "] DATA frame\n";
+        // std::cout << "[strm][" << frameStream << "] DATA frame\n";
 
         TcpDataMap[frameStream] += std::string(
             reinterpret_cast<const char *>(framePtr + FRAME_HEADER_LENGTH),
@@ -761,7 +715,7 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
         }
         break;
       case 0x01:
-        std::cout << "[strm][" << frameStream << "] HEADERS frame\n";
+        // std::cout << "[strm][" << frameStream << "] HEADERS frame\n";
 
         {
           EncodedHeadersBufferMap[frameStream].insert(
@@ -795,12 +749,12 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
         }
         break;
       case 0x02:
-        std::cout << "[strm][" << frameStream << "] PRIORITY frame\n";
+        // std::cout << "[strm][" << frameStream << "] PRIORITY frame\n";
 
         break;
       case 0x03:
-        std::cout << "[strm][" << frameStream
-                  << "] Received RST_STREAM frame\n";
+        // std::cout << "[strm][" << frameStream
+        //           << "] Received RST_STREAM frame\n";
 
         TcpDecodedHeadersMap.erase(frameStream);
         EncodedHeadersBufferMap.erase(frameStream);
@@ -808,7 +762,7 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
 
       case 0x04:
 
-        std::cout << "[strm][" << frameStream << "] SETTINGS frame\n";
+        // std::cout << "[strm][" << frameStream << "] SETTINGS frame\n";
         {
           std::vector<uint8_t> frame =
               HTTPBase::HTTP2_BuildSettingsFrame(frameFlags);
@@ -822,7 +776,7 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
         break;
       case 0x07:
 
-        std::cout << "[strm][" << frameStream << "] GOAWAY frame\n";
+        // std::cout << "[strm][" << frameStream << "] GOAWAY frame\n";
         GOAWAY = true;
         TcpDecodedHeadersMap.erase(frameStream);
         EncodedHeadersBufferMap.erase(frameStream);
@@ -830,13 +784,13 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
 
       case 0x08:
 
-        std::cout << "[strm][" << frameStream << "] WINDOW_UPDATE frame\n";
+        // std::cout << "[strm][" << frameStream << "] WINDOW_UPDATE frame\n";
 
         break;
 
       case 0x09:
 
-        std::cout << "[strm][" << frameStream << "] CONTINUATION frame\n";
+        // std::cout << "[strm][" << frameStream << "] CONTINUATION frame\n";
         {
           EncodedHeadersBufferMap[frameStream].insert(
               EncodedHeadersBufferMap[frameStream].end(),

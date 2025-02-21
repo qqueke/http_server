@@ -68,6 +68,17 @@ HTTPClient::HTTPClient(int argc, char *argv[]) : nRequests(0) {
   TCP_Socket = socket(AF_INET, SOCK_STREAM, 0);
   TCP_SocketAddr = {};
   timeout = {};
+  timeout.tv_sec = TIMEOUT_SECONDS;
+
+  if (setsockopt(TCP_Socket, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+                 sizeof timeout) == ERROR) {
+    LogError(strerror(errno));
+  }
+
+  if (setsockopt(TCP_Socket, SOL_SOCKET, SO_SNDTIMEO, &timeout,
+                 sizeof timeout) == ERROR) {
+    LogError(strerror(errno));
+  }
 
   SSL_load_error_strings();
   SSL_library_init();
@@ -122,12 +133,6 @@ HTTPClient::HTTPClient(int argc, char *argv[]) : nRequests(0) {
 
   if ((requestsFile = GetValue2(argc, argv, "requests")) != "") {
     ParseRequestsFromFile(requestsFile);
-  }
-
-  for (const auto &request : requests) {
-    std::cout << "Headers:\n" << request.first << "\n";
-    std::cout << "Body:\n" << request.second << "\n";
-    std::cout << "-----------------------------\n";
   }
 }
 
@@ -303,12 +308,12 @@ void HTTPClient::ReceiveHTTP2Responses(SSL *ssl) {
         }
         break;
       case Frame::PRIORITY:
-        std::cout << "[strm][" << frameStream << "] PRIORITY frame\n";
+        // std::cout << "[strm][" << frameStream << "] PRIORITY frame\n";
 
         break;
       case 0x03:
-        std::cout << "[strm][" << frameStream
-                  << "] Received RST_STREAM frame\n";
+        // std::cout << "[strm][" << frameStream
+        //           << "] Received RST_STREAM frame\n";
 
         TcpDecodedHeadersMap.erase(frameStream);
         EncodedHeadersBufferMap.erase(frameStream);
@@ -316,7 +321,7 @@ void HTTPClient::ReceiveHTTP2Responses(SSL *ssl) {
 
       case Frame::SETTINGS:
 
-        std::cout << "[strm][" << frameStream << "] SETTINGS frame\n";
+        // std::cout << "[strm][" << frameStream << "] SETTINGS frame\n";
         {
           // Only respond with an ACK to their SETTINGS frame with no ACK
           if (frameFlags == HTTP2Flags::NONE_FLAG) {
@@ -392,7 +397,7 @@ void HTTPClient::ReceiveHTTP2Responses(SSL *ssl) {
   }
 }
 
-void HTTPClient::Run(int argc, char *argv[]) {
+void HTTPClient::RunHTTP2(int argc, char *argv[]) {
   if (connect(TCP_Socket, (const struct sockaddr *)&TCP_SocketAddr,
               (socklen_t)sizeof(TCP_SocketAddr)) == ERROR) {
     LogError("Failed to connect to server");
@@ -475,78 +480,86 @@ void HTTPClient::Run(int argc, char *argv[]) {
   close(TCP_Socket);
 
   SSL_CTX_free(SSL_ctx);
+}
 
-  //   QUIC_STATUS Status;
-  //   const char *ResumptionTicketString = NULL;
-  //   const char *SslKeyLogFile = getenv(SslKeyLogEnvVar);
-  //   HQUIC Connection = NULL;
-  //
-  //   // Allocate a new connection object.
-  //   if (QUIC_FAILED(Status = MsQuic->ConnectionOpen(
-  //                       Registration, HTTPClient::ConnectionCallback, this,
-  //                       &Connection))) {
-  //     printf("ConnectionOpen failed, 0x%x!\n", Status);
-  //     goto Error;
-  //   }
-  //
-  //   if ((ResumptionTicketString = GetValue(argc, argv, "ticket")) != NULL) {
-  //     //
-  //     // If provided at the command line, set the resumption ticket that can
-  //     // be used to resume a previous session.
-  //     //
-  //     uint8_t ResumptionTicket[10240];
-  //     uint16_t TicketLength = (uint16_t)DecodeHexBuffer(
-  //         ResumptionTicketString, sizeof(ResumptionTicket),
-  //         ResumptionTicket);
-  //     if (QUIC_FAILED(Status = MsQuic->SetParam(
-  //                         Connection, QUIC_PARAM_CONN_RESUMPTION_TICKET,
-  //                         TicketLength, ResumptionTicket))) {
-  //       printf("SetParam(QUIC_PARAM_CONN_RESUMPTION_TICKET) failed, 0x%x!\n",
-  //              Status);
-  //       goto Error;
-  //     }
-  //   }
-  //
-  //   if (SslKeyLogFile != NULL) {
-  //     if (QUIC_FAILED(
-  //             Status = MsQuic->SetParam(Connection,
-  //             QUIC_PARAM_CONN_TLS_SECRETS,
-  //                                       sizeof(ClientSecrets),
-  //                                       &ClientSecrets))) {
-  //       printf("SetParam(QUIC_PARAM_CONN_TLS_SECRETS) failed, 0x%x!\n",
-  //       Status); goto Error;
-  //     }
-  //   }
-  //
-  //   // Get the target / server name or IP from the command line.
-  //   const char *Target;
-  //   if ((Target = GetValue(argc, argv, "target")) == NULL) {
-  //     printf("Must specify '-target' argument!\n");
-  //     Status = QUIC_STATUS_INVALID_PARAMETER;
-  //     goto Error;
-  //   }
-  //
-  //   printf("[conn][%p] Connecting...\n", Connection);
-  //
-  //   // Start the connection to the server.
-  //   if (QUIC_FAILED(Status = MsQuic->ConnectionStart(Connection,
-  //   Configuration,
-  //                                                    QUIC_ADDRESS_FAMILY_UNSPEC,
-  //                                                    Target, UDP_PORT))) {
-  //     printf("ConnectionStart failed, 0x%x!\n", Status);
-  //     goto Error;
-  //   }
-  //
-  // Error:
-  //
-  //   if (QUIC_FAILED(Status) && Connection != NULL) {
-  //     MsQuic->ConnectionClose(Connection);
-  //   }
+void HTTPClient::Run(int argc, char *argv[]) {
+  std::thread http2Thread(&HTTPClient::RunHTTP2, this, argc, argv);
+  http2Thread.detach();
+
+  QUIC_STATUS Status;
+  const char *ResumptionTicketString = NULL;
+  const char *SslKeyLogFile = getenv(SslKeyLogEnvVar);
+  HQUIC Connection = NULL;
+
+  // Allocate a new connection object.
+  if (QUIC_FAILED(Status = MsQuic->ConnectionOpen(
+                      Registration, HTTPClient::ConnectionCallback, this,
+                      &Connection))) {
+    printf("ConnectionOpen failed, 0x%x!\n", Status);
+    goto Error;
+  }
+
+  if ((ResumptionTicketString = GetValue(argc, argv, "ticket")) != NULL) {
+    //
+    // If provided at the command line, set the resumption ticket that can
+    // be used to resume a previous session.
+    //
+    uint8_t ResumptionTicket[10240];
+    uint16_t TicketLength = (uint16_t)DecodeHexBuffer(
+        ResumptionTicketString, sizeof(ResumptionTicket), ResumptionTicket);
+    if (QUIC_FAILED(Status = MsQuic->SetParam(
+                        Connection, QUIC_PARAM_CONN_RESUMPTION_TICKET,
+                        TicketLength, ResumptionTicket))) {
+      printf("SetParam(QUIC_PARAM_CONN_RESUMPTION_TICKET) failed, 0x%x!\n",
+             Status);
+      goto Error;
+    }
+  }
+
+  if (SslKeyLogFile != NULL) {
+    if (QUIC_FAILED(
+            Status = MsQuic->SetParam(Connection, QUIC_PARAM_CONN_TLS_SECRETS,
+                                      sizeof(ClientSecrets), &ClientSecrets))) {
+      printf("SetParam(QUIC_PARAM_CONN_TLS_SECRETS) failed, 0x%x!\n", Status);
+      goto Error;
+    }
+  }
+
+  // Get the target / server name or IP from the command line.
+  const char *Target;
+  if ((Target = GetValue(argc, argv, "target")) == NULL) {
+    printf("Must specify '-target' argument!\n");
+    Status = QUIC_STATUS_INVALID_PARAMETER;
+    goto Error;
+  }
+
+  printf("[conn][%p] Connecting...\n", Connection);
+
+  // Start the connection to the server.
+  if (QUIC_FAILED(Status = MsQuic->ConnectionStart(Connection, Configuration,
+                                                   QUIC_ADDRESS_FAMILY_UNSPEC,
+                                                   Target, UDP_PORT))) {
+    printf("ConnectionStart failed, 0x%x!\n", Status);
+    goto Error;
+  }
+
+Error:
+
+  if (QUIC_FAILED(Status) && Connection != NULL) {
+    MsQuic->ConnectionClose(Connection);
+  }
 }
 
 void HTTPClient::QPACK_DecodeHeaders(HQUIC stream,
                                      std::vector<uint8_t> &encodedHeaders) {
   std::vector<struct lsqpack_dec> dec(1);
+
+  uint64_t streamId{};
+  uint32_t len = (uint32_t)sizeof(streamId);
+  if (QUIC_FAILED(
+          MsQuic->GetParam(stream, QUIC_PARAM_STREAM_ID, &len, &streamId))) {
+    LogError("Failed to acquire stream id");
+  }
 
   struct lsqpack_dec_hset_if hset_if;
   hset_if.dhi_unblocked = dhiUnblocked;
@@ -569,9 +582,9 @@ void HTTPClient::QPACK_DecodeHeaders(HQUIC stream,
 
   enum lsqpack_read_header_status readStatus;
 
-  readStatus =
-      lsqpack_dec_header_in(dec.data(), &blockCtx.back(), 100, totalHeaderSize,
-                            &encodedHeadersPtr, totalHeaderSize, NULL, NULL);
+  readStatus = lsqpack_dec_header_in(dec.data(), &blockCtx.back(), streamId,
+                                     totalHeaderSize, &encodedHeadersPtr,
+                                     totalHeaderSize, NULL, NULL);
 
   lsqpack_dec_cleanup(dec.data());
 }
@@ -585,7 +598,7 @@ void HTTPClient::ParseStreamBuffer(HQUIC Stream,
   while (iter < streamBuffer.end()) {
     // Ensure we have enough data for a frame (frameType + frameLength)
     if (std::distance(iter, streamBuffer.end()) < 3) {
-      std::cout << "Error: Bad frame format (Not enough data)\n";
+      // std::cout << "Error: Bad frame format (Not enough data)\n";
       break;
     }
 
@@ -604,7 +617,7 @@ void HTTPClient::ParseStreamBuffer(HQUIC Stream,
     // Handle the frame based on the type
     switch (frameType) {
     case 0x01: // HEADERS frame
-      std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
+      // std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
 
       {
         std::vector<uint8_t> encodedHeaders(iter, iter + frameLength);
@@ -617,7 +630,7 @@ void HTTPClient::ParseStreamBuffer(HQUIC Stream,
       break;
 
     case 0x00: // DATA frame
-      std::cout << "[strm][" << Stream << "] Received DATA frame\n";
+      // std::cout << "[strm][" << Stream << "] Received DATA frame\n";
       // Data might have been transmitted over multiple frames
       data += std::string(iter, iter + frameLength);
       break;

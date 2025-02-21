@@ -150,7 +150,8 @@ void HTTPBase::RespHeaderToPseudoHeader(
     if (firstSpace != std::string::npos) {
       // If we find a second space it is the status header
       size_t secondSpace = line.find(' ', firstSpace + 1);
-      if (secondSpace != std::string::npos) {
+      if (secondSpace != std::string::npos &&
+          headersMap.find(":status") == headersMap.end()) {
         key = ":status";
         value = line.substr(firstSpace + 1, secondSpace - firstSpace - 1);
         // headers.emplace_back(key, value);
@@ -675,7 +676,7 @@ void HTTPBase::HPACK_EncodeHeaders(
 }
 
 void HTTPBase::QPACK_EncodeHeaders(
-    std::unordered_map<std::string, std::string> &headersMap,
+    uint64_t streamId, std::unordered_map<std::string, std::string> &headersMap,
     std::vector<uint8_t> &encodedHeaders) {
   // Prepare encoding context for QPACK (Header encoding for QUIC)
   std::vector<struct lsqpack_enc> enc(1);
@@ -697,7 +698,7 @@ void HTTPBase::QPACK_EncodeHeaders(
 
   //
   // HERE
-  ret = lsqpack_enc_start_header(enc.data(), 100, 0);
+  ret = lsqpack_enc_start_header(enc.data(), streamId, 0);
 
   enum lsqpack_enc_status encStatus;
 
