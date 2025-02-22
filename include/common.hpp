@@ -57,6 +57,8 @@ public:
   std::unordered_map<HQUIC, std::unordered_map<std::string, std::string>>
       QuicDecodedHeadersMap;
 
+  std::unordered_map<SSL *, std::mutex> TCP_MutexMap;
+
   virtual ~HTTPBase() = default;
 
   // Common functions
@@ -97,13 +99,20 @@ public:
   HTTP2_BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders,
                          uint32_t streamID);
 
-  static int SendHTTP1Response(SSL *clientSSL, const std::string &response);
+  static int HTTP1_SendMessage(SSL *ssl, const std::string &response);
 
-  static int SendHTTP2Response(SSL *clientSSL,
-                               std::vector<std::vector<uint8_t>> &frames);
+  static void HTTP2_RecvFrames(SSL *ssl);
 
-  static int SendHTTP3Response(HQUIC Stream,
-                               std::vector<std::vector<uint8_t>> &frames);
+  void HTTP2_RecvFrames_TS(SSL *ssl);
+
+  static int HTTP2_SendFrames(SSL *ssl,
+                              std::vector<std::vector<uint8_t>> &frames);
+
+  // Thread safe requires instance mutex
+  int HTTP2_SendFrames_TS(SSL *ssl, std::vector<std::vector<uint8_t>> &frames);
+
+  static int HTTP3_SendFrames(HQUIC Stream,
+                              std::vector<std::vector<uint8_t>> &frames);
 
   /*----------------QPACK helper functions-------------------------*/
   static uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,

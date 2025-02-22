@@ -15,6 +15,7 @@
 #include <atomic>
 #include <cassert>
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <format>
@@ -36,7 +37,7 @@ static std::unordered_map<std::string, std::string> responseCache;
 static std::mutex responseMutex;
 static std::mutex cacheMutex;
 
-std::atomic<bool> shouldShutdown(false);
+bool shouldShutdown(false);
 
 HTTPServer *HTTPServer::instance = nullptr;
 std::mutex HTTPServer::instanceMutex;
@@ -614,7 +615,7 @@ void HTTPServer::ValidatePseudoHeaders(
 void HTTPServer::HandleHTTP2Request(SSL *ssl) {
   auto startTime = std::chrono::high_resolution_clock::now();
   std::vector<uint8_t> buffer;
-  std::vector<uint8_t> tmpBuffer(BUFFER_SIZE);
+  std::vector<uint8_t> tmpBuffer(16000);
 
   // Buffer headers?
   std::unordered_map<uint32_t, std::vector<uint8_t>> EncodedHeadersBufferMap;
@@ -636,20 +637,73 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
   int offset = 0;
 
   bool GOAWAY = false;
+
+  const int maxRetries = 5;
+  const int retryDelayMs = 10;
+  int retryCount = 0;
+
+  size_t nRequests = 0;
   while (!shouldShutdown && !GOAWAY) {
-    ssize_t bytesReceived =
-        SSL_read(ssl, tmpBuffer.data(), (int)tmpBuffer.size());
+    int bytesReceived = SSL_read(ssl, tmpBuffer.data(), (int)tmpBuffer.size());
 
     if (bytesReceived == 0) {
       LogError("Client closed the connection");
       std::cout << "Client closed the connection" << std::endl;
       break;
     } else if (bytesReceived < 0) {
-      LogError("Failed to receive data");
-      std::cout << "Failed to receive data" << std::endl;
-      break;
+      int error = SSL_get_error(ssl, bytesReceived);
+
+      if (error == SSL_ERROR_WANT_READ || error == SSL_ERROR_WANT_WRITE) {
+        if (retryCount < maxRetries) {
+          std::cout << "SSL buffer full or not ready, retrying..." << std::endl;
+          retryCount++;
+          std::this_thread::sleep_for(std::chrono::milliseconds(retryDelayMs));
+          continue;
+        } else {
+          LogError("Max retries reached while trying to receive data");
+          std::cout << "Max retries reached while trying to receive data"
+                    << std::endl;
+          break; // Exit the loop after max retries
+        }
+      } else {
+        unsigned long errCode = ERR_get_error();
+        char errorString[120];
+        ERR_error_string_n(errCode, errorString, sizeof(errorString));
+
+        // Map SSL error code to a human-readable message
+        std::string sslErrorMsg;
+        switch (error) {
+        case SSL_ERROR_NONE:
+          sslErrorMsg = "No error occurred.";
+          break;
+        case SSL_ERROR_ZERO_RETURN:
+          sslErrorMsg = "SSL connection was closed cleanly.";
+          break;
+        case SSL_ERROR_WANT_X509_LOOKUP:
+          sslErrorMsg = "Operation blocked waiting for certificate lookup.";
+          break;
+        case SSL_ERROR_SYSCALL:
+          sslErrorMsg = "System call failure or connection reset. " +
+                        std::string(errorString);
+          break;
+        case SSL_ERROR_SSL:
+          sslErrorMsg =
+              "Low-level SSL library error. " + std::string(errorString);
+          break;
+        default:
+          sslErrorMsg = "Unknown SSL error. " + std::string(errorString);
+          break;
+        }
+
+        // Log the error
+        LogError("Failed to receive data. (SSL_get_error: " +
+                 std::to_string(error) + ")");
+        std::cout << "Failed to receive data: " + sslErrorMsg << std::endl;
+        break;
+      }
     }
 
+    retryCount = 0;
     buffer.insert(buffer.end(), tmpBuffer.begin(),
                   tmpBuffer.begin() + bytesReceived);
 
@@ -709,7 +763,7 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
               TcpDecodedHeadersMap[frameStream][":method"],
               TcpDecodedHeadersMap[frameStream][":path"],
               TcpDataMap[frameStream], Protocol::HTTP2, &context);
-
+          ++nRequests;
           TcpDecodedHeadersMap.erase(frameStream);
           EncodedHeadersBufferMap.erase(frameStream);
         }
@@ -738,6 +792,7 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
                 TcpDecodedHeadersMap[frameStream][":path"],
                 TcpDataMap[frameStream], Protocol::HTTP2, &context);
 
+            ++nRequests;
             TcpDecodedHeadersMap.erase(frameStream);
             EncodedHeadersBufferMap.erase(frameStream);
 
@@ -776,7 +831,7 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
         break;
       case 0x07:
 
-        // std::cout << "[strm][" << frameStream << "] GOAWAY frame\n";
+        std::cout << "[strm][" << frameStream << "] GOAWAY frame\n";
         GOAWAY = true;
         TcpDecodedHeadersMap.erase(frameStream);
         EncodedHeadersBufferMap.erase(frameStream);
@@ -811,6 +866,7 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
                 TcpDecodedHeadersMap[frameStream][":path"],
                 TcpDataMap[frameStream], Protocol::HTTP2, &context);
 
+            ++nRequests;
             TcpDecodedHeadersMap.erase(frameStream);
             EncodedHeadersBufferMap.erase(frameStream);
           } else if (isFlagSet(frameFlags, END_HEADERS_FLAG)) {
@@ -831,12 +887,13 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
       offset += FRAME_HEADER_LENGTH + payloadLength;
     }
 
-    if (offset == buffer.size()) {
-      buffer.clear();
-      offset = 0;
-    }
+    // if (offset == buffer.size()) {
+    //   buffer.erase(buffer.begin(), buffer.begin() + offset);
+    //   offset = 0;
+    // }
   }
 
+  std::cout << "Received: " << nRequests << "\n";
   if (GOAWAY) {
     std::cout << "Left because GOAWAY" << std::endl;
   }
@@ -931,6 +988,7 @@ void HTTPServer::RequestThreadHandler(int clientSock) {
   // TLS/SSL handshake
   if (SSL_accept(ssl) <= 0) {
     LogError("SSL handshake failed");
+    std::cout << "Handshake failed" << std::endl;
     SSL_free(ssl);
     close(clientSock);
     return;
@@ -1053,14 +1111,16 @@ void HTTPServer::RunQUIC() {
 }
 
 void HTTPServer::Run() {
-  std::thread tcpThread(&HTTPServer::RunTCP, this);
-  tcpThread.detach();
+  // std::thread tcpThread(&HTTPServer::RunTCP, this);
+  // tcpThread.detach();
 
   std::thread quicThread(&HTTPServer::RunQUIC, this);
   quicThread.detach();
 
-  while (!shouldShutdown) {
-  }
+  RunTCP();
+
+  // while (!shouldShutdown) {
+  // }
 }
 
 void HTTPServer::PrintFromServer() { std::cout << "Hello from server\n"; }
@@ -1081,6 +1141,10 @@ HTTPServer::HTTPServer(int argc, char *argv[])
     LogError("Failed to create SSL context");
     exit(EXIT_FAILURE);
   }
+  // SSL_CTX_set_timeout(SSL_ctx, 60);
+
+  // SSL_CTX_set_read_buffer_size(SSL_ctx, 8192);
+  // SSL_CTX_set_write_buffer_size(SSL_ctx, 8192);
 
   if (SSL_CTX_use_certificate_file(SSL_ctx, "certificates/server.crt",
                                    SSL_FILETYPE_PEM) <= 0) {

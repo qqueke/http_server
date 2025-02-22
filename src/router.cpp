@@ -76,7 +76,7 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
 
     std::string response = headers;
     SSL *clientSSL = (SSL *)context;
-    HTTPBase::SendHTTP1Response(clientSSL, response);
+    HTTPBase::HTTP1_SendMessage(clientSSL, response);
   }
 
   break;
@@ -107,7 +107,7 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
     frames.emplace_back(
         HTTPBase::HTTP2_BuildHeaderFrame(encodedHeaders, streamId));
 
-    HTTPBase::SendHTTP2Response(clientSSL, frames);
+    HTTPBase::HTTP2_SendFrames(clientSSL, frames);
   }
 
   break;
@@ -136,7 +136,7 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
 
     frames.emplace_back(HTTPBase::HTTP3_BuildHeaderFrame(encodedHeaders));
 
-    HTTPBase::SendHTTP3Response(Stream, frames);
+    HTTPBase::HTTP3_SendFrames(Stream, frames);
   }
 
   break;
@@ -155,7 +155,7 @@ void Router::SendResponse(std::string &headers, const std::string &body,
   {
     std::string response = headers + body;
     SSL *clientSSL = (SSL *)context;
-    HTTPBase::SendHTTP1Response(clientSSL, response);
+    HTTPBase::HTTP1_SendMessage(clientSSL, response);
   }
 
   break;
@@ -195,7 +195,7 @@ void Router::SendResponse(std::string &headers, const std::string &body,
 
     frames.emplace_back(HTTPBase::HTTP2_BuildDataFrame(body, streamId));
 
-    HTTPBase::SendHTTP2Response(clientSSL, frames);
+    HTTPBase::HTTP2_SendFrames(clientSSL, frames);
   }
 
   break;
@@ -224,7 +224,7 @@ void Router::SendResponse(std::string &headers, const std::string &body,
 
     frames.emplace_back(HTTPBase::HTTP3_BuildDataFrame(body));
 
-    HTTPBase::SendHTTP3Response(Stream, frames);
+    HTTPBase::HTTP3_SendFrames(Stream, frames);
   }
 
   break;

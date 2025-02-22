@@ -12,7 +12,7 @@
 #include "server.hpp"
 #include "utils.hpp"
 
-extern std::atomic<bool> shouldShutdown;
+extern bool shouldShutdown;
 
 // void *operator new(size_t size) {
 //   std::cout << "Allocating " << size << "bytes\n";
@@ -101,7 +101,7 @@ int main(int argc, char *argv[]) {
 
       server->Run();
     }
-    shouldShutdown = true;
+    // shouldShutdown = true;
     std::cout << "Calling the shutdown flush" << std::endl;
     std::thread t([]() { shutdownFlush(); });
     t.join();

@@ -15,10 +15,13 @@ public:
   ~HTTPClient();
 
   std::atomic<size_t> nRequests;
+
+  // std::unordered_map<SSL *, std::mutex> TCP_MutexMap;
+
   // Headers, Body
   std::vector<std::pair<std::string, std::string>> requests;
 
-  void ReceiveHTTP2Responses(SSL *ssl);
+  // void ReceiveHTTP2Responses(SSL *ssl);
 
   void ParseRequestsFromFile(const std::string &filePath);
 

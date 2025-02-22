@@ -210,7 +210,6 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     MsQuic->SetCallbackHandler(Event->PEER_STREAM_STARTED.Stream,
                                (void *)HTTPServer::StreamCallback, Context);
 
-    printf("[strm][%p] Peer started\n", Event->PEER_STREAM_STARTED.Stream);
     break;
   case QUIC_CONNECTION_EVENT_RESUMED:
 

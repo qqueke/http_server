@@ -26,7 +26,8 @@ LS_HPACK_BUILD = $(LS_HPACK_DIR)/build
 MSQUIC_BUILD = $(MSQUIC_DIR)/build
 
 # Compiler flags
-CXXFLAGS += -O0 -g -std=c++20 -fsanitize=address
+CXXFLAGS += -O0 -g -std=c++20
+#-fsanitize=address
 
 # Include directories
 CXXFLAGS += -I$(INCDIR)          
