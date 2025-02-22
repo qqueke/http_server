@@ -18,7 +18,9 @@
 #include "/home/QQueke/Documents/Repositories/ls-qpack/lsqpack.h"
 #include "/home/QQueke/Documents/Repositories/ls-qpack/lsxpack_header.h"
 // #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
+#include "err.h"
 #include "log.hpp"
+#include "ssl.h"
 
 // The (optional) registration configuration for the app. This sets a name for
 // the app (used for persistent storage and for debugging). It also configures
@@ -73,6 +75,42 @@ const char *SslKeyLogEnvVar = "SSLKEYLOGFILE";
 
 // Function to check if a specific flag is set
 bool isFlagSet(uint8_t flags, HTTP2Flags flag) { return (flags & flag) != 0; }
+
+std::string GetSSLErrorMessage(int error) {
+  unsigned long errCode = ERR_get_error();
+  char errorString[120];
+  ERR_error_string_n(errCode, errorString, sizeof(errorString));
+
+  std::string errorMessage;
+  switch (error) {
+  case SSL_ERROR_ZERO_RETURN:
+    errorMessage = "SSL connection was closed cleanly.";
+    break;
+  case SSL_ERROR_WANT_X509_LOOKUP:
+    errorMessage = "Operation blocked waiting for certificate lookup.";
+    break;
+  case SSL_ERROR_SYSCALL:
+    errorMessage =
+        "System call failure or connection reset. " + std::string(errorString);
+    break;
+  case SSL_ERROR_SSL: {
+    unsigned long errCode = ERR_peek_last_error();
+    std::array<char, 120> errorDetails;
+    ERR_error_string_n(errCode, errorDetails.data(), errorDetails.size());
+    errorMessage = "Low-level SSL library error: " +
+                   std::string(errorDetails.begin(), errorDetails.end());
+  } break;
+  default: {
+    unsigned long errCode = ERR_peek_last_error();
+    std::array<char, 120> errorDetails;
+    ERR_error_string_n(errCode, errorDetails.data(), errorDetails.size());
+    errorMessage = "Unknown SSL error: " +
+                   std::string(errorDetails.begin(), errorDetails.end());
+  } break;
+  }
+
+  return "(SSL): " + errorMessage;
+}
 
 void PrintBytes(void *buf, size_t len) {
   unsigned char *cbuf = (unsigned char *)buf;

@@ -88,7 +88,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     // bool acceptEncoding;
 
     // Validate Request
-    HTTPServer::ValidatePseudoHeaders(server->QuicDecodedHeadersMap[Stream]);
+    server->ValidatePseudoHeaders(server->QuicDecodedHeadersMap[Stream]);
 
     // Route Request
     std::string status = server->ServerRouter->RouteRequest(

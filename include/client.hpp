@@ -14,8 +14,6 @@ public:
   HTTPClient(int argc, char *argv[]);
   ~HTTPClient();
 
-  std::atomic<size_t> nRequests;
-
   // std::unordered_map<SSL *, std::mutex> TCP_MutexMap;
 
   // Headers, Body
@@ -34,6 +32,8 @@ public:
       _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API
       static ConnectionCallback(_In_ HQUIC Connection, _In_opt_ void *Context,
                                 _Inout_ QUIC_CONNECTION_EVENT *Event);
+
+  void HTTP2_RecvFrames_TS(SSL *ssl);
 
   void PrintFromServer();
 

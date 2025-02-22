@@ -10,6 +10,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "lshpack.h"
+
 // #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 // #include "msquic.h"
 class HTTPBase {
@@ -59,7 +61,14 @@ public:
 
   std::unordered_map<SSL *, std::mutex> TCP_MutexMap;
 
+  struct lshpack_enc enc;
+
+  struct lshpack_dec dec{};
+
   virtual ~HTTPBase() = default;
+
+  void HPACK_DecodeHeaders2(uint32_t streamId,
+                            std::vector<uint8_t> &encodedHeaders);
 
   // Common functions
   static void dhiUnblocked(void *hblock_ctx);
@@ -101,10 +110,6 @@ public:
 
   static int HTTP1_SendMessage(SSL *ssl, const std::string &response);
 
-  static void HTTP2_RecvFrames(SSL *ssl);
-
-  void HTTP2_RecvFrames_TS(SSL *ssl);
-
   static int HTTP2_SendFrames(SSL *ssl,
                               std::vector<std::vector<uint8_t>> &frames);
 
@@ -127,6 +132,10 @@ public:
   static void
   HPACK_EncodeHeaders(std::unordered_map<std::string, std::string> &headersMap,
                       std::vector<uint8_t> &encodedHeaders);
+
+  void
+  HPACK_EncodeHeaders2(std::unordered_map<std::string, std::string> &headersMap,
+                       std::vector<uint8_t> &encodedHeaders);
 
   void HPACK_DecodeHeaders(uint32_t streamId,
                            std::vector<uint8_t> &encodedHeaders);

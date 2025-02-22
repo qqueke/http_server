@@ -31,7 +31,7 @@ enum : int {
   ERROR = -1,
   TIMEOUT_SECONDS = 5,
   MAX_CONNECTIONS = 100,
-  MAX_PENDING_CONNECTIONS = 1000,
+  MAX_PENDING_CONNECTIONS = 100000,
   HTTP_PORT = 4433,
 };
 
@@ -138,6 +138,8 @@ typedef struct QUIC_CREDENTIAL_CONFIG_HELPER {
 } QUIC_CREDENTIAL_CONFIG_HELPER;
 
 bool isFlagSet(uint8_t flags, HTTP2Flags flag);
+
+std::string GetSSLErrorMessage(int error);
 
 // Helper function to provide program arguments
 void PrintUsage();

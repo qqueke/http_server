@@ -12,10 +12,10 @@ std::ofstream requestLogFile("logs/requests.log", std::ios::app);
 std::mutex stderrMutex;
 std::mutex stdoutMutex;
 
-const size_t maxLogBatchSize = 1;
+const size_t maxLogBatchSize = 1000;
 
-static std::vector<std::string> errorBuffer;
-static std::vector<std::string> requestBuffer;
+static std::vector<std::string> errorBuffer(1024);
+static std::vector<std::string> requestBuffer(1024);
 
 inline void flushLogsToFile(std::ofstream &file,
                             std::vector<std::string> &buffer) {
@@ -70,9 +70,11 @@ inline auto getTimestamp() {
 }
 
 void logError(const std::string &error, const char *file, int line) {
-  std::string logEntry = getTimestamp() + ": " + error +
-                         " in file: " + std::string(file) +
-                         " at line: " + std::to_string(line);
+  std::ostringstream logStream;
+  logStream << getTimestamp() << ": " << error << " in file: " << file
+            << " at line: " << line;
+
+  std::string logEntry = logStream.str();
 
   std::lock_guard<std::mutex> lock(stderrMutex);
   errorBuffer.emplace_back(logEntry);

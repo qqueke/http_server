@@ -22,6 +22,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -596,9 +597,6 @@ void HTTPServer::ValidateHeaders(const std::string &request,
 
 void HTTPServer::ValidatePseudoHeaders(
     std::unordered_map<std::string, std::string> &headersMap) {
-  std::unordered_set<std::string> requiredHeaders = {":method", ":scheme",
-                                                     ":path"};
-
   for (const auto &header : requiredHeaders) {
     if (headersMap.find(header) == headersMap.end()) {
       LogError("Failed to validate pseudo-headers (missing header field)");
@@ -643,6 +641,8 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
   int retryCount = 0;
 
   size_t nRequests = 0;
+
+  std::set<uint32_t> requestSet;
   while (!shouldShutdown && !GOAWAY) {
     int bytesReceived = SSL_read(ssl, tmpBuffer.data(), (int)tmpBuffer.size());
 
@@ -663,42 +663,11 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
           LogError("Max retries reached while trying to receive data");
           std::cout << "Max retries reached while trying to receive data"
                     << std::endl;
-          break; // Exit the loop after max retries
+          break;
         }
       } else {
-        unsigned long errCode = ERR_get_error();
-        char errorString[120];
-        ERR_error_string_n(errCode, errorString, sizeof(errorString));
-
-        // Map SSL error code to a human-readable message
-        std::string sslErrorMsg;
-        switch (error) {
-        case SSL_ERROR_NONE:
-          sslErrorMsg = "No error occurred.";
-          break;
-        case SSL_ERROR_ZERO_RETURN:
-          sslErrorMsg = "SSL connection was closed cleanly.";
-          break;
-        case SSL_ERROR_WANT_X509_LOOKUP:
-          sslErrorMsg = "Operation blocked waiting for certificate lookup.";
-          break;
-        case SSL_ERROR_SYSCALL:
-          sslErrorMsg = "System call failure or connection reset. " +
-                        std::string(errorString);
-          break;
-        case SSL_ERROR_SSL:
-          sslErrorMsg =
-              "Low-level SSL library error. " + std::string(errorString);
-          break;
-        default:
-          sslErrorMsg = "Unknown SSL error. " + std::string(errorString);
-          break;
-        }
-
-        // Log the error
-        LogError("Failed to receive data. (SSL_get_error: " +
-                 std::to_string(error) + ")");
-        std::cout << "Failed to receive data: " + sslErrorMsg << std::endl;
+        LogError(GetSSLErrorMessage(error));
+        std::cout << "Failed to send HTTP2 response fully" << std::endl;
         break;
       }
     }
@@ -745,6 +714,7 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
       // std::cout << "Payload Length: " << std::dec << (int)payloadLength
       //           << std::hex << ", Flags: " << (int)frameFlags << " ";
 
+      requestSet.insert(frameStream);
       switch (frameType) {
       case 0x00:
         // std::cout << "[strm][" << frameStream << "] DATA frame\n";
@@ -753,7 +723,7 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
             reinterpret_cast<const char *>(framePtr + FRAME_HEADER_LENGTH),
             payloadLength);
 
-        std::cout << TcpDataMap[frameStream] << std::endl;
+        // std::cout << TcpDataMap[frameStream] << std::endl;
 
         if (isFlagSet(frameFlags, END_STREAM_FLAG)) {
           HTTPServer::ValidatePseudoHeaders(TcpDecodedHeadersMap[frameStream]);
@@ -780,8 +750,8 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
           if (isFlagSet(frameFlags, END_STREAM_FLAG) &&
               isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             // Decode and dispatch request
-            HPACK_DecodeHeaders(frameStream,
-                                EncodedHeadersBufferMap[frameStream]);
+            HPACK_DecodeHeaders2(frameStream,
+                                 EncodedHeadersBufferMap[frameStream]);
 
             HTTPServer::ValidatePseudoHeaders(
                 TcpDecodedHeadersMap[frameStream]);
@@ -798,8 +768,8 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
 
           } else if (isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             // Decode and wait for request body
-            HPACK_DecodeHeaders(frameStream,
-                                EncodedHeadersBufferMap[frameStream]);
+            HPACK_DecodeHeaders2(frameStream,
+                                 EncodedHeadersBufferMap[frameStream]);
           }
         }
         break;
@@ -831,10 +801,16 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
         break;
       case 0x07:
 
-        std::cout << "[strm][" << frameStream << "] GOAWAY frame\n";
+        // std::cout << "[strm][" << frameStream << "] GOAWAY frame\n";
         GOAWAY = true;
-        TcpDecodedHeadersMap.erase(frameStream);
-        EncodedHeadersBufferMap.erase(frameStream);
+
+        {
+          std::vector<std::vector<uint8_t>> frames;
+          frames.emplace_back(HTTPBase::HTTP2_BuildGoAwayFrame(
+              frameStream, HTTP2ErrorCode::NO_ERROR));
+          HTTPBase::HTTP2_SendFrames(ssl, frames);
+        }
+
         break;
 
       case 0x08:
@@ -855,8 +831,8 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
           if (isFlagSet(frameFlags, END_STREAM_FLAG) &&
               isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             // Decode and dispatch request
-            HPACK_DecodeHeaders(frameStream,
-                                EncodedHeadersBufferMap[frameStream]);
+            HPACK_DecodeHeaders2(frameStream,
+                                 EncodedHeadersBufferMap[frameStream]);
 
             HTTPServer::ValidatePseudoHeaders(
                 TcpDecodedHeadersMap[frameStream]);
@@ -871,8 +847,8 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
             EncodedHeadersBufferMap.erase(frameStream);
           } else if (isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             // Decode and wait for request body
-            HPACK_DecodeHeaders(frameStream,
-                                EncodedHeadersBufferMap[frameStream]);
+            HPACK_DecodeHeaders2(frameStream,
+                                 EncodedHeadersBufferMap[frameStream]);
           }
         }
         break;
@@ -893,24 +869,27 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
     // }
   }
 
-  std::cout << "Received: " << nRequests << "\n";
+  std::cout << "Received: " << requestSet.size() << "\n";
+  std::cout << "Answered: " << nRequests << "\n";
+
   if (GOAWAY) {
     std::cout << "Left because GOAWAY" << std::endl;
   }
-  std::string body;
 
   // Timer should end  here and log it to the file
   auto endTime = std::chrono::high_resolution_clock::now();
 
   std::chrono::duration<double> elapsed = endTime - startTime;
 
-  std::ostringstream logStream;
-  logStream << "Protocol: HTTP2 "
-            << "Method: " << method << " Path: " << path
-            << " Status: " << status << " Elapsed time: " << elapsed.count()
-            << " s";
+  std::cout << "Elapsed time: " << elapsed.count() << " s" << std::endl;
 
-  LogRequest(logStream.str());
+  // std::ostringstream logStream;
+  // logStream << "Protocol: HTTP2 "
+  //           << "Method: " << method << " Path: " << path
+  //           << " Status: " << status << " Elapsed time: " << elapsed.count()
+  //           << " s";
+  //
+  // LogRequest(logStream.str());
 }
 
 void HTTPServer::HandleHTTP1Request(SSL *ssl) {
@@ -1033,6 +1012,9 @@ HTTPServer::~HTTPServer() {
   while (TCP_Socket != -1) {
   }
 
+  lshpack_enc_cleanup(&enc);
+
+  lshpack_dec_cleanup(&dec);
   SSL_CTX_free(SSL_ctx);
 
   LogError("Server shutdown.");
@@ -1132,6 +1114,8 @@ HTTPServer::HTTPServer(int argc, char *argv[])
   TCP_SocketAddr = {};
   timeout = {};
 
+  lshpack_enc_init(&enc);
+  lshpack_dec_init(&dec);
   SSL_load_error_strings();
   SSL_library_init();
   OpenSSL_add_all_algorithms();

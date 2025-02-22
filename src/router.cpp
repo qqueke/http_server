@@ -37,8 +37,8 @@ STATUS_CODE Router::RouteRequest(const std::string &method,
                                  const std::string &path,
                                  const std::string &data, Protocol protocol,
                                  void *context) {
-  std::cout << "Method: " << method << " Path: " << path << " Data: " << data
-            << std::endl;
+  // std::cout << "Method: " << method << " Path: " << path << " Data: " << data
+  //           << std::endl;
 
   bool acceptEncoding = false;
 
@@ -100,7 +100,10 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
 
     std::vector<uint8_t> encodedHeaders;
 
-    HTTPBase::HPACK_EncodeHeaders(headersMap, encodedHeaders);
+    // HTTPBase::HPACK_EncodeHeaders(headersMap, encodedHeaders);
+
+    HTTPServer *server = HTTPServer::GetInstance();
+    server->HPACK_EncodeHeaders2(headersMap, encodedHeaders);
 
     std::vector<std::vector<uint8_t>> frames;
 
@@ -186,7 +189,10 @@ void Router::SendResponse(std::string &headers, const std::string &body,
 
     std::vector<uint8_t> encodedHeaders;
 
-    HTTPBase::HPACK_EncodeHeaders(headersMap, encodedHeaders);
+    // HTTPBase::HPACK_EncodeHeaders(headersMap, encodedHeaders);
+
+    HTTPServer *server = HTTPServer::GetInstance();
+    server->HPACK_EncodeHeaders2(headersMap, encodedHeaders);
 
     std::vector<std::vector<uint8_t>> frames;
 

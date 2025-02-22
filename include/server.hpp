@@ -18,6 +18,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 
 #include "common.hpp"
 #include "router.hpp"
@@ -42,6 +43,8 @@ private:
   HQUIC Listener;
   QUIC_ADDR Address;
 
+  std::unordered_set<std::string> requiredHeaders = {":method", ":scheme",
+                                                     ":path"};
   std::string threadSafeStrerror(int errnum);
 
   HTTPServer(int argc, char *argv[]);
@@ -117,7 +120,7 @@ public:
                               std::string &path, std::string &body,
                               bool &acceptEncoding);
 
-  static void ValidatePseudoHeaders(
+  void ValidatePseudoHeaders(
       std::unordered_map<std::string, std::string> &headersMap);
 };
 

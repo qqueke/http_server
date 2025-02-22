@@ -69,7 +69,7 @@ void HTTPClient::ParseRequestsFromFile(const std::string &filePath) {
   }
 }
 
-HTTPClient::HTTPClient(int argc, char *argv[]) : nRequests(0) {
+HTTPClient::HTTPClient(int argc, char *argv[]) {
   TCP_Socket = socket(AF_INET, SOCK_STREAM, 0);
   TCP_SocketAddr = {};
   timeout = {};
@@ -81,7 +81,7 @@ HTTPClient::HTTPClient(int argc, char *argv[]) : nRequests(0) {
   }
 
   timeout.tv_sec = 0;
-  timeout.tv_usec = 200 * 1000;
+  timeout.tv_usec = 50 * 1000;
 
   if (setsockopt(TCP_Socket, SOL_SOCKET, SO_RCVTIMEO, &timeout,
                  sizeof timeout) == ERROR) {
@@ -206,6 +206,216 @@ int HTTPClient::dhiProcessHeader(void *hblock_ctx,
   instance->QuicDecodedHeadersMap[block_ctx->stream][headerKey] = headerValue;
 
   return 0;
+}
+
+void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
+  // Buffer for encoded headers until decoding
+  std::unordered_map<uint32_t, std::vector<uint8_t>> EncodedHeadersBufferMap;
+  std::unordered_map<uint32_t, std::string> TcpDataMap;
+
+  // SSL_read buffers
+  std::vector<uint8_t> buffer;
+  std::vector<uint8_t> tmpBuffer(BUFFER_SIZE);
+
+  const size_t FRAME_HEADER_LENGTH = 9;
+  int offset = 0;
+
+  int bytesReceived{};
+  bool GOAWAY = false;
+  size_t nResponses = 0;
+  while (!GOAWAY) {
+    {
+      std::lock_guard<std::mutex> lock(TCP_MutexMap[ssl]);
+      bytesReceived = SSL_read(ssl, tmpBuffer.data(), (int)tmpBuffer.size());
+    }
+
+    if (bytesReceived == 0) {
+      LogError("Peer closed the connection");
+      std::cout << "Peer closed the connection" << std::endl;
+      break;
+    } else if (bytesReceived < 0) {
+      int error = SSL_get_error(ssl, bytesReceived);
+
+      // Check if it was a timeout
+      if (error == SSL_ERROR_WANT_READ || error == SSL_ERROR_WANT_WRITE) {
+        // Timeout, let's wait for a bit and retry
+        std::cout << "Timeout occurred, retrying..." << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        continue;
+      } else {
+        LogError(GetSSLErrorMessage(error));
+        std::cout << "Failed to send HTTP2 response fully" << std::endl;
+        break;
+      }
+    }
+
+    buffer.insert(buffer.end(), tmpBuffer.begin(),
+                  tmpBuffer.begin() + bytesReceived);
+
+    // If we received atleast the frame header
+    while (offset + FRAME_HEADER_LENGTH <= buffer.size() && !GOAWAY) {
+      uint8_t *framePtr = buffer.data() + offset;
+
+      uint32_t payloadLength = (static_cast<uint32_t>(framePtr[0]) << 16) |
+                               (static_cast<uint32_t>(framePtr[1]) << 8) |
+                               static_cast<uint32_t>(framePtr[2]);
+
+      if (offset + FRAME_HEADER_LENGTH + payloadLength > buffer.size()) {
+        break;
+      }
+
+      uint8_t frameType = framePtr[3];
+
+      uint8_t frameFlags = framePtr[4];
+
+      uint32_t frameStream = (framePtr[5] << 24) | (framePtr[6] << 16) |
+                             (framePtr[7] << 8) | framePtr[8];
+
+      std::cout << "Payload Length: " << std::dec << (int)payloadLength
+                << std::hex << ", Flags: " << (int)frameFlags << " ";
+
+      switch (frameType) {
+      case Frame::DATA:
+        std::cout << "[strm][" << frameStream << "] DATA frame\n";
+
+        TcpDataMap[frameStream] += std::string(
+            reinterpret_cast<const char *>(framePtr + FRAME_HEADER_LENGTH),
+            payloadLength);
+
+        std::cout << TcpDataMap[frameStream] << std::endl;
+
+        if (isFlagSet(frameFlags, END_STREAM_FLAG)) {
+          // HTTPServer::ValidatePseudoHeaders(TcpDecodedHeadersMap[frameStream]);
+
+          std::cout << "Response:\n";
+          for (const auto &[key, value] : TcpDecodedHeadersMap[frameStream]) {
+            std::cout << key << ": " << value << "\n";
+          }
+          std::cout << TcpDataMap[frameStream] << "\n";
+
+          TcpDecodedHeadersMap.erase(frameStream);
+          EncodedHeadersBufferMap.erase(frameStream);
+          ++nResponses;
+        }
+        break;
+      case Frame::HEADERS:
+        std::cout << "[strm][" << frameStream << "] HEADERS frame\n";
+
+        {
+          EncodedHeadersBufferMap[frameStream].insert(
+              EncodedHeadersBufferMap[frameStream].end(),
+              framePtr + FRAME_HEADER_LENGTH,
+              framePtr + FRAME_HEADER_LENGTH + payloadLength);
+
+          if (isFlagSet(frameFlags, END_STREAM_FLAG) &&
+              isFlagSet(frameFlags, END_HEADERS_FLAG)) {
+            // Decode and dispatch request
+            HPACK_DecodeHeaders(frameStream,
+                                EncodedHeadersBufferMap[frameStream]);
+
+            // HTTPServer::ValidatePseudoHeaders(
+            //     TcpDecodedHeadersMap[frameStream]);
+
+            std::cout << "Response:\n";
+            for (const auto &[key, value] : TcpDecodedHeadersMap[frameStream]) {
+              std::cout << key << ": " << value << "\n";
+            }
+
+            TcpDecodedHeadersMap.erase(frameStream);
+            EncodedHeadersBufferMap.erase(frameStream);
+            ++nResponses;
+          } else if (isFlagSet(frameFlags, END_HEADERS_FLAG)) {
+            // Decode and wait for request body
+            HPACK_DecodeHeaders(frameStream,
+                                EncodedHeadersBufferMap[frameStream]);
+          }
+        }
+        break;
+      case Frame::PRIORITY:
+        // std::cout << "[strm][" << frameStream << "] PRIORITY frame\n";
+
+        break;
+      case 0x03:
+        // std::cout << "[strm][" << frameStream
+        //           << "] Received RST_STREAM frame\n";
+
+        TcpDecodedHeadersMap.erase(frameStream);
+        EncodedHeadersBufferMap.erase(frameStream);
+        break;
+
+      case Frame::SETTINGS:
+
+        // std::cout << "[strm][" << frameStream << "] SETTINGS frame\n";
+
+        // Only respond with an ACK to their SETTINGS frame with no ACK
+        if (frameFlags == HTTP2Flags::NONE_FLAG) {
+          std::vector<std::vector<uint8_t>> frames;
+          frames.emplace_back(HTTPBase::HTTP2_BuildSettingsFrame(
+              HTTP2Flags::SETTINGS_ACK_FLAG));
+          HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
+        }
+
+        break;
+      case Frame::GOAWAY:
+
+        std::cout << "[strm][" << frameStream << "] GOAWAY frame\n";
+        GOAWAY = true;
+        TcpDecodedHeadersMap.erase(frameStream);
+        EncodedHeadersBufferMap.erase(frameStream);
+        break;
+
+      case Frame::WINDOW_UPDATE:
+
+        std::cout << "[strm][" << frameStream << "] WINDOW_UPDATE frame\n";
+
+        break;
+
+      case Frame::CONTINUATION:
+
+        std::cout << "[strm][" << frameStream << "] CONTINUATION frame\n";
+        {
+          EncodedHeadersBufferMap[frameStream].insert(
+              EncodedHeadersBufferMap[frameStream].end(),
+              framePtr + FRAME_HEADER_LENGTH,
+              framePtr + FRAME_HEADER_LENGTH + payloadLength);
+
+          if (isFlagSet(frameFlags, END_STREAM_FLAG) &&
+              isFlagSet(frameFlags, END_HEADERS_FLAG)) {
+            // Decode and dispatch request
+            HPACK_DecodeHeaders(frameStream,
+                                EncodedHeadersBufferMap[frameStream]);
+
+            std::cout << "Response:\n";
+            for (const auto &[key, value] : TcpDecodedHeadersMap[frameStream]) {
+              std::cout << key << ": " << value << "\n";
+            }
+
+            TcpDecodedHeadersMap.erase(frameStream);
+            EncodedHeadersBufferMap.erase(frameStream);
+            ++nResponses;
+          } else if (isFlagSet(frameFlags, END_HEADERS_FLAG)) {
+            // Decode and wait for request body
+            HPACK_DecodeHeaders(frameStream,
+                                EncodedHeadersBufferMap[frameStream]);
+          }
+        }
+        break;
+
+      default:
+        std::cout << "[strm][" << frameStream << "] Unknown frame type: 0x"
+                  << std::dec << frameType << std::dec << "\n";
+        break;
+      }
+      // Move the offset to the next frame
+      offset += FRAME_HEADER_LENGTH + payloadLength;
+    }
+
+    // if (offset == buffer.size()) {
+    //   buffer.clear();
+    //   offset = 0;
+    // }
+  }
+  std::cout << "Received: " << nResponses << "\n";
 }
 
 // void HTTPClient::ReceiveHTTP2Responses(SSL *ssl) {
@@ -432,24 +642,12 @@ void HTTPClient::RunHTTP2(int argc, char *argv[]) {
     exit(EXIT_FAILURE);
   }
 
-  // SSL_ReadThread.detach();
-
   // Send Preface, Window and SETTINGS
   const std::vector<uint8_t> HTTP2_PrefaceBytes = {
       0x50, 0x52, 0x49, 0x20, 0x2A, 0x20, 0x48, 0x54, 0x54, 0x50, 0x2F, 0x32,
       0x2E, 0x30, 0x0D, 0x0A, 0x0D, 0x0A, 0x53, 0x4D, 0x0D, 0x0A, 0x0D, 0x0A};
 
-  // int sentBytes2 =
-  //     SSL_write(ssl, HTTP2_PrefaceBytes.data(),
-  //     (int)HTTP2_PrefaceBytes.size());
-  // if (sentBytes2 <= 0) {
-  //   std::cout << "Failed to send HTTP2 PREFACE\n";
-  // }
-
-  // Thread responsible for reading
-
-  nRequests = requests.size();
-  std::thread recvThread(&HTTPBase::HTTP2_RecvFrames_TS, this, ssl);
+  std::thread recvThread(&HTTPClient::HTTP2_RecvFrames_TS, this, ssl);
 
   {
     std::vector<std::vector<uint8_t>> frames;
@@ -464,8 +662,9 @@ void HTTPClient::RunHTTP2(int argc, char *argv[]) {
     HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
   }
 
+  uint32_t numRequests = 0;
   uint32_t streamId = 1;
-  for (int i = 0; i < 2; ++i) {
+  for (int i = 0; i < 1000; ++i) {
     for (const auto &request : requests) {
       const std::string &headers = request.first;
       const std::string &body = request.second;
@@ -488,25 +687,22 @@ void HTTPClient::RunHTTP2(int argc, char *argv[]) {
       HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
       streamId += 2;
     }
-    nRequests += nRequests;
+    numRequests += requests.size();
   }
 
   {
     std::vector<std::vector<uint8_t>> frames;
-    frames.emplace_back(
-        HTTPBase::HTTP2_BuildGoAwayFrame(streamId, HTTP2ErrorCode::NO_ERROR));
+    frames.emplace_back(HTTPBase::HTTP2_BuildGoAwayFrame(
+        streamId - 2, HTTP2ErrorCode::NO_ERROR));
     HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
   }
 
   recvThread.join();
 
-  std::cout << "Sent: " << nRequests << " requests\n";
-  // while (true) {
-  // }
+  std::cout << "Sent: " << numRequests << " requests\n";
 
   SSL_free(ssl);
   close(TCP_Socket);
-
   SSL_CTX_free(SSL_ctx);
 }
 
