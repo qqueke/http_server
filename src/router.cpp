@@ -57,7 +57,7 @@ STATUS_CODE Router::RouteRequest(const std::string &method,
     return routes[routeKey](data, protocol, context, cacheKey);
   }
 
-  std::cout << "Error: Undefined route\n";
+  // std::cout << "Error: Undefined route\n";
   return handleBadRequest(data, protocol, context, cacheKey);
 }
 
@@ -103,7 +103,7 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
     // HTTPBase::HPACK_EncodeHeaders(headersMap, encodedHeaders);
 
     HTTPServer *server = HTTPServer::GetInstance();
-    server->HPACK_EncodeHeaders2(headersMap, encodedHeaders);
+    HTTPBase::HPACK_EncodeHeaders(headersMap, encodedHeaders);
 
     std::vector<std::vector<uint8_t>> frames;
 
@@ -192,7 +192,7 @@ void Router::SendResponse(std::string &headers, const std::string &body,
     // HTTPBase::HPACK_EncodeHeaders(headersMap, encodedHeaders);
 
     HTTPServer *server = HTTPServer::GetInstance();
-    server->HPACK_EncodeHeaders2(headersMap, encodedHeaders);
+    HTTPBase::HPACK_EncodeHeaders(headersMap, encodedHeaders);
 
     std::vector<std::vector<uint8_t>> frames;
 
@@ -211,6 +211,8 @@ void Router::SendResponse(std::string &headers, const std::string &body,
   {
     HQUIC Stream = (HQUIC)context;
     std::unordered_map<std::string, std::string> headersMap;
+    headersMap.reserve(10);
+
     HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
 
     std::vector<uint8_t> encodedHeaders;

@@ -61,9 +61,9 @@ public:
 
   std::unordered_map<SSL *, std::mutex> TCP_MutexMap;
 
-  struct lshpack_enc enc;
-
-  struct lshpack_dec dec{};
+  // struct lshpack_enc enc;
+  //
+  // struct lshpack_dec dec{};
 
   virtual ~HTTPBase() = default;
 

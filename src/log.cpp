@@ -12,10 +12,10 @@ std::ofstream requestLogFile("logs/requests.log", std::ios::app);
 std::mutex stderrMutex;
 std::mutex stdoutMutex;
 
-const size_t maxLogBatchSize = 1000;
+const size_t maxLogBatchSize = 1;
 
-static std::vector<std::string> errorBuffer(1024);
-static std::vector<std::string> requestBuffer(1024);
+static std::vector<std::string> errorBuffer;
+static std::vector<std::string> requestBuffer;
 
 inline void flushLogsToFile(std::ofstream &file,
                             std::vector<std::string> &buffer) {

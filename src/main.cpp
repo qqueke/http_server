@@ -79,6 +79,7 @@ int main(int argc, char *argv[]) {
 
     getchar();
   } else if (GetFlag(argc, argv, "server")) {
+    signal(SIGPIPE, SIG_IGN);       // SIGPIPE
     signal(SIGINT, signalHandler);  // Ctrl+C
     signal(SIGTERM, signalHandler); // Termination signal
 

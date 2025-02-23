@@ -81,57 +81,59 @@ void HTTPBase::ReqHeaderToPseudoHeader(
   }
 }
 
-void HTTPBase::HPACK_DecodeHeaders2(uint32_t streamId,
-                                    std::vector<uint8_t> &encodedHeaders) {
-  // std::cout << "encodedHeaders size: " << std::dec << encodedHeaders.size()
-  //           << std::endl;
-  // struct lshpack_dec dec{};
-  // lshpack_dec_init(&dec);
-
-  const unsigned char *src = const_cast<unsigned char *>(encodedHeaders.data());
-  const unsigned char *end = src + encodedHeaders.size();
-
-  struct lsxpack_header headerFormat;
-  char headerBuffer[2048];
-  memset(headerBuffer, 0, sizeof(headerBuffer));
-
-  char name[256], value[1024];
-
-  while (src < end) {
-    lsxpack_header_prepare_decode(&headerFormat, headerBuffer, 0,
-                                  sizeof(headerBuffer));
-
-    int ret = lshpack_dec_decode(&dec, &src, end, &headerFormat);
-    if (ret < 0) {
-      std::cerr << "Failed to decode HPACK headers" << std::endl;
-      break;
-    }
-
-    int decodedSize = headerFormat.name_len + headerFormat.val_len +
-                      lshpack_dec_extra_bytes(dec);
-
-    // Copy decoded name and value
-    strncpy(name, headerFormat.buf + headerFormat.name_offset,
-            headerFormat.name_len);
-    name[headerFormat.name_len] = '\0';
-
-    strncpy(value, headerFormat.buf + headerFormat.val_offset,
-            headerFormat.val_len);
-    value[headerFormat.val_len] = '\0';
-
-    TcpDecodedHeadersMap[streamId][name] = value;
-    // decodedHeaders[name] = value;
-  }
-
-  // for (const auto &header : TcpDecodedHeadersMap[streamId]) {
-  //   std::cout << header.first << ": " << header.second << std::endl;
-  // }
-
-  // struct lshpack_dec dec{};
-  // lshpack_dec_init(&dec);
-  //
-  // lshpack_dec_cleanup(&dec);
-}
+// void HTTPBase::HPACK_DecodeHeaders2(uint32_t streamId,
+//                                     std::vector<uint8_t> &encodedHeaders) {
+//   // std::cout << "encodedHeaders size: " << std::dec <<
+//   encodedHeaders.size()
+//   //           << std::endl;
+//   // struct lshpack_dec dec{};
+//   // lshpack_dec_init(&dec);
+//
+//   const unsigned char *src = const_cast<unsigned char
+//   *>(encodedHeaders.data()); const unsigned char *end = src +
+//   encodedHeaders.size();
+//
+//   struct lsxpack_header headerFormat;
+//   char headerBuffer[2048];
+//   memset(headerBuffer, 0, sizeof(headerBuffer));
+//
+//   char name[256], value[1024];
+//
+//   while (src < end) {
+//     lsxpack_header_prepare_decode(&headerFormat, headerBuffer, 0,
+//                                   sizeof(headerBuffer));
+//
+//     int ret = lshpack_dec_decode(&dec, &src, end, &headerFormat);
+//     if (ret < 0) {
+//       std::cerr << "Failed to decode HPACK headers" << std::endl;
+//       break;
+//     }
+//
+//     int decodedSize = headerFormat.name_len + headerFormat.val_len +
+//                       lshpack_dec_extra_bytes(dec);
+//
+//     // Copy decoded name and value
+//     strncpy(name, headerFormat.buf + headerFormat.name_offset,
+//             headerFormat.name_len);
+//     name[headerFormat.name_len] = '\0';
+//
+//     strncpy(value, headerFormat.buf + headerFormat.val_offset,
+//             headerFormat.val_len);
+//     value[headerFormat.val_len] = '\0';
+//
+//     TcpDecodedHeadersMap[streamId][name] = value;
+//     // decodedHeaders[name] = value;
+//   }
+//
+//   // for (const auto &header : TcpDecodedHeadersMap[streamId]) {
+//   //   std::cout << header.first << ": " << header.second << std::endl;
+//   // }
+//
+//   // struct lshpack_dec dec{};
+//   // lshpack_dec_init(&dec);
+//   //
+//   // lshpack_dec_cleanup(&dec);
+// }
 
 void HTTPBase::HPACK_DecodeHeaders(uint32_t streamId,
                                    std::vector<uint8_t> &encodedHeaders) {
@@ -172,6 +174,7 @@ void HTTPBase::HPACK_DecodeHeaders(uint32_t streamId,
             headerFormat.val_len);
     value[headerFormat.val_len] = '\0';
 
+    // std::cout << "Decoded: " << name << ": " << value << "\n";
     TcpDecodedHeadersMap[streamId][name] = value;
     // decodedHeaders[name] = value;
   }
@@ -224,7 +227,11 @@ void HTTPBase::RespHeaderToPseudoHeader(
       }
     }
   }
+  //
+  // std::cout << "Headers size: " << http1Headers.size()
+  //           << " HeadersMap size: " << headersMap.size() << std::endl;
 }
+
 int HTTPBase::HTTP3_SendFramesToStream(
     HQUIC Stream, const std::vector<std::vector<uint8_t>> &frames) {
   QUIC_STATUS Status;
@@ -722,60 +729,62 @@ uint64_t HTTPBase::ReadVarint(std::vector<uint8_t>::iterator &iter,
   return value;
 }
 
-void HTTPBase::HPACK_EncodeHeaders2(
-    std::unordered_map<std::string, std::string> &headersMap,
-    std::vector<uint8_t> &encodedHeaders) {
-  // struct lshpack_enc enc{};
-
-  unsigned char buf[1024]; // Buffer for encoded headers
-  unsigned char *dst = buf;
-  unsigned char *end = buf + sizeof(buf);
-
-  // lshpack_enc_init(&enc);
-
-  {
-    const std::string &name = ":status";
-    const std::string &value = headersMap[":status"];
-
-    // This
-    // std::string combinedHeader = name + ": " + value;
-
-    std::string combinedHeader;
-    combinedHeader.reserve(name.size() + 2 + value.size());
-    combinedHeader.append(name).append(": ").append(value);
-
-    // std::cout << "Encoding header: " << combinedHeader << std::endl;
-    struct lsxpack_header headerFormat;
-    lsxpack_header_set_offset2(&headerFormat, combinedHeader.c_str(), 0,
-                               name.length(), name.length() + 2, value.size());
-
-    dst = lshpack_enc_encode(&enc, dst, end, &headerFormat);
-  }
-
-  for (const auto &header : headersMap) {
-    if (header.first == ":status") {
-      continue;
-    }
-
-    // auto header = headersMap.begin();
-    const std::string &name = header.first;
-    const std::string &value = header.second;
-
-    std::string combinedHeader = name + ": " + value;
-    // std::cout << "Encoding header: " << combinedHeader << std::endl;
-    struct lsxpack_header headerFormat;
-    lsxpack_header_set_offset2(&headerFormat, combinedHeader.c_str(), 0,
-                               name.length(), name.length() + 2, value.size());
-
-    dst = lshpack_enc_encode(&enc, dst, end, &headerFormat);
-  }
-
-  // THIS
-  encodedHeaders.assign(buf, dst);
-
-  // lshpack_enc_init(&enc);
-  // lshpack_enc_cleanup(&enc);
-}
+// void HTTPBase::HPACK_EncodeHeaders2(
+//     std::unordered_map<std::string, std::string> &headersMap,
+//     std::vector<uint8_t> &encodedHeaders) {
+//   // struct lshpack_enc enc{};
+//
+//   unsigned char buf[1024]; // Buffer for encoded headers
+//   unsigned char *dst = buf;
+//   unsigned char *end = buf + sizeof(buf);
+//
+//   // lshpack_enc_init(&enc);
+//
+//   {
+//     const std::string &name = ":status";
+//     const std::string &value = headersMap[":status"];
+//
+//     // This
+//     // std::string combinedHeader = name + ": " + value;
+//
+//     std::string combinedHeader;
+//     combinedHeader.reserve(name.size() + 2 + value.size());
+//     combinedHeader.append(name).append(": ").append(value);
+//
+//     // std::cout << "Encoding header: " << combinedHeader << std::endl;
+//     struct lsxpack_header headerFormat;
+//     lsxpack_header_set_offset2(&headerFormat, combinedHeader.c_str(), 0,
+//                                name.length(), name.length() + 2,
+//                                value.size());
+//
+//     dst = lshpack_enc_encode(&enc, dst, end, &headerFormat);
+//   }
+//
+//   for (const auto &header : headersMap) {
+//     if (header.first == ":status") {
+//       continue;
+//     }
+//
+//     // auto header = headersMap.begin();
+//     const std::string &name = header.first;
+//     const std::string &value = header.second;
+//
+//     std::string combinedHeader = name + ": " + value;
+//     // std::cout << "Encoding header: " << combinedHeader << std::endl;
+//     struct lsxpack_header headerFormat;
+//     lsxpack_header_set_offset2(&headerFormat, combinedHeader.c_str(), 0,
+//                                name.length(), name.length() + 2,
+//                                value.size());
+//
+//     dst = lshpack_enc_encode(&enc, dst, end, &headerFormat);
+//   }
+//
+//   // THIS
+//   encodedHeaders.assign(buf, dst);
+//
+//   // lshpack_enc_init(&enc);
+//   // lshpack_enc_cleanup(&enc);
+// }
 
 void HTTPBase::HPACK_EncodeHeaders(
     std::unordered_map<std::string, std::string> &headersMap,
@@ -788,7 +797,7 @@ void HTTPBase::HPACK_EncodeHeaders(
 
   lshpack_enc_init(&enc);
 
-  {
+  if (headersMap.find(":status") != headersMap.end()) {
     const std::string &name = ":status";
     const std::string &value = headersMap[":status"];
 

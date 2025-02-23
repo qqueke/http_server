@@ -597,6 +597,11 @@ void HTTPServer::ValidateHeaders(const std::string &request,
 
 void HTTPServer::ValidatePseudoHeaders(
     std::unordered_map<std::string, std::string> &headersMap) {
+  // std::cout << "received headers:\n";
+  // for (const auto &[key, value] : headersMap) {
+  //   std::cout << key << ": " << value << "\n";
+  // }
+  // std::cout << std::endl;
   for (const auto &header : requiredHeaders) {
     if (headersMap.find(header) == headersMap.end()) {
       LogError("Failed to validate pseudo-headers (missing header field)");
@@ -607,7 +612,7 @@ void HTTPServer::ValidatePseudoHeaders(
   }
 
   // If all validations pass
-  std::cout << "Request successfully validated pseudo-headers!\n";
+  // std::cout << "Request successfully validated pseudo-headers!\n";
 }
 
 void HTTPServer::HandleHTTP2Request(SSL *ssl) {
@@ -616,12 +621,13 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
   std::vector<uint8_t> tmpBuffer(16000);
 
   // Buffer headers?
+
+  // The streamID is predictable and can be easily indexed. Lets make this a
+  // vector
   std::unordered_map<uint32_t, std::vector<uint8_t>> EncodedHeadersBufferMap;
 
   std::unordered_map<uint32_t, std::string> TcpDataMap;
 
-  std::string method{};
-  std::string path{};
   std::string status{};
 
   const std::array<uint8_t, 24> HTTP2_PrefaceBytes = {
@@ -734,6 +740,8 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
               TcpDecodedHeadersMap[frameStream][":path"],
               TcpDataMap[frameStream], Protocol::HTTP2, &context);
           ++nRequests;
+
+          TcpDataMap.erase(frameStream);
           TcpDecodedHeadersMap.erase(frameStream);
           EncodedHeadersBufferMap.erase(frameStream);
         }
@@ -750,8 +758,8 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
           if (isFlagSet(frameFlags, END_STREAM_FLAG) &&
               isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             // Decode and dispatch request
-            HPACK_DecodeHeaders2(frameStream,
-                                 EncodedHeadersBufferMap[frameStream]);
+            HTTPBase::HPACK_DecodeHeaders(frameStream,
+                                          EncodedHeadersBufferMap[frameStream]);
 
             HTTPServer::ValidatePseudoHeaders(
                 TcpDecodedHeadersMap[frameStream]);
@@ -763,13 +771,15 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
                 TcpDataMap[frameStream], Protocol::HTTP2, &context);
 
             ++nRequests;
+
+            TcpDataMap.erase(frameStream);
             TcpDecodedHeadersMap.erase(frameStream);
             EncodedHeadersBufferMap.erase(frameStream);
 
           } else if (isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             // Decode and wait for request body
-            HPACK_DecodeHeaders2(frameStream,
-                                 EncodedHeadersBufferMap[frameStream]);
+            HTTPBase::HPACK_DecodeHeaders(frameStream,
+                                          EncodedHeadersBufferMap[frameStream]);
           }
         }
         break;
@@ -781,6 +791,7 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
         // std::cout << "[strm][" << frameStream
         //           << "] Received RST_STREAM frame\n";
 
+        TcpDataMap.erase(frameStream);
         TcpDecodedHeadersMap.erase(frameStream);
         EncodedHeadersBufferMap.erase(frameStream);
         break;
@@ -811,6 +822,10 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
           HTTPBase::HTTP2_SendFrames(ssl, frames);
         }
 
+        TcpDataMap.erase(frameStream);
+        TcpDecodedHeadersMap.erase(frameStream);
+        EncodedHeadersBufferMap.erase(frameStream);
+
         break;
 
       case 0x08:
@@ -831,8 +846,8 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
           if (isFlagSet(frameFlags, END_STREAM_FLAG) &&
               isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             // Decode and dispatch request
-            HPACK_DecodeHeaders2(frameStream,
-                                 EncodedHeadersBufferMap[frameStream]);
+            HTTPBase::HPACK_DecodeHeaders(frameStream,
+                                          EncodedHeadersBufferMap[frameStream]);
 
             HTTPServer::ValidatePseudoHeaders(
                 TcpDecodedHeadersMap[frameStream]);
@@ -843,12 +858,14 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
                 TcpDataMap[frameStream], Protocol::HTTP2, &context);
 
             ++nRequests;
+
+            TcpDataMap.erase(frameStream);
             TcpDecodedHeadersMap.erase(frameStream);
             EncodedHeadersBufferMap.erase(frameStream);
           } else if (isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             // Decode and wait for request body
-            HPACK_DecodeHeaders2(frameStream,
-                                 EncodedHeadersBufferMap[frameStream]);
+            HTTPBase::HPACK_DecodeHeaders(frameStream,
+                                          EncodedHeadersBufferMap[frameStream]);
           }
         }
         break;
@@ -964,9 +981,11 @@ void HTTPServer::RequestThreadHandler(int clientSock) {
   // theTLS/SSL
   SSL_set_fd(ssl, clientSock);
 
+  int ret = SSL_accept(ssl);
   // TLS/SSL handshake
-  if (SSL_accept(ssl) <= 0) {
-    LogError("SSL handshake failed");
+  if (ret <= 0) {
+    int error = SSL_get_error(ssl, ret);
+    LogError(GetSSLErrorMessage(error));
     std::cout << "Handshake failed" << std::endl;
     SSL_free(ssl);
     close(clientSock);
@@ -989,7 +1008,7 @@ void HTTPServer::RequestThreadHandler(int clientSock) {
   SSL_get0_alpn_selected(ssl, &protocol, &protocolLen);
 
   if (protocolLen == 2 && memcmp(protocol, "h2", 2) == 0) {
-    std::cout << "Routing to HTTP2" << std::endl;
+    // std::cout << "Routing to HTTP2" << std::endl;
     HandleHTTP2Request(ssl);
   } else if (protocolLen == 8 && memcmp(protocol, "http/1.1", 8) == 0) {
     HandleHTTP1Request(ssl);
@@ -1012,9 +1031,9 @@ HTTPServer::~HTTPServer() {
   while (TCP_Socket != -1) {
   }
 
-  lshpack_enc_cleanup(&enc);
-
-  lshpack_dec_cleanup(&dec);
+  // lshpack_enc_cleanup(&enc);
+  //
+  // lshpack_dec_cleanup(&dec);
   SSL_CTX_free(SSL_ctx);
 
   LogError("Server shutdown.");
@@ -1033,7 +1052,11 @@ void HTTPServer::RunTCP() {
   }
 
   struct pollfd pollFds(TCP_Socket, POLLIN, 0);
+  std::chrono::time_point<std::chrono::system_clock> startTime;
 
+  // Timer should end  here and log it to the file
+
+  bool uen = false;
   while (!shouldShutdown) {
     int polling = poll(&pollFds, 1, 1 * 1000);
     if (polling == 0) {
@@ -1047,6 +1070,7 @@ void HTTPServer::RunTCP() {
     socklen_t len = sizeof(clientAddr);
     int clientSock = accept(TCP_Socket, &clientAddr, &len);
     if (clientSock == -1) {
+      std::cout << "Failed here\n";
       LogError(threadSafeStrerror(errno));
       continue;
     }
@@ -1063,11 +1087,21 @@ void HTTPServer::RunTCP() {
     }
 
     // RequestThreadHandler(clientSock);
+    if (!uen) {
+      auto startTime = std::chrono::high_resolution_clock::now();
+      uen = true;
+    }
 
     std::thread([this, clientSock]() {
       RequestThreadHandler(clientSock);
     }).detach();
   }
+
+  auto endTime = std::chrono::high_resolution_clock::now();
+
+  std::chrono::duration<double> elapsed = endTime - startTime;
+
+  std::cout << "Elapsed time: " << elapsed.count() << " s" << std::endl;
 
   if (TCP_Socket != -1) {
     close(TCP_Socket);
@@ -1114,8 +1148,11 @@ HTTPServer::HTTPServer(int argc, char *argv[])
   TCP_SocketAddr = {};
   timeout = {};
 
-  lshpack_enc_init(&enc);
-  lshpack_dec_init(&dec);
+  int buffSize = 256 * 1024; // 256 KB
+  setsockopt(TCP_Socket, SOL_SOCKET, SO_RCVBUF, &buffSize, sizeof(buffSize));
+  setsockopt(TCP_Socket, SOL_SOCKET, SO_SNDBUF, &buffSize, sizeof(buffSize));
+  // lshpack_enc_init(&enc);
+  // lshpack_dec_init(&dec);
   SSL_load_error_strings();
   SSL_library_init();
   OpenSSL_add_all_algorithms();
@@ -1146,6 +1183,8 @@ HTTPServer::HTTPServer(int argc, char *argv[])
     LogError("Private key does not match the certificate");
     exit(EXIT_FAILURE);
   }
+
+  // SSL_CTX_set_default_read_buffer_len(SSL_ctx, 64 * 1024); // 64 KB
 
   const unsigned char alpnProtos[] = {
       2, 'h', '2',                              // HTTP/2 ("h2")

@@ -77,38 +77,69 @@ const char *SslKeyLogEnvVar = "SSLKEYLOGFILE";
 bool isFlagSet(uint8_t flags, HTTP2Flags flag) { return (flags & flag) != 0; }
 
 std::string GetSSLErrorMessage(int error) {
-  unsigned long errCode = ERR_get_error();
-  char errorString[120];
-  ERR_error_string_n(errCode, errorString, sizeof(errorString));
-
   std::string errorMessage;
+
+  // Handling specific SSL errors
   switch (error) {
   case SSL_ERROR_ZERO_RETURN:
     errorMessage = "SSL connection was closed cleanly.";
     break;
+  case SSL_ERROR_WANT_READ:
+    errorMessage = "SSL operation would block waiting for read.";
+    break;
+  case SSL_ERROR_WANT_WRITE:
+    errorMessage = "SSL operation would block waiting for write.";
+    break;
   case SSL_ERROR_WANT_X509_LOOKUP:
     errorMessage = "Operation blocked waiting for certificate lookup.";
     break;
-  case SSL_ERROR_SYSCALL:
-    errorMessage =
-        "System call failure or connection reset. " + std::string(errorString);
+  case SSL_ERROR_SYSCALL: {
+    unsigned long errCode = ERR_peek_last_error();
+    std::array<char, 120> errorDetails;
+    ERR_error_string_n(errCode, errorDetails.data(), errorDetails.size());
+    errorMessage = "System call failure or connection reset. " +
+                   std::string(errorDetails.data());
     break;
+  }
   case SSL_ERROR_SSL: {
     unsigned long errCode = ERR_peek_last_error();
     std::array<char, 120> errorDetails;
     ERR_error_string_n(errCode, errorDetails.data(), errorDetails.size());
-    errorMessage = "Low-level SSL library error: " +
-                   std::string(errorDetails.begin(), errorDetails.end());
-  } break;
+    errorMessage =
+        "Low-level SSL library error: " + std::string(errorDetails.data());
+    break;
+  }
+  case SSL_ERROR_WANT_CONNECT:
+    errorMessage = "SSL operation would block waiting for a connection.";
+    break;
+  case SSL_ERROR_WANT_ACCEPT:
+    errorMessage = "SSL operation would block waiting for an accept.";
+    break;
+  case SSL_ERROR_WANT_ASYNC:
+    errorMessage =
+        "SSL operation would block waiting for async job completion.";
+    break;
+  case SSL_ERROR_WANT_ASYNC_JOB:
+    errorMessage =
+        "SSL operation would block waiting for async job completion.";
+    break;
+  case SSL_ERROR_WANT_CLIENT_HELLO_CB:
+    errorMessage =
+        "SSL operation would block waiting for client hello callback.";
+    break;
+  case SSL_ERROR_WANT_RETRY_VERIFY:
+    errorMessage = "SSL operation requires retry verification.";
+    break;
   default: {
     unsigned long errCode = ERR_peek_last_error();
     std::array<char, 120> errorDetails;
     ERR_error_string_n(errCode, errorDetails.data(), errorDetails.size());
-    errorMessage = "Unknown SSL error: " +
-                   std::string(errorDetails.begin(), errorDetails.end());
-  } break;
+    errorMessage = "Unknown SSL error: " + std::string(errorDetails.data());
+    break;
+  }
   }
 
+  std::cout << errorMessage << std::endl;
   return "(SSL): " + errorMessage;
 }
 
