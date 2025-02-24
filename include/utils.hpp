@@ -137,6 +137,8 @@ typedef struct QUIC_CREDENTIAL_CONFIG_HELPER {
   };
 } QUIC_CREDENTIAL_CONFIG_HELPER;
 
+struct ssl_st; // Forward declaration of ssl_st
+
 bool isFlagSet(uint8_t flags, HTTP2Flags flag);
 
 std::string GetSSLErrorMessage(int error);

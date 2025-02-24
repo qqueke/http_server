@@ -66,20 +66,23 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
   switch (protocol) {
   case Protocol::HTTP1:
 
-  {
-    // Defaulted to 24hours
-    std::string altSvcHeader = "Alt-Svc: h3=\":4567\"; ma=86400\r\n";
-    size_t headerEnd = headers.find("\r\n\r\n");
-    if (headerEnd != std::string::npos) {
-      headers.insert(headerEnd + 2, altSvcHeader);
+    static constexpr std::string_view altSvcHeader =
+        "Alt-Svc: h3=\":4567\"; ma=86400\r\n";
+
+    {
+      // Defaulted to 24hours
+      // std::string altSvcHeader = "Alt-Svc: h3=\":4567\"; ma=86400\r\n";
+      size_t headerEnd = headers.find("\r\n\r\n");
+      if (headerEnd != std::string::npos) {
+        headers.insert(headerEnd + 2, altSvcHeader);
+      }
+
+      std::string response = headers;
+      SSL *clientSSL = (SSL *)context;
+      HTTPBase::HTTP1_SendMessage(clientSSL, response);
     }
 
-    std::string response = headers;
-    SSL *clientSSL = (SSL *)context;
-    HTTPBase::HTTP1_SendMessage(clientSSL, response);
-  }
-
-  break;
+    break;
   case Protocol::HTTP2:
 
   {
@@ -88,7 +91,6 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
     SSL *clientSSL = ctx->ssl;
     uint32_t streamId = ctx->streamId;
 
-    std::string altSvcHeader = "Alt-Svc: h3=\":4567\"; ma=86400\r\n";
     size_t headerEnd = headers.find("\r\n\r\n");
     if (headerEnd != std::string::npos) {
       headers.insert(headerEnd + 2, altSvcHeader);
@@ -98,7 +100,7 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
 
     HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
 
-    std::vector<uint8_t> encodedHeaders;
+    std::vector<uint8_t> encodedHeaders(1024);
 
     // HTTPBase::HPACK_EncodeHeaders(headersMap, encodedHeaders);
 
@@ -154,14 +156,15 @@ void Router::SendResponse(std::string &headers, const std::string &body,
                           Protocol protocol, void *context) {
   switch (protocol) {
   case Protocol::HTTP1:
+    static constexpr std::string_view altSvcHeader =
+        "Alt-Svc: h3=\":4567\"; ma=86400\r\n";
+    {
+      std::string response = headers + body;
+      SSL *clientSSL = (SSL *)context;
+      HTTPBase::HTTP1_SendMessage(clientSSL, response);
+    }
 
-  {
-    std::string response = headers + body;
-    SSL *clientSSL = (SSL *)context;
-    HTTPBase::HTTP1_SendMessage(clientSSL, response);
-  }
-
-  break;
+    break;
   case Protocol::HTTP2:
 
   {
@@ -170,13 +173,11 @@ void Router::SendResponse(std::string &headers, const std::string &body,
     SSL *clientSSL = ctx->ssl;
     uint32_t streamId = ctx->streamId;
 
-    std::string altSvcHeader = "Alt-Svc: h3=\":4567\"; ma=86400\r\n";
+    // std::string altSvcHeader = "Alt-Svc: h3=\":4567\"; ma=86400\r\n";
     size_t headerEnd = headers.find("\r\n\r\n");
     if (headerEnd != std::string::npos) {
       headers.insert(headerEnd + 2, altSvcHeader);
     }
-
-    // std::cout << "headers:\n" << headers << std::endl;
 
     std::unordered_map<std::string, std::string> headersMap;
 
@@ -187,7 +188,7 @@ void Router::SendResponse(std::string &headers, const std::string &body,
     //   std::cout << key << ": " << value << "\n";
     // }
 
-    std::vector<uint8_t> encodedHeaders;
+    std::vector<uint8_t> encodedHeaders(1024);
 
     // HTTPBase::HPACK_EncodeHeaders(headersMap, encodedHeaders);
 

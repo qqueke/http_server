@@ -12,6 +12,19 @@
 
 #include "lshpack.h"
 
+struct PairHash {
+  template <typename T, typename U>
+  std::size_t operator()(const std::pair<T, U> &p) const {
+    auto h1 = std::hash<T>{}(p.first);  // Hash the first element of the pair
+    auto h2 = std::hash<U>{}(p.second); // Hash the second element of the pair
+
+    // Combine the hashes in a way that is less likely to cause collisions
+    return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+    // `0x9e3779b9` is a constant (related to the golden ratio) commonly used in
+    // hash combinations.
+  }
+};
+
 // #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 // #include "msquic.h"
 class HTTPBase {
@@ -52,9 +65,6 @@ public:
   struct timeval timeout;
   SSL_CTX *SSL_ctx;
 
-  std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
-      TcpDecodedHeadersMap;
-
   std::unordered_map<HQUIC, std::vector<uint8_t>> QuicBufferMap;
   std::unordered_map<HQUIC, std::unordered_map<std::string, std::string>>
       QuicDecodedHeadersMap;
@@ -67,8 +77,9 @@ public:
 
   virtual ~HTTPBase() = default;
 
-  void HPACK_DecodeHeaders2(uint32_t streamId,
-                            std::vector<uint8_t> &encodedHeaders);
+  void HPACK_DecodeHeaders2(
+
+      uint32_t streamId, std::vector<uint8_t> &encodedHeaders);
 
   // Common functions
   static void dhiUnblocked(void *hblock_ctx);
@@ -129,16 +140,18 @@ public:
   QPACK_EncodeHeaders(uint64_t streamId,
                       std::unordered_map<std::string, std::string> &headersMap,
                       std::vector<uint8_t> &encodedHeaders);
-  static void
-  HPACK_EncodeHeaders(std::unordered_map<std::string, std::string> &headersMap,
-                      std::vector<uint8_t> &encodedHeaders);
+  static void HPACK_EncodeHeaders(
+      const std::unordered_map<std::string, std::string> &headersMap,
+      std::vector<uint8_t> &encodedHeaders);
 
   void
   HPACK_EncodeHeaders2(std::unordered_map<std::string, std::string> &headersMap,
                        std::vector<uint8_t> &encodedHeaders);
 
-  void HPACK_DecodeHeaders(uint32_t streamId,
-                           std::vector<uint8_t> &encodedHeaders);
+  void HPACK_DecodeHeaders(
+      std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
+          &TcpDecodedHeadersMap,
+      uint32_t streamId, std::vector<uint8_t> &encodedHeaders);
 };
 
 #endif // HTTPBASE_HPP

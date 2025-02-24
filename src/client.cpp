@@ -74,7 +74,10 @@ HTTPClient::HTTPClient(int argc, char *argv[]) {
   TCP_Socket = socket(AF_INET, SOCK_STREAM, 0);
   TCP_SocketAddr = {};
   timeout = {};
-  timeout.tv_sec = TIMEOUT_SECONDS;
+
+  // timeout.tv_sec = TIMEOUT_SECONDS;
+  timeout.tv_sec = 0;
+  timeout.tv_usec = 100 * 1000;
 
   if (setsockopt(TCP_Socket, SOL_SOCKET, SO_SNDTIMEO, &timeout,
                  sizeof timeout) == ERROR) {
@@ -215,6 +218,9 @@ int HTTPClient::dhiProcessHeader(void *hblock_ctx,
 }
 
 void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
+  std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
+      TcpDecodedHeadersMap;
+
   // Buffer for encoded headers until decoding
   std::unordered_map<uint32_t, std::vector<uint8_t>> EncodedHeadersBufferMap;
   std::unordered_map<uint32_t, std::string> TcpDataMap;
@@ -246,7 +252,7 @@ void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
       // Check if it was a timeout
       if (error == SSL_ERROR_WANT_READ || error == SSL_ERROR_WANT_WRITE) {
         // Timeout, let's wait for a bit and retry
-        std::cout << "Timeout occurred, retrying..." << std::endl;
+        // std::cout << "Timeout occurred, retrying..." << std::endl;
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         continue;
       } else {
@@ -299,6 +305,7 @@ void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
           // TcpDecodedHeadersMap[frameStream]) {
           //   std::cout << key << ": " << value << "\n";
           // }
+
           // std::cout << TcpDataMap[frameStream] << "\n";
 
           // if (TcpDataMap[frameStream] != "Bad Request") {
@@ -324,17 +331,11 @@ void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
           if (isFlagSet(frameFlags, END_STREAM_FLAG) &&
               isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             // Decode and dispatch request
-            HPACK_DecodeHeaders(frameStream,
+            HPACK_DecodeHeaders(TcpDecodedHeadersMap, frameStream,
                                 EncodedHeadersBufferMap[frameStream]);
 
             // HTTPServer::ValidatePseudoHeaders(
             //     TcpDecodedHeadersMap[frameStream]);
-
-            // std::cout << "Response:\n";
-            // for (const auto &[key, value] :
-            // TcpDecodedHeadersMap[frameStream]) {
-            //   std::cout << key << ": " << value << "\n";
-            // }
 
             TcpDataMap.erase(frameStream);
             TcpDecodedHeadersMap.erase(frameStream);
@@ -342,7 +343,7 @@ void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
             ++nResponses;
           } else if (isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             // Decode and wait for request body
-            HPACK_DecodeHeaders(frameStream,
+            HPACK_DecodeHeaders(TcpDecodedHeadersMap, frameStream,
                                 EncodedHeadersBufferMap[frameStream]);
           }
         }
@@ -401,7 +402,7 @@ void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
           if (isFlagSet(frameFlags, END_STREAM_FLAG) &&
               isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             // Decode and dispatch request
-            HPACK_DecodeHeaders(frameStream,
+            HPACK_DecodeHeaders(TcpDecodedHeadersMap, frameStream,
                                 EncodedHeadersBufferMap[frameStream]);
 
             // std::cout << "Response:\n";
@@ -416,7 +417,7 @@ void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
             ++nResponses;
           } else if (isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             // Decode and wait for request body
-            HPACK_DecodeHeaders(frameStream,
+            HPACK_DecodeHeaders(TcpDecodedHeadersMap, frameStream,
                                 EncodedHeadersBufferMap[frameStream]);
           }
         }
@@ -440,103 +441,105 @@ void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
 }
 
 void HTTPClient::RunHTTP2(int argc, char *argv[]) {
-  if (connect(TCP_Socket, (const struct sockaddr *)&TCP_SocketAddr,
-              (socklen_t)sizeof(TCP_SocketAddr)) == ERROR) {
-    LogError("Failed to connect to server");
-    std::cout << "Failed to connect to server" << std::endl;
-    close(TCP_Socket);
-    SSL_CTX_free(SSL_ctx);
-    exit(EXIT_FAILURE);
-  }
+  for (int j = 0; j < 1; ++j) {
+    if (connect(TCP_Socket, (const struct sockaddr *)&TCP_SocketAddr,
+                (socklen_t)sizeof(TCP_SocketAddr)) == ERROR) {
+      LogError("Failed to connect to server");
+      std::cout << "Failed to connect to server" << std::endl;
 
-  SSL *ssl = SSL_new(SSL_ctx);
-  SSL_set_fd(ssl, TCP_Socket);
+      close(TCP_Socket);
+      SSL_CTX_free(SSL_ctx);
+      exit(EXIT_FAILURE);
+    }
 
-  int ret = SSL_connect(ssl);
-  // TLS/SSL handshake
-  if (ret <= 0) {
-    int error = SSL_get_error(ssl, ret);
-    LogError(GetSSLErrorMessage(error));
-    std::cout << "SSL connection failed" << std::endl;
+    SSL *ssl = SSL_new(SSL_ctx);
+    SSL_set_fd(ssl, TCP_Socket);
+
+    int ret = SSL_connect(ssl);
+    // TLS/SSL handshake
+    if (ret <= 0) {
+      int error = SSL_get_error(ssl, ret);
+      LogError(GetSSLErrorMessage(error));
+      std::cout << "SSL connection failed" << std::endl;
+      SSL_free(ssl);
+      close(TCP_Socket);
+      SSL_CTX_free(SSL_ctx);
+      return;
+    }
+
+    // Send Preface, Window and SETTINGS
+    const std::vector<uint8_t> HTTP2_PrefaceBytes = {
+        0x50, 0x52, 0x49, 0x20, 0x2A, 0x20, 0x48, 0x54, 0x54, 0x50, 0x2F, 0x32,
+        0x2E, 0x30, 0x0D, 0x0A, 0x0D, 0x0A, 0x53, 0x4D, 0x0D, 0x0A, 0x0D, 0x0A};
+
+    std::thread recvThread(&HTTPClient::HTTP2_RecvFrames_TS, this, ssl);
+
+    {
+      std::vector<std::vector<uint8_t>> frames;
+      frames.push_back(HTTP2_PrefaceBytes);
+      HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
+    }
+
+    {
+      uint8_t flags = 0;
+      std::vector<std::vector<uint8_t>> frames;
+      frames.emplace_back(HTTPBase::HTTP2_BuildSettingsFrame(flags));
+      HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
+    }
+
+    uint32_t numRequests = 0;
+    uint32_t streamId = 1;
+
+    // for (const auto &request : requests) {
+    const auto &request = requests[0];
+    const std::string &headers = request.first;
+    const std::string &body = request.second;
+
+    // std::cout << "Headers:\n" << headers << std::endl;
+
+    std::unordered_map<std::string, std::string> headersMap;
+
+    HTTPBase::ReqHeaderToPseudoHeader(headers, headersMap);
+
+    // std::cout << "sending headers:\n";
+    // for (const auto &[key, value] : headersMap) {
+    //   std::cout << key << ": " << value << "\n";
+    // }
+
+    std::vector<uint8_t> encodedHeaders(1024);
+
+    HTTPBase::HPACK_EncodeHeaders(headersMap, encodedHeaders);
+
+    std::vector<std::vector<uint8_t>> frames;
+
+    frames.emplace_back(
+        HTTPBase::HTTP2_BuildHeaderFrame(encodedHeaders, streamId));
+
+    frames.emplace_back(HTTPBase::HTTP2_BuildDataFrame(body, streamId));
+
+    for (int i = 0; i < 100000; ++i) {
+      HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
+      streamId += 2;
+    }
+    //}
+
+    numRequests += 10000;
+
+    {
+      std::vector<std::vector<uint8_t>> frames;
+      frames.emplace_back(HTTPBase::HTTP2_BuildGoAwayFrame(
+          streamId - 2, HTTP2ErrorCode::NO_ERROR));
+      HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
+    }
+
+    recvThread.join();
+
+    std::cout << "Sent: " << numRequests << " requests\n";
+
     SSL_free(ssl);
+
     close(TCP_Socket);
-    SSL_CTX_free(SSL_ctx);
-    return;
   }
-
-  // Send Preface, Window and SETTINGS
-  const std::vector<uint8_t> HTTP2_PrefaceBytes = {
-      0x50, 0x52, 0x49, 0x20, 0x2A, 0x20, 0x48, 0x54, 0x54, 0x50, 0x2F, 0x32,
-      0x2E, 0x30, 0x0D, 0x0A, 0x0D, 0x0A, 0x53, 0x4D, 0x0D, 0x0A, 0x0D, 0x0A};
-
-  std::thread recvThread(&HTTPClient::HTTP2_RecvFrames_TS, this, ssl);
-
-  {
-    std::vector<std::vector<uint8_t>> frames;
-    frames.push_back(HTTP2_PrefaceBytes);
-    HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
-  }
-
-  {
-    uint8_t flags = 0;
-    std::vector<std::vector<uint8_t>> frames;
-    frames.emplace_back(HTTPBase::HTTP2_BuildSettingsFrame(flags));
-    HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
-  }
-
-  uint32_t numRequests = 0;
-  uint32_t streamId = 1;
-
-  // for (const auto &request : requests) {
-
-  const auto &request = requests[0];
-  const std::string &headers = request.first;
-  const std::string &body = request.second;
-
-  // std::cout << "Headers:\n" << headers << std::endl;
-
-  std::unordered_map<std::string, std::string> headersMap;
-
-  HTTPBase::ReqHeaderToPseudoHeader(headers, headersMap);
-
-  // std::cout << "sending headers:\n";
-  // for (const auto &[key, value] : headersMap) {
-  //   std::cout << key << ": " << value << "\n";
-  // }
-
-  std::vector<uint8_t> encodedHeaders;
-
-  HTTPBase::HPACK_EncodeHeaders(headersMap, encodedHeaders);
-
-  std::vector<std::vector<uint8_t>> frames;
-
-  frames.emplace_back(
-      HTTPBase::HTTP2_BuildHeaderFrame(encodedHeaders, streamId));
-
-  frames.emplace_back(HTTPBase::HTTP2_BuildDataFrame(body, streamId));
-
-  for (int i = 0; i < 10000; ++i) {
-    HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
-    streamId += 2;
-  }
-
-  numRequests += 10000;
-
-  {
-    std::vector<std::vector<uint8_t>> frames;
-    frames.emplace_back(HTTPBase::HTTP2_BuildGoAwayFrame(
-        streamId - 2, HTTP2ErrorCode::NO_ERROR));
-    HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
-  }
-
-  recvThread.join();
-
-  std::cout << "Sent: " << numRequests << " requests\n";
-
-  SSL_free(ssl);
-
-  close(TCP_Socket);
-
   SSL_CTX_free(SSL_ctx);
 }
 

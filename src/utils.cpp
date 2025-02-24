@@ -15,9 +15,6 @@
 #include <utility>
 #include <vector>
 
-#include "/home/QQueke/Documents/Repositories/ls-qpack/lsqpack.h"
-#include "/home/QQueke/Documents/Repositories/ls-qpack/lsxpack_header.h"
-// #include "/home/QQueke/Documents/Repositories/msquic/src/inc/msquic.h"
 #include "err.h"
 #include "log.hpp"
 #include "ssl.h"
@@ -105,8 +102,7 @@ std::string GetSSLErrorMessage(int error) {
     unsigned long errCode = ERR_peek_last_error();
     std::array<char, 120> errorDetails;
     ERR_error_string_n(errCode, errorDetails.data(), errorDetails.size());
-    errorMessage =
-        "Low-level SSL library error: " + std::string(errorDetails.data());
+    errorMessage = "Low-level SSL library " + std::string(errorDetails.data());
     break;
   }
   case SSL_ERROR_WANT_CONNECT:

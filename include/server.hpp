@@ -43,8 +43,6 @@ private:
   HQUIC Listener;
   QUIC_ADDR Address;
 
-  std::unordered_set<std::string> requiredHeaders = {":method", ":scheme",
-                                                     ":path"};
   std::string threadSafeStrerror(int errnum);
 
   HTTPServer(int argc, char *argv[]);
