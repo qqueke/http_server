@@ -81,59 +81,50 @@ void HTTPBase::ReqHeaderToPseudoHeader(
   }
 }
 
-// void HTTPBase::HPACK_DecodeHeaders2(uint32_t streamId,
-//                                     std::vector<uint8_t> &encodedHeaders) {
-//   // std::cout << "encodedHeaders size: " << std::dec <<
-//   encodedHeaders.size()
-//   //           << std::endl;
-//   // struct lshpack_dec dec{};
-//   // lshpack_dec_init(&dec);
-//
-//   const unsigned char *src = const_cast<unsigned char
-//   *>(encodedHeaders.data()); const unsigned char *end = src +
-//   encodedHeaders.size();
-//
-//   struct lsxpack_header headerFormat;
-//   char headerBuffer[2048];
-//   memset(headerBuffer, 0, sizeof(headerBuffer));
-//
-//   char name[256], value[1024];
-//
-//   while (src < end) {
-//     lsxpack_header_prepare_decode(&headerFormat, headerBuffer, 0,
-//                                   sizeof(headerBuffer));
-//
-//     int ret = lshpack_dec_decode(&dec, &src, end, &headerFormat);
-//     if (ret < 0) {
-//       std::cerr << "Failed to decode HPACK headers" << std::endl;
-//       break;
-//     }
-//
-//     int decodedSize = headerFormat.name_len + headerFormat.val_len +
-//                       lshpack_dec_extra_bytes(dec);
-//
-//     // Copy decoded name and value
-//     strncpy(name, headerFormat.buf + headerFormat.name_offset,
-//             headerFormat.name_len);
-//     name[headerFormat.name_len] = '\0';
-//
-//     strncpy(value, headerFormat.buf + headerFormat.val_offset,
-//             headerFormat.val_len);
-//     value[headerFormat.val_len] = '\0';
-//
-//     TcpDecodedHeadersMap[streamId][name] = value;
-//     // decodedHeaders[name] = value;
-//   }
-//
-//   // for (const auto &header : TcpDecodedHeadersMap[streamId]) {
-//   //   std::cout << header.first << ": " << header.second << std::endl;
-//   // }
-//
-//   // struct lshpack_dec dec{};
-//   // lshpack_dec_init(&dec);
-//   //
-//   // lshpack_dec_cleanup(&dec);
-// }
+void HTTPBase::HPACK_DecodeHeaders2(
+    struct lshpack_dec &dec,
+    std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
+        &TcpDecodedHeadersMap,
+    uint32_t streamId, std::vector<uint8_t> &encodedHeaders) {
+  // struct lshpack_dec dec{};
+  // lshpack_dec_init(&dec);
+
+  const unsigned char *src = const_cast<unsigned char *>(encodedHeaders.data());
+  const unsigned char *end = src + encodedHeaders.size();
+
+  struct lsxpack_header headerFormat;
+
+  char headerBuffer[2048] = {};
+  // memset(headerBuffer, 0, sizeof(headerBuffer));
+
+  // char name[256], value[1024];
+
+  while (src < end) {
+    lsxpack_header_prepare_decode(&headerFormat, &headerBuffer[0], 0,
+                                  sizeof(headerBuffer));
+
+    int ret = lshpack_dec_decode(&dec, &src, end, &headerFormat);
+    if (ret < 0) {
+      std::cerr << "Failed to decode HPACK headers" << std::endl;
+      break;
+    }
+
+    // int decodedSize = headerFormat.name_len + headerFormat.val_len +
+    //                   lshpack_dec_extra_bytes(dec);
+
+    TcpDecodedHeadersMap[streamId].emplace(
+        std::string(headerFormat.buf + headerFormat.name_offset,
+                    headerFormat.name_len),
+        std::string(headerFormat.buf + headerFormat.val_offset,
+                    headerFormat.val_len));
+  }
+
+  // for (const auto &header : TcpDecodedHeadersMap[streamId]) {
+  //   std::cout << header.first << ": " << header.second << std::endl;
+  // }
+
+  // lshpack_dec_cleanup(&dec);
+}
 
 void HTTPBase::HPACK_DecodeHeaders(
     std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
@@ -153,29 +144,17 @@ void HTTPBase::HPACK_DecodeHeaders(
   // char name[256], value[1024];
 
   while (src < end) {
-    lsxpack_header_prepare_decode(&headerFormat, headerBuffer, 0,
+    lsxpack_header_prepare_decode(&headerFormat, &headerBuffer[0], 0,
                                   sizeof(headerBuffer));
 
     int ret = lshpack_dec_decode(&dec, &src, end, &headerFormat);
     if (ret < 0) {
-      std::cerr << "Failed to decode HPACK headers" << std::endl;
+      // std::cerr << "Failed to decode HPACK headers" << std::endl;
       break;
     }
 
     int decodedSize = headerFormat.name_len + headerFormat.val_len +
                       lshpack_dec_extra_bytes(dec);
-
-    // Copy decoded name and value
-    // strncpy(name, headerFormat.buf + headerFormat.name_offset,
-    //         headerFormat.name_len);
-    // name[headerFormat.name_len] = '\0';
-    //
-    // strncpy(value, headerFormat.buf + headerFormat.val_offset,
-    //         headerFormat.val_len);
-    // value[headerFormat.val_len] = '\0';
-    //
-    // // std::cout << "Decoded: " << name << ": " << value << "\n";
-    // TcpDecodedHeadersMap[streamId][name] = value;
 
     TcpDecodedHeadersMap[streamId].emplace(
         std::string(headerFormat.buf + headerFormat.name_offset,
@@ -198,8 +177,8 @@ void HTTPBase::RespHeaderToPseudoHeader(
     std::unordered_map<std::string, std::string> &headersMap) {
   std::istringstream stream(http1Headers);
   std::string line;
-  std::string key{};
-  std::string value{};
+  // std::string key{};
+  // std::string value{};
 
   // Read the first line (status line in HTTP/1.1)
   while (std::getline(stream, line, '\n')) {
@@ -213,10 +192,9 @@ void HTTPBase::RespHeaderToPseudoHeader(
       size_t secondSpace = line.find(' ', firstSpace + 1);
       if (secondSpace != std::string::npos &&
           headersMap.find(":status") == headersMap.end()) {
-        key = ":status";
-        value = line.substr(firstSpace + 1, secondSpace - firstSpace - 1);
-        // headers.emplace_back(key, value);
-        headersMap[key] = value;
+        headersMap[":status"] =
+            line.substr(firstSpace + 1, secondSpace - firstSpace - 1);
+        break;
       }
 
       // else {
@@ -401,14 +379,47 @@ std::vector<uint8_t> HTTPBase::HTTP2_BuildDataFrame(const std::string &data,
   // (Would also require a readjustment in the frame header)
   const size_t MAX_FRAME_SIZE = 16384;
 
-  // Construct the frame header for Headers
-  uint8_t frameType = 0x00; // 0x00 for DATA frame
-  // uint8_t flags = 0x00; // No flags
+  uint8_t frameType = Frame::DATA;
+  uint8_t flags = HTTP2Flags::END_STREAM_FLAG;
+  uint32_t payloadLength = data.size();
+  uint32_t totalFrameSize = FRAME_HEADER_LENGTH + payloadLength;
 
-  uint8_t flags = 0x01; // END_STREAM
-  size_t payloadLength = data.size();
+  std::vector<uint8_t> frame(totalFrameSize);
 
-  // Header Frame : Type, Length
+  frame[0] = (payloadLength >> 16) & 0xFF;
+  frame[1] = (payloadLength >> 8) & 0xFF;
+  frame[2] = payloadLength & 0xFF;
+
+  frame[3] = frameType;
+
+  frame[4] = flags;
+
+  frame[5] = (streamID >> 24) & 0xFF;
+  frame[6] = (streamID >> 16) & 0xFF;
+  frame[7] = (streamID >> 8) & 0xFF;
+  frame[8] = streamID & 0xFF;
+
+  memcpy(frame.data() + FRAME_HEADER_LENGTH, data.data(), payloadLength);
+
+  return frame;
+}
+
+std::vector<uint8_t> HTTPBase::HTTP2_BuildRstStreamFrame(uint32_t streamId,
+                                                         uint32_t errorCode) {
+  uint8_t frameType = Frame::RST_STREAM;
+
+  std::vector<uint8_t> payload(4, 0);
+
+  payload[0] = (errorCode >> 24) & 0xFF;
+  payload[1] = (errorCode >> 16) & 0xFF;
+  payload[2] = (errorCode >> 8) & 0xFF;
+  payload[3] = errorCode & 0xFF;
+
+  size_t payloadLength = payload.size();
+
+  // size_t payloadLength = payload.size();
+  uint8_t frameFlags = 0x0;
+
   std::vector<uint8_t> frameHeader(9, 0); // 9 bytes total
 
   frameHeader[0] = (payloadLength >> 16) & 0xFF;
@@ -417,27 +428,137 @@ std::vector<uint8_t> HTTPBase::HTTP2_BuildDataFrame(const std::string &data,
 
   frameHeader[3] = frameType;
 
-  frameHeader[4] = flags;
+  frameHeader[4] = frameFlags;
 
-  frameHeader[5] = (streamID >> 24) & 0xFF;
-  frameHeader[6] = (streamID >> 16) & 0xFF;
-  frameHeader[7] = (streamID >> 8) & 0xFF;
-  frameHeader[8] = streamID & 0xFF;
-
-  // Frame payload for Headers
-  std::vector<uint8_t> framePayload(payloadLength);
-  memcpy(framePayload.data(), data.c_str(), payloadLength);
+  frameHeader[5] = (streamId >> 24) & 0xFF;
+  frameHeader[6] = (streamId >> 16) & 0xFF;
+  frameHeader[7] = (streamId >> 8) & 0xFF;
+  frameHeader[8] = streamId & 0xFF;
 
   // Combine the Frame Header and Payload into one buffer
-  size_t totalFrameSize = frameHeader.size() + framePayload.size();
+  size_t totalFrameSize = frameHeader.size() + payloadLength;
 
-  // Complete Header frame (frame header + frame payload)
-  std::vector<uint8_t> dataFrame(totalFrameSize);
-  memcpy(dataFrame.data(), frameHeader.data(), frameHeader.size());
-  memcpy(dataFrame.data() + frameHeader.size(), framePayload.data(),
-         payloadLength);
+  std::vector<uint8_t> frame;
+  frame.insert(frame.end(), frameHeader.begin(), frameHeader.end());
+  frame.insert(frame.end(), payload.begin(), payload.end());
 
-  return dataFrame;
+  return frame;
+}
+
+void HTTPBase::HTTP2_FillSettingsFrame(std::vector<uint8_t> &frame,
+                                       uint8_t frameFlags) {
+  // Construct the frame header for Headers
+  // std::vector<uint8_t> payload = {
+  //     0x00, 0x03,             // Setting ID: SETTINGS_MAX_CONCURRENT_STREAMS
+  //     0x00, 0x00, 0x00, 0x64  // Value: 100
+  // };
+
+  uint8_t frameType = 0x04;
+  uint8_t streamId = 0;
+  uint8_t payloadLength = 0;
+  uint32_t totalFrameSize = FRAME_HEADER_LENGTH + payloadLength;
+
+  if (frame.size() != totalFrameSize) {
+    frame.resize(totalFrameSize);
+  }
+
+  // Frame header
+  frame[0] = (payloadLength >> 16) & 0xFF;
+  frame[1] = (payloadLength >> 8) & 0xFF;
+  frame[2] = payloadLength & 0xFF;
+  frame[3] = frameType;
+  frame[4] = frameFlags;
+  frame[5] = (streamId >> 24) & 0xFF;
+  frame[6] = (streamId >> 16) & 0xFF;
+  frame[7] = (streamId >> 8) & 0xFF;
+  frame[8] = streamId & 0xFF;
+
+  // // Frame payload
+  // // Last processed stream id
+  // frame[9] = (streamId >> 24) & 0x7F;  // 7-bit prefix for reserved bit
+  // frame[10] = (streamId >> 16) & 0xFF;
+  // frame[11] = (streamId >> 8) & 0xFF;
+  // frame[12] = streamId & 0xFF;
+  //
+  // // Error Code
+  // frame[13] = (errorCode >> 24) & 0xFF;
+  // frame[14] = (errorCode >> 16) & 0xFF;
+  // frame[15] = (errorCode >> 8) & 0xFF;
+  // frame[16] = errorCode & 0xFF;
+
+  // Size must be set accordingly
+}
+
+void HTTPBase::HTTP2_FillRstStreamFrame(std::vector<uint8_t> &frame,
+                                        uint32_t streamId, uint32_t errorCode) {
+  uint8_t frameType = Frame::RST_STREAM;
+  uint8_t frameFlags = HTTP2Flags::NONE_FLAG;
+  uint8_t payloadLength = 4;
+  uint32_t totalFrameSize = FRAME_HEADER_LENGTH + payloadLength;
+
+  if (frame.size() != totalFrameSize) {
+    frame.resize(totalFrameSize);
+  }
+
+  // Frame header
+  frame[0] = (payloadLength >> 16) & 0xFF;
+  frame[1] = (payloadLength >> 8) & 0xFF;
+  frame[2] = payloadLength & 0xFF;
+  frame[3] = frameType;
+  frame[4] = frameFlags;
+  frame[5] = (streamId >> 24) & 0xFF;
+  frame[6] = (streamId >> 16) & 0xFF;
+  frame[7] = (streamId >> 8) & 0xFF;
+  frame[8] = streamId & 0xFF;
+
+  // Frame payload
+  // Error Code
+  frame[FRAME_HEADER_LENGTH] = (errorCode >> 24) & 0xFF;
+  frame[FRAME_HEADER_LENGTH + 1] = (errorCode >> 16) & 0xFF;
+  frame[FRAME_HEADER_LENGTH + 2] = (errorCode >> 8) & 0xFF;
+  frame[FRAME_HEADER_LENGTH + 3] = errorCode & 0xFF;
+
+  // Size must be set accordingly
+  frame.resize(totalFrameSize);
+}
+
+void HTTPBase::HTTP2_FillGoAwayFrame(std::vector<uint8_t> &frame,
+                                     uint32_t streamId, uint32_t errorCode) {
+  uint8_t frameType = Frame::GOAWAY;
+  uint8_t frameFlags = HTTP2Flags::NONE_FLAG;
+  uint8_t payloadLength = 8;
+  uint32_t totalFrameSize = FRAME_HEADER_LENGTH + payloadLength;
+
+  if (frame.size() != totalFrameSize) {
+    frame.resize(totalFrameSize);
+  }
+
+  // Frame header
+  frame[0] = (payloadLength >> 16) & 0xFF;
+  frame[1] = (payloadLength >> 8) & 0xFF;
+  frame[2] = payloadLength & 0xFF;
+  frame[3] = frameType;
+  frame[4] = frameFlags;
+  frame[5] = (streamId >> 24) & 0xFF;
+  frame[6] = (streamId >> 16) & 0xFF;
+  frame[7] = (streamId >> 8) & 0xFF;
+  frame[8] = streamId & 0xFF;
+
+  // Frame payload
+  // Last processed stream id
+  frame[FRAME_HEADER_LENGTH] = (streamId >> 24) & 0x7F;
+  frame[FRAME_HEADER_LENGTH + 1] = (streamId >> 16) & 0xFF;
+  frame[FRAME_HEADER_LENGTH + 2] = (streamId >> 8) & 0xFF;
+  frame[FRAME_HEADER_LENGTH + 3] = streamId & 0xFF;
+
+  // Error Code
+  frame[FRAME_HEADER_LENGTH + 4] = (errorCode >> 24) & 0xFF;
+  frame[FRAME_HEADER_LENGTH + 5] = (errorCode >> 16) & 0xFF;
+  frame[FRAME_HEADER_LENGTH + 6] = (errorCode >> 8) & 0xFF;
+  frame[FRAME_HEADER_LENGTH + 7] = errorCode & 0xFF;
+
+  // Size must be set accordingly
+  frame.resize(totalFrameSize);
 }
 
 std::vector<uint8_t> HTTPBase::HTTP2_BuildGoAwayFrame(uint32_t streamId,
@@ -461,6 +582,116 @@ std::vector<uint8_t> HTTPBase::HTTP2_BuildGoAwayFrame(uint32_t streamId,
 
   // size_t payloadLength = payload.size();
   uint8_t frameFlags = 0x0;
+
+  std::vector<uint8_t> frameHeader(9, 0); // 9 bytes total
+
+  frameHeader[0] = (payloadLength >> 16) & 0xFF;
+  frameHeader[1] = (payloadLength >> 8) & 0xFF;
+  frameHeader[2] = payloadLength & 0xFF;
+
+  frameHeader[3] = frameType;
+
+  frameHeader[4] = frameFlags;
+
+  frameHeader[5] = (streamId >> 24) & 0xFF;
+  frameHeader[6] = (streamId >> 16) & 0xFF;
+  frameHeader[7] = (streamId >> 8) & 0xFF;
+  frameHeader[8] = streamId & 0xFF;
+
+  // Combine the Frame Header and Payload into one buffer
+  size_t totalFrameSize = frameHeader.size() + payloadLength;
+
+  std::vector<uint8_t> frame;
+  frame.insert(frame.end(), frameHeader.begin(), frameHeader.end());
+  frame.insert(frame.end(), payload.begin(), payload.end());
+
+  return frame;
+}
+
+void HTTPBase::HTTP2_FillWindowUpdateFrame(std::vector<uint8_t> &frame,
+                                           uint32_t streamId,
+                                           uint32_t increment) {
+  // Construct the frame header for Headers
+  uint8_t frameType = Frame::WINDOW_UPDATE;
+  uint8_t payloadLength = 4;
+  uint32_t totalFrameSize = FRAME_HEADER_LENGTH + payloadLength;
+
+  if (frame.size() != totalFrameSize) {
+    frame.resize(totalFrameSize);
+  }
+
+  frame[0] = (payloadLength >> 16) & 0xFF;
+  frame[1] = (payloadLength >> 8) & 0xFF;
+  frame[2] = payloadLength & 0xFF;
+
+  frame[3] = frameType;
+
+  frame[4] = HTTP2Flags::NONE_FLAG;
+
+  frame[5] = (streamId >> 24) & 0xFF;
+  frame[6] = (streamId >> 16) & 0xFF;
+  frame[7] = (streamId >> 8) & 0xFF;
+  frame[8] = streamId & 0xFF;
+
+  frame[FRAME_HEADER_LENGTH] = (increment >> 24) & 0x7F;
+  frame[FRAME_HEADER_LENGTH + 1] = (increment >> 16) & 0xFF;
+  frame[FRAME_HEADER_LENGTH + 2] = (streamId >> 8) & 0xFF;
+  frame[FRAME_HEADER_LENGTH + 3] = increment & 0xFF;
+}
+
+std::vector<uint8_t>
+HTTPBase::HTTP2_BuildWindowUpdateFrame(uint32_t streamId, uint32_t increment) {
+  // Construct the frame header for Headers
+  uint8_t frameType = Frame::WINDOW_UPDATE;
+
+  // std::vector<uint8_t> frameHeader(9, 0);
+
+  std::vector<uint8_t> payload(4, 0);
+
+  payload[0] = (increment >> 24) & 0x7F;
+  payload[1] = (increment >> 16) & 0xFF;
+  payload[2] = (streamId >> 8) & 0xFF;
+  payload[3] = increment & 0xFF;
+
+  // size_t payloadLength = payload.size();
+
+  size_t payloadLength = 4;
+  // Header can carry END_STREAM and still have CONTINUATION frames
+  // sent next
+  // 0x01
+  std::vector<uint8_t> frameHeader(9, 0); // 9 bytes total
+
+  frameHeader[0] = (payloadLength >> 16) & 0xFF;
+  frameHeader[1] = (payloadLength >> 8) & 0xFF;
+  frameHeader[2] = payloadLength & 0xFF;
+
+  frameHeader[3] = frameType;
+
+  frameHeader[4] = HTTP2Flags::NONE_FLAG;
+
+  frameHeader[5] = (streamId >> 24) & 0xFF;
+  frameHeader[6] = (streamId >> 16) & 0xFF;
+  frameHeader[7] = (streamId >> 8) & 0xFF;
+  frameHeader[8] = streamId & 0xFF;
+
+  // Combine the Frame Header and Payload into one buffer
+  size_t totalFrameSize = frameHeader.size() + payloadLength;
+
+  std::vector<uint8_t> frame;
+  frame.insert(frame.end(), frameHeader.begin(), frameHeader.end());
+  frame.insert(frame.end(), payload.begin(), payload.end());
+
+  return frame;
+}
+
+std::vector<uint8_t>
+HTTPBase::HTTP2_BuildPingFrame(uint8_t frameFlags,
+                               const std::vector<uint8_t> &payload) {
+  uint32_t streamId = 0;
+  // Construct the frame header for Headers
+  uint8_t frameType = Frame::PING;
+
+  size_t payloadLength = payload.size();
 
   std::vector<uint8_t> frameHeader(9, 0); // 9 bytes total
 
@@ -528,17 +759,47 @@ std::vector<uint8_t> HTTPBase::HTTP2_BuildSettingsFrame(uint8_t frameFlags) {
   return frameHeader;
 }
 
+void HTTPBase::HTTP2_FillHeaderFrame(std::vector<uint8_t> &frame,
+                                     uint32_t streamId) {
+  // Header can carry END_STREAM and still have CONTINUATION frames
+  // sent next
+  // Construct the frame header for Headers
+  uint8_t frameType = Frame::HEADERS;
+  uint32_t payloadLength = frame.size() - FRAME_HEADER_LENGTH;
+  uint8_t flags = HTTP2Flags::END_HEADERS_FLAG;
+
+  frame[0] = (payloadLength >> 16) & 0xFF;
+  frame[1] = (payloadLength >> 8) & 0xFF;
+  frame[2] = payloadLength & 0xFF;
+
+  frame[3] = frameType;
+
+  frame[4] = flags;
+
+  frame[5] = (streamId >> 24) & 0xFF;
+  frame[6] = (streamId >> 16) & 0xFF;
+  frame[7] = (streamId >> 8) & 0xFF;
+  frame[8] = streamId & 0xFF;
+}
+
 std::vector<uint8_t>
 HTTPBase::HTTP2_BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders,
                                  uint32_t streamId) {
-  // Construct the frame header for Headers
-  uint8_t frameType = 0x01; // 0x01 for HEADERS frame
-  size_t payloadLength = encodedHeaders.size();
-  // streamId++;
   // Header can carry END_STREAM and still have CONTINUATION frames
   // sent next
-  uint8_t flags = 0x04; // END_HEADERS
+
+  // Construct the frame header for Headers
+  uint8_t frameType = Frame::HEADERS;
+
+  uint32_t payloadLength = encodedHeaders.size();
+  // streamId++;
+
+  uint8_t flags = HTTP2Flags::END_HEADERS_FLAG;
   // flags |= (1 << 0);
+
+  // uint32_t totalFrameSize = FRAME_HEADER_LENGTH + payloadLength;
+  //
+  // std::vector<uint8_t> frame(totalFrameSize);
 
   std::vector<uint8_t> frameHeader(9, 0); // 9 bytes total
 
@@ -559,17 +820,17 @@ HTTPBase::HTTP2_BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders,
   size_t totalFrameSize = frameHeader.size() + payloadLength;
 
   // Complete Header frame (frame header + frame payload)
-  std::vector<uint8_t> headerFrame(totalFrameSize);
-  headerFrame.resize(totalFrameSize);
-  memcpy(headerFrame.data(), frameHeader.data(), frameHeader.size());
-  memcpy(headerFrame.data() + frameHeader.size(), encodedHeaders.data(),
+  std::vector<uint8_t> frame(totalFrameSize);
+  frame.resize(totalFrameSize);
+  memcpy(frame.data(), frameHeader.data(), frameHeader.size());
+  memcpy(frame.data() + frameHeader.size(), encodedHeaders.data(),
          payloadLength);
 
-  return headerFrame;
+  return frame;
 }
 
 int HTTPBase::HTTP1_SendMessage(SSL *clientSSL, const std::string &response) {
-  std::cout << "Sending HTTP1 response" << std::endl;
+  // std::cout << "Sending HTTP1 response" << std::endl;
 
   size_t totalBytesSent = 0;
   size_t frameSize = response.size();
@@ -619,11 +880,17 @@ int HTTPBase::HTTP2_SendFrames_TS(SSL *ssl,
         int error = SSL_get_error(ssl, sentBytes);
         if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
           // std::cout << "SSL buffer full, retrying..." << std::endl;
-          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          if (retryCount < maxRetries) {
+            retryCount++;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
+          } else {
+            LogError("Max retries reached while trying to receive data");
+            break;
+          }
           continue;
         } else {
           LogError(GetSSLErrorMessage(error));
-          std::cout << "Failed to send HTTP2 response fully" << std::endl;
           return ERROR;
         }
       }
@@ -633,11 +900,48 @@ int HTTPBase::HTTP2_SendFrames_TS(SSL *ssl,
   return 0;
 }
 
-int HTTPBase::HTTP2_SendFrames(SSL *clientSSL,
+int HTTPBase::HTTP2_SendFrame(SSL *ssl, std::vector<uint8_t> &frame) {
+  // std::cout << "Sending HTTP2 response" << std::endl;
+
+  uint8_t frameType = frame[3];
+  const int maxRetries = 5;
+  size_t totalBytesSent = 0;
+  size_t frameSize = frame.size();
+  int retryCount = 0;
+
+  while (totalBytesSent < frameSize) {
+    int sentBytes = SSL_write(ssl, frame.data() + totalBytesSent,
+                              (int)(frameSize - totalBytesSent));
+
+    if (sentBytes > 0) {
+      totalBytesSent += sentBytes;
+    } else {
+      int error = SSL_get_error(ssl, sentBytes);
+      if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
+        if (retryCount < maxRetries) {
+          retryCount++;
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          continue;
+        } else {
+          LogError("Max retries reached while trying to receive data");
+          break;
+        }
+        continue;
+      } else {
+        LogError(GetSSLErrorMessage(error));
+        return ERROR;
+      }
+    }
+  }
+
+  return 0;
+}
+
+// Implement max tries
+int HTTPBase::HTTP2_SendFrames(SSL *ssl,
                                std::vector<std::vector<uint8_t>> &frames) {
   // std::cout << "Sending HTTP2 response" << std::endl;
 
-  int sentBytes;
   const int maxRetries = 5;
   for (auto &frame : frames) {
     size_t totalBytesSent = 0;
@@ -645,20 +949,25 @@ int HTTPBase::HTTP2_SendFrames(SSL *clientSSL,
     int retryCount = 0;
 
     while (totalBytesSent < frameSize) {
-      sentBytes = SSL_write(clientSSL, frame.data() + totalBytesSent,
-                            (int)(frameSize - totalBytesSent));
+      int sentBytes = SSL_write(ssl, frame.data() + totalBytesSent,
+                                (int)(frameSize - totalBytesSent));
 
       if (sentBytes > 0) {
         totalBytesSent += sentBytes;
       } else {
-        int error = SSL_get_error(clientSSL, sentBytes);
+        int error = SSL_get_error(ssl, sentBytes);
         if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
-          // std::cout << "SSL buffer full, retrying..." << std::endl;
-          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          if (retryCount < maxRetries) {
+            retryCount++;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
+          } else {
+            LogError("Max retries reached while trying to receive data");
+            break;
+          }
           continue;
         } else {
           LogError(GetSSLErrorMessage(error));
-          std::cout << "Failed to send HTTP2 response fully" << std::endl;
           return ERROR;
         }
       }
@@ -670,7 +979,7 @@ int HTTPBase::HTTP2_SendFrames(SSL *clientSSL,
 
 int HTTPBase::HTTP3_SendFrames(HQUIC Stream,
                                std::vector<std::vector<uint8_t>> &frames) {
-  std::cout << "Sending HTTP3 response" << std::endl;
+  // std::cout << "Sending HTTP3 response" << std::endl;
   if (HTTP3_SendFramesToStream(Stream, frames) == ERROR) {
     LogError("Failed to send HTTP3 response");
     return ERROR;
@@ -735,62 +1044,81 @@ uint64_t HTTPBase::ReadVarint(std::vector<uint8_t>::iterator &iter,
   return value;
 }
 
-// void HTTPBase::HPACK_EncodeHeaders2(
-//     std::unordered_map<std::string, std::string> &headersMap,
-//     std::vector<uint8_t> &encodedHeaders) {
-//   // struct lshpack_enc enc{};
-//
-//   unsigned char buf[1024]; // Buffer for encoded headers
-//   unsigned char *dst = buf;
-//   unsigned char *end = buf + sizeof(buf);
-//
-//   // lshpack_enc_init(&enc);
-//
-//   {
-//     const std::string &name = ":status";
-//     const std::string &value = headersMap[":status"];
-//
-//     // This
-//     // std::string combinedHeader = name + ": " + value;
-//
-//     std::string combinedHeader;
-//     combinedHeader.reserve(name.size() + 2 + value.size());
-//     combinedHeader.append(name).append(": ").append(value);
-//
-//     // std::cout << "Encoding header: " << combinedHeader << std::endl;
-//     struct lsxpack_header headerFormat;
-//     lsxpack_header_set_offset2(&headerFormat, combinedHeader.c_str(), 0,
-//                                name.length(), name.length() + 2,
-//                                value.size());
-//
-//     dst = lshpack_enc_encode(&enc, dst, end, &headerFormat);
-//   }
-//
-//   for (const auto &header : headersMap) {
-//     if (header.first == ":status") {
-//       continue;
-//     }
-//
-//     // auto header = headersMap.begin();
-//     const std::string &name = header.first;
-//     const std::string &value = header.second;
-//
-//     std::string combinedHeader = name + ": " + value;
-//     // std::cout << "Encoding header: " << combinedHeader << std::endl;
-//     struct lsxpack_header headerFormat;
-//     lsxpack_header_set_offset2(&headerFormat, combinedHeader.c_str(), 0,
-//                                name.length(), name.length() + 2,
-//                                value.size());
-//
-//     dst = lshpack_enc_encode(&enc, dst, end, &headerFormat);
-//   }
-//
-//   // THIS
-//   encodedHeaders.assign(buf, dst);
-//
-//   // lshpack_enc_init(&enc);
-//   // lshpack_enc_cleanup(&enc);
-// }
+void HTTPBase::HPACK_EncodeHeaderIntoFrame(
+    struct lshpack_enc &enc,
+    const std::unordered_map<std::string, std::string> &headersMap,
+    std::vector<uint8_t> &encodedHeaders) {
+  // struct lshpack_enc enc{};
+  // lshpack_enc_init(&enc);
+
+  // static thread_local unsigned char buf[1024];
+  // unsigned char *dst = buf;
+  // unsigned char *end = buf + sizeof(buf);
+
+  // encodedHeaders.resize(1024);
+  unsigned char *dst = encodedHeaders.data() + FRAME_HEADER_LENGTH;
+  unsigned char *end = dst + encodedHeaders.size() - FRAME_HEADER_LENGTH;
+
+  char headerBuffer[128];
+
+  struct lsxpack_header headerFormat;
+
+  if (headersMap.find(":status") != headersMap.end()) {
+    const std::string &name = ":status";
+    const std::string &value = headersMap.at(":status");
+
+    // std::string combinedHeader = name + ": " + value;
+
+    size_t nameLen = name.size();
+    size_t valueLen = value.size();
+
+    memcpy(headerBuffer, name.data(), nameLen);
+    headerBuffer[nameLen] = ':';
+    headerBuffer[nameLen + 1] = ' ';
+    memcpy(headerBuffer + nameLen + 2, value.data(), valueLen);
+
+    // std::cout << "Encoding header: " << combinedHeader << std::endl;
+    // struct lsxpack_header headerFormat;
+    lsxpack_header_set_offset2(&headerFormat, &headerBuffer[0], 0, nameLen,
+                               nameLen + 2, valueLen);
+
+    dst = lshpack_enc_encode(&enc, dst, end, &headerFormat);
+  }
+
+  for (const auto &header : headersMap) {
+    if (header.first == ":status") {
+      continue;
+    }
+
+    // auto header = headersMap.begin();
+    const std::string &name = header.first;
+    const std::string &value = header.second;
+
+    // std::string combinedHeader = name + ": " + value;
+
+    size_t nameLen = name.size();
+    size_t valueLen = value.size();
+
+    memcpy(headerBuffer, name.data(), nameLen);
+    headerBuffer[nameLen] = ':';
+    headerBuffer[nameLen + 1] = ' ';
+    memcpy(headerBuffer + nameLen + 2, value.data(), valueLen);
+
+    // std::cout << "Encoding header: " << combinedHeader << std::endl;
+    // struct lsxpack_header headerFormat;
+    lsxpack_header_set_offset2(&headerFormat, &headerBuffer[0], 0,
+                               name.length(), name.length() + 2, value.size());
+
+    dst = lshpack_enc_encode(&enc, dst, end, &headerFormat);
+  }
+
+  encodedHeaders.resize(dst - encodedHeaders.data());
+
+  // Get rid of this
+  // encodedHeaders.assign(buf, dst);
+
+  // lshpack_enc_cleanup(&enc);
+}
 
 void HTTPBase::HPACK_EncodeHeaders(
     const std::unordered_map<std::string, std::string> &headersMap,

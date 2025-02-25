@@ -517,7 +517,7 @@ void HTTPClient::RunHTTP2(int argc, char *argv[]) {
 
     frames.emplace_back(HTTPBase::HTTP2_BuildDataFrame(body, streamId));
 
-    for (int i = 0; i < 100000; ++i) {
+    for (int i = 0; i < 10000; ++i) {
       HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
       streamId += 2;
     }

@@ -78,7 +78,9 @@ public:
   virtual ~HTTPBase() = default;
 
   void HPACK_DecodeHeaders2(
-
+      struct lshpack_dec &dec,
+      std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
+          &TcpDecodedHeadersMap,
       uint32_t streamId, std::vector<uint8_t> &encodedHeaders);
 
   // Common functions
@@ -107,22 +109,50 @@ public:
 
   static std::vector<uint8_t> HTTP2_BuildGoAwayFrame(uint32_t streamId,
                                                      uint32_t errorCode);
+
+  static void HTTP2_FillGoAwayFrame(std::vector<uint8_t> &frame,
+                                    uint32_t streamId, uint32_t errorCode);
+
+  static void HTTP2_FillSettingsFrame(std::vector<uint8_t> &frame,
+                                      uint8_t frameFlags);
+
+  static void HTTP2_FillWindowUpdateFrame(std::vector<uint8_t> &frame,
+                                          uint32_t streamId,
+                                          uint32_t increment);
+
   static std::vector<uint8_t>
   HTTP3_BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders);
+
+  static std::vector<uint8_t> HTTP2_BuildWindowUpdateFrame(uint32_t streamId,
+                                                           uint32_t increment);
 
   static std::vector<uint8_t> HTTP2_BuildDataFrame(const std::string &data,
                                                    uint32_t streamID);
 
   std::vector<uint8_t> HTTP2_BuildSettingsFrame(uint8_t frameFlags);
 
+  static void HTTP2_FillHeaderFrame(std::vector<uint8_t> &frame,
+                                    uint32_t streamId);
+
   static std::vector<uint8_t>
   HTTP2_BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders,
                          uint32_t streamID);
+
+  static std::vector<uint8_t> HTTP2_BuildRstStreamFrame(uint32_t streamId,
+                                                        uint32_t errorCode);
+
+  static void HTTP2_FillRstStreamFrame(std::vector<uint8_t> &frame,
+                                       uint32_t streamId, uint32_t errorCode);
+
+  static std::vector<uint8_t>
+  HTTP2_BuildPingFrame(uint8_t frameFlags, const std::vector<uint8_t> &payload);
 
   static int HTTP1_SendMessage(SSL *ssl, const std::string &response);
 
   static int HTTP2_SendFrames(SSL *ssl,
                               std::vector<std::vector<uint8_t>> &frames);
+
+  static int HTTP2_SendFrame(SSL *clientSSL, std::vector<uint8_t> &frame);
 
   // Thread safe requires instance mutex
   int HTTP2_SendFrames_TS(SSL *ssl, std::vector<std::vector<uint8_t>> &frames);
@@ -144,9 +174,10 @@ public:
       const std::unordered_map<std::string, std::string> &headersMap,
       std::vector<uint8_t> &encodedHeaders);
 
-  void
-  HPACK_EncodeHeaders2(std::unordered_map<std::string, std::string> &headersMap,
-                       std::vector<uint8_t> &encodedHeaders);
+  static void HPACK_EncodeHeaderIntoFrame(
+      struct lshpack_enc &enc,
+      const std::unordered_map<std::string, std::string> &headersMap,
+      std::vector<uint8_t> &frame);
 
   void HPACK_DecodeHeaders(
       std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>

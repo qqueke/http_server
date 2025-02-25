@@ -5,6 +5,7 @@
 #include <lsxpack_header.h>
 #include <msquic.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -31,8 +32,14 @@ enum : int {
   ERROR = -1,
   TIMEOUT_SECONDS = 5,
   MAX_CONNECTIONS = 100,
-  MAX_PENDING_CONNECTIONS = 100000,
+  MAX_PENDING_CONNECTIONS = 1000000,
   HTTP_PORT = 4433,
+};
+
+enum : uint32_t {
+  MAX_PAYLOAD_FRAME_SIZE = 16384,
+  FRAME_HEADER_LENGTH = 9,
+  MAX_FLOW_WINDOW_SIZE = 2147483646,
 };
 
 enum HTTP2Flags : uint8_t {
@@ -94,9 +101,11 @@ enum class HTTP2Settings : uint8_t {
 
 struct HTTP2Context {
   SSL *ssl;
+  struct lshpack_enc *enc;
   uint32_t streamId;
 
-  HTTP2Context(SSL *s, uint32_t id) : ssl(s), streamId(id) {}
+  HTTP2Context(SSL *s, struct lshpack_enc *e, uint32_t id)
+      : ssl(s), enc(e), streamId(id) {}
 };
 
 extern const QUIC_API_TABLE *MsQuic;

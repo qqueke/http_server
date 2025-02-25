@@ -18,7 +18,6 @@ extern bool shouldShutdown;
 //   std::cout << "Allocating " << size << "bytes\n";
 //   return malloc(size);
 // }
-//
 // void operator delete(void *memory, size_t size) {
 //   std::cout << "Deallocating " << size << "bytes\n";
 //   free(memory);
