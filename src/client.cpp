@@ -9,6 +9,7 @@
 #include <sstream>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 
 #include "log.hpp"
 #include "ssl.h"
@@ -71,30 +72,73 @@ void HTTPClient::ParseRequestsFromFile(const std::string &filePath) {
 }
 
 HTTPClient::HTTPClient(int argc, char *argv[]) {
-  TCP_Socket = socket(AF_INET, SOCK_STREAM, 0);
-  TCP_SocketAddr = {};
+  struct addrinfo hints{};
+  memset(&hints, 0, sizeof(hints));
+  hints.ai_family = AF_UNSPEC;     /* Allow IPv4 or IPv6 */
+  hints.ai_socktype = SOCK_STREAM; /* Datagram socket */
+  hints.ai_flags = 0;
+  hints.ai_protocol = 0; /* Any protocol */
+
   timeout = {};
+  std::string serverPort = std::to_string(HTTP_PORT);
+  std::string serverAddr = GetValue2(argc, argv, "target");
 
-  // timeout.tv_sec = TIMEOUT_SECONDS;
-  timeout.tv_sec = 0;
-  timeout.tv_usec = 100 * 1000;
-
-  if (setsockopt(TCP_Socket, SOL_SOCKET, SO_SNDTIMEO, &timeout,
-                 sizeof timeout) == ERROR) {
-    LogError(strerror(errno));
+  if (serverAddr == "") {
+    std::cout
+        << "No target specified (-target:addr). Defaulting to localhost\n";
+    serverAddr = "127.0.0.1";
   }
 
-  timeout.tv_sec = 0;
-  timeout.tv_usec = 100 * 1000;
-
-  if (setsockopt(TCP_Socket, SOL_SOCKET, SO_RCVTIMEO, &timeout,
-                 sizeof timeout) == ERROR) {
-    LogError(strerror(errno));
+  // Should accept both names and IP addresses
+  int s = getaddrinfo(serverAddr.c_str(), serverPort.c_str(), &hints,
+                      &TCP_SocketAddr);
+  if (s != 0) {
+    LogError("getaddrinfo: " + std::string(gai_strerror(s)));
+    exit(EXIT_FAILURE);
   }
 
-  int buffSize = 256 * 1024; // 256 KB
-  setsockopt(TCP_Socket, SOL_SOCKET, SO_RCVBUF, &buffSize, sizeof(buffSize));
-  setsockopt(TCP_Socket, SOL_SOCKET, SO_SNDBUF, &buffSize, sizeof(buffSize));
+  // TCP_Socket = socket(AF_INET, SOCK_STREAM, 0);
+  // TCP_SocketAddress = {};
+  // timeout = {};
+  //
+  // // timeout.tv_sec = TIMEOUT_SECONDS;
+  // timeout.tv_sec = 0;
+  // timeout.tv_usec = 100 * 1000;
+  //
+  // if (setsockopt(TCP_Socket, SOL_SOCKET, SO_SNDTIMEO, &timeout,
+  //                sizeof timeout) == ERROR) {
+  //   LogError(strerror(errno));
+  // }
+  //
+  // timeout.tv_sec = 0;
+  // timeout.tv_usec = 100 * 1000;
+  //
+  // if (setsockopt(TCP_Socket, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+  //                sizeof timeout) == ERROR) {
+  //   LogError(strerror(errno));
+  // }
+  //
+  // int buffSize = 256 * 1024; // 256 KB
+  // setsockopt(TCP_Socket, SOL_SOCKET, SO_RCVBUF, &buffSize, sizeof(buffSize));
+  // setsockopt(TCP_Socket, SOL_SOCKET, SO_SNDBUF, &buffSize, sizeof(buffSize));
+
+  // If we want ipv6 we need to use sockaddr_in6
+  // Here we specify if we want a ipv4 or ipv6 struct
+
+  // TCP_SocketAddress.sin_family = AF_INET;
+  // TCP_SocketAddress.sin_port = htons(HTTP_PORT);
+
+  // inet_ntop works in the reverse way
+  // wont work with name such as localhost
+  // for that purposew e need to use getaddrinfo()
+  // Here we specify if we want a ipv4 or ipv6 struct
+  // Need to convert string to uint32_t
+
+  // if (inet_pton(AF_INET, serverAddr.c_str(), &TCP_SocketAddress.sin_addr) !=
+  //     1) {
+  //   LogError("Failed to convert serverAddr from text to binary");
+  //   exit(EXIT_FAILURE);
+  // }
 
   SSL_load_error_strings();
   SSL_library_init();
@@ -107,30 +151,15 @@ HTTPClient::HTTPClient(int argc, char *argv[]) {
   }
 
   SSL_CTX_set_timeout(SSL_ctx, 60);
-  std::string serverAddr;
-  if ((serverAddr = GetValue2(argc, argv, "target")) == "") {
-    std::cout
-        << "No target specified (-target:addr). Defaulting to localhost\n";
-    serverAddr = "127.0.0.1";
-  }
-
-  TCP_SocketAddr.sin_family = AF_INET;
-  TCP_SocketAddr.sin_port = htons(HTTP_PORT);
-
-  // Need to convert string to uint32_t
-  if (inet_pton(AF_INET, serverAddr.c_str(), &TCP_SocketAddr.sin_addr) != 1) {
-    LogError("Failed to convert serverAddr from text to binary");
-    exit(EXIT_FAILURE);
-  }
 
   if (GetFlag(argc, argv, "unsecure")) {
     SSL_CTX_set_verify(SSL_ctx, SSL_VERIFY_NONE, NULL);
   }
-
   // else{
   //
   // }
-  const unsigned char alpnProtos[] = {
+
+  constexpr unsigned char alpnProtos[] = {
       2, 'h', '2',                              // HTTP/2
       8, 'h', 't', 't', 'p', '/', '1', '.', '1' // HTTP/1.1
   };
@@ -218,6 +247,9 @@ int HTTPClient::dhiProcessHeader(void *hblock_ctx,
 }
 
 void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
+  struct lshpack_dec dec{};
+  lshpack_dec_init(&dec);
+
   std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
       TcpDecodedHeadersMap;
 
@@ -230,6 +262,10 @@ void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
   std::vector<uint8_t> tmpBuffer(BUFFER_SIZE);
 
   const size_t FRAME_HEADER_LENGTH = 9;
+
+  std::vector<uint8_t> frame;
+  frame.reserve(FRAME_HEADER_LENGTH + 256);
+
   int offset = 0;
 
   int bytesReceived{};
@@ -253,11 +289,11 @@ void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
       if (error == SSL_ERROR_WANT_READ || error == SSL_ERROR_WANT_WRITE) {
         // Timeout, let's wait for a bit and retry
         // std::cout << "Timeout occurred, retrying..." << std::endl;
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
         continue;
       } else {
-        LogError(GetSSLErrorMessage(error));
-        std::cout << "Failed to recv HTTP2 response fully" << std::endl;
+        // LogError(GetSSLErrorMessage(error));
+        // std::cout << "Failed to recv HTTP2 response fully" << std::endl;
         break;
       }
     }
@@ -300,13 +336,12 @@ void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
         if (isFlagSet(frameFlags, END_STREAM_FLAG)) {
           // HTTPServer::ValidatePseudoHeaders(TcpDecodedHeadersMap[frameStream]);
 
-          // std::cout << "Response:\n";
-          // for (const auto &[key, value] :
-          // TcpDecodedHeadersMap[frameStream]) {
-          //   std::cout << key << ": " << value << "\n";
-          // }
+          std::cout << "Response:\n";
+          for (const auto &[key, value] : TcpDecodedHeadersMap[frameStream]) {
+            std::cout << key << ": " << value << "\n";
+          }
 
-          // std::cout << TcpDataMap[frameStream] << "\n";
+          std::cout << TcpDataMap[frameStream] << "\n";
 
           // if (TcpDataMap[frameStream] != "Bad Request") {
           //   std::cout << " WE HAVE A PROBLEM: " << TcpDataMap[frameStream];
@@ -331,8 +366,10 @@ void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
           if (isFlagSet(frameFlags, END_STREAM_FLAG) &&
               isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             // Decode and dispatch request
-            HPACK_DecodeHeaders(TcpDecodedHeadersMap, frameStream,
-                                EncodedHeadersBufferMap[frameStream]);
+
+            HTTPBase::HPACK_DecodeHeaders(dec,
+                                          TcpDecodedHeadersMap[frameStream],
+                                          EncodedHeadersBufferMap[frameStream]);
 
             // HTTPServer::ValidatePseudoHeaders(
             //     TcpDecodedHeadersMap[frameStream]);
@@ -343,8 +380,9 @@ void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
             ++nResponses;
           } else if (isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             // Decode and wait for request body
-            HPACK_DecodeHeaders(TcpDecodedHeadersMap, frameStream,
-                                EncodedHeadersBufferMap[frameStream]);
+            HTTPBase::HPACK_DecodeHeaders(dec,
+                                          TcpDecodedHeadersMap[frameStream],
+                                          EncodedHeadersBufferMap[frameStream]);
           }
         }
         break;
@@ -367,10 +405,9 @@ void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
 
         // Only respond with an ACK to their SETTINGS frame with no ACK
         if (frameFlags == HTTP2Flags::NONE_FLAG) {
-          std::vector<std::vector<uint8_t>> frames;
-          frames.emplace_back(HTTPBase::HTTP2_BuildSettingsFrame(
-              HTTP2Flags::SETTINGS_ACK_FLAG));
-          HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
+          HTTPBase::HTTP2_FillSettingsFrame(frame,
+                                            HTTP2Flags::SETTINGS_ACK_FLAG);
+          HTTPBase::HTTP2_SendFrame_TS(ssl, frame);
         }
 
         break;
@@ -402,8 +439,9 @@ void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
           if (isFlagSet(frameFlags, END_STREAM_FLAG) &&
               isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             // Decode and dispatch request
-            HPACK_DecodeHeaders(TcpDecodedHeadersMap, frameStream,
-                                EncodedHeadersBufferMap[frameStream]);
+            HTTPBase::HPACK_DecodeHeaders(dec,
+                                          TcpDecodedHeadersMap[frameStream],
+                                          EncodedHeadersBufferMap[frameStream]);
 
             // std::cout << "Response:\n";
             // for (const auto &[key, value] :
@@ -417,8 +455,9 @@ void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
             ++nResponses;
           } else if (isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             // Decode and wait for request body
-            HPACK_DecodeHeaders(TcpDecodedHeadersMap, frameStream,
-                                EncodedHeadersBufferMap[frameStream]);
+            HTTPBase::HPACK_DecodeHeaders(dec,
+                                          TcpDecodedHeadersMap[frameStream],
+                                          EncodedHeadersBufferMap[frameStream]);
           }
         }
         break;
@@ -438,108 +477,145 @@ void HTTPClient::HTTP2_RecvFrames_TS(SSL *ssl) {
     // }
   }
   std::cout << "Received: " << nResponses << "\n";
+
+  lshpack_dec_cleanup(&dec);
 }
 
+void compareByteArrays(const std::vector<uint8_t> &expected,
+                       const std::vector<uint8_t> &actual) {
+  // Find the smallest size to avoid out-of-bounds access
+  size_t size = std::min(expected.size(), actual.size());
+
+  for (size_t i = 0; i < size; ++i) {
+    if (expected[i] != actual[i]) {
+      std::cout << "Bytes don't match at index " << i << ":\n";
+      std::cout << "Expected byte: " << static_cast<int>(expected[i]) << "\n";
+      std::cout << "Actual byte: " << static_cast<int>(actual[i]) << "\n";
+    }
+  }
+
+  // If the sizes are different, report the mismatch at the last index.
+  if (expected.size() != actual.size()) {
+    std::cout << "Arrays have different sizes. Expected size: "
+              << expected.size() << ", Actual size: " << actual.size() << "\n";
+  } else {
+    std::cout << "Both byte arrays size match.\n";
+  }
+}
+// Here lets negotiate the protocol...
 void HTTPClient::RunHTTP2(int argc, char *argv[]) {
-  for (int j = 0; j < 1; ++j) {
-    if (connect(TCP_Socket, (const struct sockaddr *)&TCP_SocketAddr,
-                (socklen_t)sizeof(TCP_SocketAddr)) == ERROR) {
-      LogError("Failed to connect to server");
-      std::cout << "Failed to connect to server" << std::endl;
+  timeout.tv_sec = 0;
+  timeout.tv_usec = 100 * 1000;
+  static constexpr int buffSize = 256 * 1024; // 256 KB
 
-      close(TCP_Socket);
-      SSL_CTX_free(SSL_ctx);
-      exit(EXIT_FAILURE);
+  struct addrinfo *addr = nullptr;
+  for (addr = TCP_SocketAddr; addr != nullptr; addr = addr->ai_next) {
+    TCP_Socket = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
+    if (TCP_Socket == -1) {
+      std::cout << "Failed....\n";
+      continue;
     }
 
-    SSL *ssl = SSL_new(SSL_ctx);
-    SSL_set_fd(ssl, TCP_Socket);
+    // Handle errors here
+    setsockopt(TCP_Socket, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout);
+    setsockopt(TCP_Socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
 
-    int ret = SSL_connect(ssl);
-    // TLS/SSL handshake
-    if (ret <= 0) {
-      int error = SSL_get_error(ssl, ret);
-      LogError(GetSSLErrorMessage(error));
-      std::cout << "SSL connection failed" << std::endl;
-      SSL_free(ssl);
-      close(TCP_Socket);
-      SSL_CTX_free(SSL_ctx);
-      return;
+    setsockopt(TCP_Socket, SOL_SOCKET, SO_RCVBUF, &buffSize, sizeof(buffSize));
+    setsockopt(TCP_Socket, SOL_SOCKET, SO_SNDBUF, &buffSize, sizeof(buffSize));
+
+    if (connect(TCP_Socket, addr->ai_addr, addr->ai_addrlen) == 0) {
+      break;
     }
 
-    // Send Preface, Window and SETTINGS
-    const std::vector<uint8_t> HTTP2_PrefaceBytes = {
-        0x50, 0x52, 0x49, 0x20, 0x2A, 0x20, 0x48, 0x54, 0x54, 0x50, 0x2F, 0x32,
-        0x2E, 0x30, 0x0D, 0x0A, 0x0D, 0x0A, 0x53, 0x4D, 0x0D, 0x0A, 0x0D, 0x0A};
+    close(TCP_Socket);
+  }
 
-    std::thread recvThread(&HTTPClient::HTTP2_RecvFrames_TS, this, ssl);
+  freeaddrinfo(TCP_SocketAddr);
 
-    {
-      std::vector<std::vector<uint8_t>> frames;
-      frames.push_back(HTTP2_PrefaceBytes);
-      HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
-    }
+  if (addr == nullptr) {
+    LogError("Could not connect to any address");
+    SSL_CTX_free(SSL_ctx);
+    exit(EXIT_FAILURE);
+  }
 
-    {
-      uint8_t flags = 0;
-      std::vector<std::vector<uint8_t>> frames;
-      frames.emplace_back(HTTPBase::HTTP2_BuildSettingsFrame(flags));
-      HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
-    }
+  SSL *ssl = SSL_new(SSL_ctx);
+  SSL_set_fd(ssl, TCP_Socket);
 
-    uint32_t numRequests = 0;
-    uint32_t streamId = 1;
+  // Retry in case of failure
+  int ret = SSL_connect(ssl);
+  // TLS/SSL handshake
+  if (ret <= 0) {
+    int error = SSL_get_error(ssl, ret);
+    LogError(GetSSLErrorMessage(error));
+    std::cout << "SSL connection failed" << std::endl;
+    SSL_free(ssl);
+    close(TCP_Socket);
+    SSL_CTX_free(SSL_ctx);
+    return;
+  }
 
-    // for (const auto &request : requests) {
-    const auto &request = requests[0];
+  struct lshpack_enc enc{};
+  lshpack_enc_init(&enc);
+
+  // Send Preface, Window and SETTINGS
+  std::vector<uint8_t> HTTP2_PrefaceBytes = {
+      0x50, 0x52, 0x49, 0x20, 0x2A, 0x20, 0x48, 0x54, 0x54, 0x50, 0x2F, 0x32,
+      0x2E, 0x30, 0x0D, 0x0A, 0x0D, 0x0A, 0x53, 0x4D, 0x0D, 0x0A, 0x0D, 0x0A};
+
+  std::vector<uint8_t> frame;
+  frame.reserve(FRAME_HEADER_LENGTH + 256);
+
+  std::thread recvThread(&HTTPClient::HTTP2_RecvFrames_TS, this, ssl);
+
+  {
+    HTTPBase::HTTP2_FillSettingsFrame(frame, HTTP2Flags::NONE_FLAG);
+    HTTPBase::HTTP2_SendFrame_TS(ssl, HTTP2_PrefaceBytes);
+  }
+
+  uint32_t numRequests = 0;
+  uint32_t streamId = 1;
+
+  for (const auto &request : requests) {
+    // const auto &request = requests[0];
     const std::string &headers = request.first;
     const std::string &body = request.second;
-
-    // std::cout << "Headers:\n" << headers << std::endl;
 
     std::unordered_map<std::string, std::string> headersMap;
 
     HTTPBase::ReqHeaderToPseudoHeader(headers, headersMap);
 
-    // std::cout << "sending headers:\n";
-    // for (const auto &[key, value] : headersMap) {
-    //   std::cout << key << ": " << value << "\n";
-    // }
-
+    // Loop around here
     std::vector<uint8_t> encodedHeaders(1024);
 
-    HTTPBase::HPACK_EncodeHeaders(headersMap, encodedHeaders);
+    HTTPBase::HPACK_EncodeHeaders(enc, headersMap, encodedHeaders);
 
     std::vector<std::vector<uint8_t>> frames;
+    frames.reserve(2);
 
     frames.emplace_back(
         HTTPBase::HTTP2_BuildHeaderFrame(encodedHeaders, streamId));
 
     frames.emplace_back(HTTPBase::HTTP2_BuildDataFrame(body, streamId));
 
-    for (int i = 0; i < 10000; ++i) {
-      HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
-      streamId += 2;
-    }
+    // for (int i = 0; i < 1; ++i) {
+    HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
+    streamId += 2;
     //}
-
-    numRequests += 10000;
-
-    {
-      std::vector<std::vector<uint8_t>> frames;
-      frames.emplace_back(HTTPBase::HTTP2_BuildGoAwayFrame(
-          streamId - 2, HTTP2ErrorCode::NO_ERROR));
-      HTTPBase::HTTP2_SendFrames_TS(ssl, frames);
-    }
-
-    recvThread.join();
-
-    std::cout << "Sent: " << numRequests << " requests\n";
-
-    SSL_free(ssl);
-
-    close(TCP_Socket);
   }
+
+  {
+    HTTPBase::HTTP2_FillGoAwayFrame(frame, 0, HTTP2ErrorCode::NO_ERROR);
+    HTTPBase::HTTP2_SendFrame_TS(ssl, frame);
+  }
+
+  recvThread.join();
+
+  lshpack_enc_cleanup(&enc);
+
+  SSL_free(ssl);
+
+  close(TCP_Socket);
+
   SSL_CTX_free(SSL_ctx);
 }
 

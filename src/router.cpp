@@ -67,79 +67,79 @@ void Router::SendResponse(std::string &headers, Protocol protocol,
       "Alt-Svc: h3=\":4567\"; ma=86400\r\n";
 
   switch (protocol) {
-    case Protocol::HTTP1:
+  case Protocol::HTTP1:
 
-    {
-      size_t headerEnd = headers.find("\r\n\r\n");
-      if (headerEnd != std::string::npos) {
-        headers.insert(headerEnd + 2, altSvcHeader);
-      }
-
-      std::string response = headers;
-      SSL *clientSSL = (SSL *)context;
-      HTTPBase::HTTP1_SendMessage(clientSSL, response);
+  {
+    size_t headerEnd = headers.find("\r\n\r\n");
+    if (headerEnd != std::string::npos) {
+      headers.insert(headerEnd + 2, altSvcHeader);
     }
 
-    break;
-    case Protocol::HTTP2:
+    std::string response = headers;
+    SSL *clientSSL = (SSL *)context;
+    HTTPBase::HTTP1_SendMessage(clientSSL, response);
+  }
 
-    {
-      HTTP2Context *ctx = (HTTP2Context *)context;
+  break;
+  case Protocol::HTTP2:
 
-      SSL *clientSSL = ctx->ssl;
-      struct lshpack_enc *enc = ctx->enc;
-      uint32_t streamId = ctx->streamId;
+  {
+    HTTP2Context *ctx = (HTTP2Context *)context;
 
-      std::unordered_map<std::string, std::string> headersMap;
-      headersMap.reserve(2);
+    SSL *clientSSL = ctx->ssl;
+    struct lshpack_enc *enc = ctx->enc;
+    uint32_t streamId = ctx->streamId;
 
-      HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
+    std::unordered_map<std::string, std::string> headersMap;
+    headersMap.reserve(2);
 
-      headersMap["alt-svc"] = "h3=\":4567\"; ma=86400";
+    HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
 
-      std::vector<uint8_t> headerFrame(256);
+    headersMap["alt-svc"] = "h3=\":4567\"; ma=86400";
 
-      HTTPBase::HPACK_EncodeHeaderIntoFrame(*enc, headersMap, headerFrame);
+    std::vector<uint8_t> headerFrame(256);
 
-      HTTPBase::HTTP2_FillHeaderFrame(headerFrame, streamId);
+    HTTPBase::HPACK_EncodeHeaderIntoFrame(*enc, headersMap, headerFrame);
 
-      HTTPBase::HTTP2_SendFrame(clientSSL, headerFrame);
+    HTTPBase::HTTP2_FillHeaderFrame(headerFrame, streamId);
+
+    HTTPBase::HTTP2_SendFrame(clientSSL, headerFrame);
+  }
+
+  break;
+  case Protocol::HTTP3:
+
+  {
+    HQUIC Stream = (HQUIC)context;
+
+    std::unordered_map<std::string, std::string> headersMap;
+    headersMap.reserve(2);
+
+    HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
+
+    std::vector<uint8_t> encodedHeaders;
+
+    uint64_t streamId{};
+    uint32_t len = (uint32_t)sizeof(streamId);
+    if (QUIC_FAILED(
+            MsQuic->GetParam(Stream, QUIC_PARAM_STREAM_ID, &len, &streamId))) {
+      LogError("Failed to acquire stream id");
     }
 
+    HTTPBase::QPACK_EncodeHeaders(streamId, headersMap, encodedHeaders);
+
+    std::vector<std::vector<uint8_t>> frames;
+    frames.reserve(1);
+
+    frames.emplace_back(HTTPBase::HTTP3_BuildHeaderFrame(encodedHeaders));
+
+    HTTPBase::HTTP3_SendFrames(Stream, frames);
+  }
+
+  break;
+  default:
+    LogError("Unknown Protocol");
     break;
-    case Protocol::HTTP3:
-
-    {
-      HQUIC Stream = (HQUIC)context;
-
-      std::unordered_map<std::string, std::string> headersMap;
-      headersMap.reserve(2);
-
-      HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
-
-      std::vector<uint8_t> encodedHeaders;
-
-      uint64_t streamId{};
-      uint32_t len = (uint32_t)sizeof(streamId);
-      if (QUIC_FAILED(MsQuic->GetParam(Stream, QUIC_PARAM_STREAM_ID, &len,
-                                       &streamId))) {
-        LogError("Failed to acquire stream id");
-      }
-
-      HTTPBase::QPACK_EncodeHeaders(streamId, headersMap, encodedHeaders);
-
-      std::vector<std::vector<uint8_t>> frames;
-      frames.reserve(1);
-
-      frames.emplace_back(HTTPBase::HTTP3_BuildHeaderFrame(encodedHeaders));
-
-      HTTPBase::HTTP3_SendFrames(Stream, frames);
-    }
-
-    break;
-    default:
-      LogError("Unknown Protocol");
-      break;
   }
 }
 
@@ -150,89 +150,101 @@ void Router::SendResponse(std::string &headers, const std::string &body,
       "Alt-Svc: h3=\":4567\"; ma=86400\r\n";
 
   switch (protocol) {
-    case Protocol::HTTP1:
+  case Protocol::HTTP1:
 
-    {
-      size_t headerEnd = headers.find("\r\n\r\n");
-      if (headerEnd != std::string::npos) {
-        headers.insert(headerEnd + 2, altSvcHeader);
-      }
-
-      std::string response = headers + body;
-      SSL *clientSSL = (SSL *)context;
-      HTTPBase::HTTP1_SendMessage(clientSSL, response);
+  {
+    size_t headerEnd = headers.find("\r\n\r\n");
+    if (headerEnd != std::string::npos) {
+      headers.insert(headerEnd + 2, altSvcHeader);
     }
 
-    break;
-    case Protocol::HTTP2:
+    std::string response = headers + body;
+    SSL *clientSSL = (SSL *)context;
+    HTTPBase::HTTP1_SendMessage(clientSSL, response);
+  }
 
-    {
-      HTTP2Context *ctx = (HTTP2Context *)context;
+  break;
+  case Protocol::HTTP2:
 
-      SSL *clientSSL = ctx->ssl;
-      struct lshpack_enc *enc = ctx->enc;
-      uint32_t streamId = ctx->streamId;
+  {
+    HTTP2Context *ctx = (HTTP2Context *)context;
 
-      std::unordered_map<std::string, std::string> headersMap;
-      headersMap.reserve(2);
+    SSL *clientSSL = ctx->ssl;
+    struct lshpack_enc *enc = ctx->enc;
+    uint32_t streamId = ctx->streamId;
 
-      HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
+    std::unordered_map<std::string, std::string> headersMap;
 
-      headersMap["alt-svc"] = "h3=\":4567\"; ma=86400";
+    headersMap.reserve(2);
+    // if (headersMap.bucket_count() < 2) {
+    //   headersMap.reserve(2);
+    //   headersMap["alt-svc"] = "h3=\":4567\"; ma=86400";
+    // }
 
-      std::vector<uint8_t> headerFrame(256);
+    HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
 
-      HTTPBase::HPACK_EncodeHeaderIntoFrame(*enc, headersMap, headerFrame);
+    headersMap["alt-svc"] = "h3=\":4567\"; ma=86400";
 
-      std::vector<std::vector<uint8_t>> frames;
-      frames.reserve(2);
+    std::vector<uint8_t> headerFrame(256);
+    // if (headerFrame.size() < 256) {
+    //   headerFrame.resize(256);
+    // }
 
-      HTTPBase::HTTP2_FillHeaderFrame(headerFrame, streamId);
+    HTTPBase::HPACK_EncodeHeaderIntoFrame(*enc, headersMap, headerFrame);
 
-      frames.emplace_back(std::move(headerFrame));
+    std::vector<std::vector<uint8_t>> frames;
 
-      frames.emplace_back(
-          std::move(HTTPBase::HTTP2_BuildDataFrame(body, streamId)));
+    frames.reserve(2);
+    // if (frames.capacity() < 65535) {
+    //   frames.reserve(2);
+    // }
 
-      HTTPBase::HTTP2_SendFrames(clientSSL, frames);
+    HTTPBase::HTTP2_FillHeaderFrame(headerFrame, streamId);
+
+    frames.emplace_back(std::move(headerFrame));
+
+    frames.emplace_back(
+        std::move(HTTPBase::HTTP2_BuildDataFrame(body, streamId)));
+
+    HTTPBase::HTTP2_SendFrames(clientSSL, frames);
+  }
+
+  break;
+
+  case Protocol::HTTP3:
+
+  {
+    HQUIC Stream = (HQUIC)context;
+    std::unordered_map<std::string, std::string> headersMap;
+    headersMap.reserve(2);
+
+    HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
+
+    std::vector<uint8_t> encodedHeaders;
+
+    uint64_t streamId{};
+    uint32_t len = (uint32_t)sizeof(streamId);
+    if (QUIC_FAILED(
+            MsQuic->GetParam(Stream, QUIC_PARAM_STREAM_ID, &len, &streamId))) {
+      LogError("Failed to acquire stream id");
     }
 
+    HTTPBase::QPACK_EncodeHeaders(streamId, headersMap, encodedHeaders);
+
+    std::vector<std::vector<uint8_t>> frames;
+    frames.reserve(2);
+
+    frames.emplace_back(HTTPBase::HTTP3_BuildHeaderFrame(encodedHeaders));
+
+    frames.emplace_back(HTTPBase::HTTP3_BuildDataFrame(body));
+
+    HTTPBase::HTTP3_SendFrames(Stream, frames);
+  }
+
+  break;
+  default:
+    LogError("Unknown Protocol");
     break;
-
-    case Protocol::HTTP3:
-
-    {
-      HQUIC Stream = (HQUIC)context;
-      std::unordered_map<std::string, std::string> headersMap;
-      headersMap.reserve(2);
-
-      HTTPBase::RespHeaderToPseudoHeader(headers, headersMap);
-
-      std::vector<uint8_t> encodedHeaders;
-
-      uint64_t streamId{};
-      uint32_t len = (uint32_t)sizeof(streamId);
-      if (QUIC_FAILED(MsQuic->GetParam(Stream, QUIC_PARAM_STREAM_ID, &len,
-                                       &streamId))) {
-        LogError("Failed to acquire stream id");
-      }
-
-      HTTPBase::QPACK_EncodeHeaders(streamId, headersMap, encodedHeaders);
-
-      std::vector<std::vector<uint8_t>> frames;
-      frames.reserve(2);
-
-      frames.emplace_back(HTTPBase::HTTP3_BuildHeaderFrame(encodedHeaders));
-
-      frames.emplace_back(HTTPBase::HTTP3_BuildDataFrame(body));
-
-      HTTPBase::HTTP3_SendFrames(Stream, frames);
-    }
-
-    break;
-    default:
-      LogError("Unknown Protocol");
-      break;
   }
 }
 
@@ -246,12 +258,12 @@ STATUS_CODE Router::handleBadRequest(const std::string &data, Protocol protocol,
   // the headers and the data and will send it accordingly. After sending we can
   // store the responseHeaders and responseData in the cache
 
-  std::string headers =
-      "HTTP/1.1 200 Bad Request\r\n"
-      "Content-Type: text/plain\r\n"
-      "Content-Length: 12\r\n"
-      "Connection: close\r\n"
-      "\r\n";
+  // Anything to do here?
+  std::string headers = "HTTP/1.1 200 Bad Request\r\n"
+                        "Content-Type: text/plain\r\n"
+                        "Content-Length: 12\r\n"
+                        "Connection: close\r\n"
+                        "\r\n";
 
   std::string body = "Bad Request\n";
 

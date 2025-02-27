@@ -1,4 +1,5 @@
 // #include "client.cpp"
+// #include <gperftools/profiler.h>
 #include <memory.h>
 
 #include <csignal>
@@ -11,6 +12,10 @@
 #include "routes.cpp"
 #include "server.hpp"
 #include "utils.hpp"
+
+// void startProfiling() { ProfilerStart("my_profiler_output.prof"); }
+//
+// void stopProfiling() { ProfilerStop(); }
 
 extern bool shouldShutdown;
 
@@ -29,6 +34,7 @@ static void signalHandler(int signal) {
 }
 
 int main(int argc, char *argv[]) {
+  // startProfiling();
   QUIC_STATUS Status = QUIC_STATUS_SUCCESS;
 
   // Open a handle to the library and get the API function table.
@@ -110,5 +116,6 @@ int main(int argc, char *argv[]) {
     PrintUsage();
   }
 
+  // stopProfiling();
   return 0;
 }
