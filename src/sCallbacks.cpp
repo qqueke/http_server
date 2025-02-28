@@ -159,8 +159,8 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     // The handshake has completed for the connection.
 
     // Send  resumption ticket for future interactions
-    // MsQuic->ConnectionSendResumptionTicket(
-    //     Connection, QUIC_SEND_RESUMPTION_FLAG_NONE, 0, NULL);
+    MsQuic->ConnectionSendResumptionTicket(
+        Connection, QUIC_SEND_RESUMPTION_FLAG_NONE, 0, NULL);
 
     break;
   case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT:

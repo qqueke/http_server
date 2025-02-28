@@ -8,6 +8,7 @@
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
 #include <poll.h>
+#include <sys/poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <zlib.h>
@@ -627,12 +628,6 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
       0x50, 0x52, 0x49, 0x20, 0x2A, 0x20, 0x48, 0x54, 0x54, 0x50, 0x2F, 0x32,
       0x2E, 0x30, 0x0D, 0x0A, 0x0D, 0x0A, 0x53, 0x4D, 0x0D, 0x0A, 0x0D, 0x0A};
 
-  static constexpr size_t PREFACE_LENGTH = 24;
-
-  // Declare this as global
-  static constexpr int maxRetries = 5;
-  static constexpr int retryDelayMs = 50;
-
   std::vector<uint8_t> buffer;
   buffer.reserve(65535);
 
@@ -663,12 +658,14 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
   bool GOAWAY = false;
   bool receivedPreface = false;
 
-  int offset = 0;
   uint32_t nRequests = 0;
   uint8_t retryCount = 0;
-  int bytesReceived = 0;
 
+  int offset = 0;
+  int bytesReceived = 0;
   size_t nReadableBytes = 0;
+
+  // TODO: implement circular buffer
 
   while (!shouldShutdown && !GOAWAY) {
     bytesReceived =
@@ -681,9 +678,9 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
       int error = SSL_get_error(ssl, bytesReceived);
 
       if (error == SSL_ERROR_WANT_READ || error == SSL_ERROR_WANT_WRITE) {
-        if (retryCount < maxRetries) {
+        if (retryCount < MAX_RETRIES) {
           retryCount++;
-          std::this_thread::sleep_for(std::chrono::milliseconds(retryDelayMs));
+          std::this_thread::sleep_for(std::chrono::milliseconds(RECV_DELAY_MS));
           continue;
         } else {
           LogError("Max retries reached while trying to receive data");
@@ -726,19 +723,22 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
                                (static_cast<uint32_t>(framePtr[1]) << 8) |
                                static_cast<uint32_t>(framePtr[2]);
 
+      if (payloadLength > MAX_PAYLOAD_FRAME_SIZE) {
+        GOAWAY = true;
+        {
+          HTTPBase::HTTP2_FillGoAwayFrame(frame, 0,
+                                          HTTP2ErrorCode::FRAME_SIZE_ERROR);
+          HTTPBase::HTTP2_SendFrame(ssl, frame);
+        }
+        break;
+      }
+
       uint8_t frameType = framePtr[3];
 
       uint8_t frameFlags = framePtr[4];
 
       uint32_t frameStream = (framePtr[5] << 24) | (framePtr[6] << 16) |
                              (framePtr[7] << 8) | framePtr[8];
-
-      if (FRAME_HEADER_LENGTH + payloadLength > nReadableBytes) {
-        // std::cout << "Not enough data: " << FRAME_HEADER_LENGTH +
-        // payloadLength
-        //           << " with readable: " << nReadableBytes << std::endl;
-        break;
-      }
 
       if (expectingContFrame && frameType != Frame::CONTINUATION) {
         GOAWAY = true;
@@ -763,11 +763,11 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
         // std::cout << TcpDataMap[frameStream] << std::endl;
 
         if (isFlagSet(frameFlags, END_STREAM_FLAG)) {
-          std::cout << "Request: \n";
-          for (auto &[key, value] : TcpDecodedHeadersMap[frameStream]) {
-            std::cout << key << ": " << value << "\n";
-          }
-          std::cout << TcpDataMap[frameStream] << std::endl;
+          // std::cout << "Request: \n";
+          // for (auto &[key, value] : TcpDecodedHeadersMap[frameStream]) {
+          //   std::cout << key << ": " << value << "\n";
+          // }
+          // std::cout << TcpDataMap[frameStream] << std::endl;
 
           HTTPServer::ValidatePseudoHeaders(TcpDecodedHeadersMap[frameStream]);
 
@@ -932,6 +932,11 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
 #endif
 
         {
+          if (isFlagSet(frameFlags, HTTP2Flags::NONE_FLAG)) {
+            // Parse their settings and update this connection settings
+            // to be the minimum between ours and theirs
+          }
+
           HTTPBase::HTTP2_FillSettingsFrame(frame, frameFlags);
           HTTPBase::HTTP2_SendFrame(ssl, frame);
         }
@@ -1138,7 +1143,6 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
     }
 
     if (nReadableBytes == 0) {
-      // buffer.clear();
       offset = 0;
     }
   }
@@ -1234,7 +1238,7 @@ void HTTPServer::RequestThreadHandler(int clientSocket) {
 
   struct pollfd pfd;
   pfd.fd = clientSocket;
-  pfd.events = POLLIN;
+  pfd.events = POLLIN | POLLOUT | POLLHUP;
 
   while (true) {
     int ret = SSL_accept(ssl);
@@ -1244,12 +1248,10 @@ void HTTPServer::RequestThreadHandler(int clientSocket) {
 
     int error = SSL_get_error(ssl, ret);
     if (error == SSL_ERROR_WANT_READ) {
-      poll(&pfd, 1, -1);
+      poll(&pfd, 1, 1000);
       continue;
     } else if (error == SSL_ERROR_WANT_WRITE) {
-      pfd.events = POLLOUT;
-      poll(&pfd, 1, -1);
-      pfd.events = POLLIN;
+      poll(&pfd, 1, 1000);
       continue;
     } else {
       // Handle fatal error
@@ -1379,12 +1381,18 @@ void HTTPServer::RunTCP() {
 
     if (setsockopt(clientSocket, SOL_SOCKET, SO_SNDTIMEO, &timeout,
                    sizeof timeout) == ERROR) {
-      LogError(threadSafeStrerror(errno));
     }
 
     int buffSize = 256 * 1024; // 256 KB
-    setsockopt(TCP_Socket, SOL_SOCKET, SO_RCVBUF, &buffSize, sizeof(buffSize));
-    setsockopt(TCP_Socket, SOL_SOCKET, SO_SNDBUF, &buffSize, sizeof(buffSize));
+    if (setsockopt(TCP_Socket, SOL_SOCKET, SO_RCVBUF, &buffSize,
+                   sizeof(buffSize)) == ERROR) {
+      LogError(threadSafeStrerror(errno));
+    }
+
+    if (setsockopt(TCP_Socket, SOL_SOCKET, SO_SNDBUF, &buffSize,
+                   sizeof(buffSize)) == ERROR) {
+      LogError(threadSafeStrerror(errno));
+    }
 
     std::thread([this, clientSocket]() {
       RequestThreadHandler(clientSocket);

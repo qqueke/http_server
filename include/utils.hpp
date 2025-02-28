@@ -37,9 +37,13 @@ enum : int {
 };
 
 enum : uint32_t {
+  MAX_RETRIES = 5,
+  SEND_DELAY_MS = 20,
+  RECV_DELAY_MS = 20,
   MAX_PAYLOAD_FRAME_SIZE = 16384,
   FRAME_HEADER_LENGTH = 9,
   MAX_FLOW_WINDOW_SIZE = 2147483646,
+  PREFACE_LENGTH = 24,
 };
 
 enum HTTP2Flags : uint8_t {

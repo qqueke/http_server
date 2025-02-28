@@ -37,8 +37,11 @@ public:
 
   void PrintFromServer();
 
-  void RunHTTP1(int argc, char *argv[]);
-  void RunHTTP2(int argc, char *argv[]);
+  void RunTCP(int argc, char *argv[]);
+
+  void SendHTTP1Request(SSL *ssl);
+
+  void SendHTTP2Request(SSL *ssl);
 
   void Run(int argc, char *argv[]);
 

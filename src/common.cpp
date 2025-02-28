@@ -398,7 +398,7 @@ void HTTPBase::HTTP2_FillSettingsFrame(std::vector<uint8_t> &frame,
   //     0x00, 0x00, 0x00, 0x64  // Value: 100
   // };
 
-  uint8_t frameType = 0x04;
+  uint8_t frameType = Frame::SETTINGS;
   uint8_t streamId = 0;
   uint8_t payloadLength = 0;
   uint32_t totalFrameSize = FRAME_HEADER_LENGTH + payloadLength;
@@ -592,26 +592,33 @@ HTTPBase::HTTP2_BuildHeaderFrame(const std::vector<uint8_t> &encodedHeaders,
   return frame;
 }
 
-int HTTPBase::HTTP1_SendMessage(SSL *clientSSL, const std::string &response) {
+int HTTPBase::HTTP1_SendMessage(SSL *ssl, const std::string &response) {
   // std::cout << "Sending HTTP1 response" << std::endl;
 
   size_t totalBytesSent = 0;
-  size_t frameSize = response.size();
+  size_t responseSize = response.size();
+  int retryCount = 0;
 
-  while (totalBytesSent < frameSize) {
-    int sentBytes = SSL_write(clientSSL, response.data() + totalBytesSent,
-                              (int)(frameSize - totalBytesSent));
+  while (totalBytesSent < responseSize) {
+    int sentBytes = SSL_write(ssl, response.data() + totalBytesSent,
+                              (int)(responseSize - totalBytesSent));
 
     if (sentBytes > 0) {
       totalBytesSent += sentBytes;
     } else {
-      int error = SSL_get_error(clientSSL, sentBytes);
+      int error = SSL_get_error(ssl, sentBytes);
       if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
-        // std::cout << "SSL buffer full, retrying..." << std::endl;
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          std::this_thread::sleep_for(std::chrono::milliseconds(SEND_DELAY_MS));
+          continue;
+        } else {
+          LogError("Max retries reached while trying to receive data");
+          break;
+        }
         continue;
       } else {
-        LogError("Failed to send HTTP1 response");
+        LogError(GetSSLErrorMessage(error));
         return ERROR;
       }
     }
@@ -622,14 +629,12 @@ int HTTPBase::HTTP1_SendMessage(SSL *clientSSL, const std::string &response) {
 int HTTPBase::HTTP2_SendFrame_TS(SSL *ssl, std::vector<uint8_t> &frame) {
   // std::cout << "Sending HTTP2 response" << std::endl;
 
-  uint8_t frameType = frame[3];
-  const int maxRetries = 5;
   size_t totalBytesSent = 0;
   size_t frameSize = frame.size();
   int retryCount = 0;
-  int sentBytes = 0;
 
   while (totalBytesSent < frameSize) {
+    int sentBytes = 0;
     {
       std::lock_guard<std::mutex> lock(TCP_MutexMap[ssl]);
       sentBytes = SSL_write(ssl, frame.data() + totalBytesSent,
@@ -641,9 +646,9 @@ int HTTPBase::HTTP2_SendFrame_TS(SSL *ssl, std::vector<uint8_t> &frame) {
     } else {
       int error = SSL_get_error(ssl, sentBytes);
       if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
-        if (retryCount < maxRetries) {
+        if (retryCount < MAX_RETRIES) {
           retryCount++;
-          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          std::this_thread::sleep_for(std::chrono::milliseconds(SEND_DELAY_MS));
           continue;
         } else {
           LogError("Max retries reached while trying to receive data");
@@ -664,15 +669,13 @@ int HTTPBase::HTTP2_SendFrames_TS(SSL *ssl,
                                   std::vector<std::vector<uint8_t>> &frames) {
   // std::cout << "Sending HTTP2 response" << std::endl;
 
-  int sentBytes = 0;
-  const int maxRetries = 5;
-
   for (auto &frame : frames) {
     int retryCount = 0;
     size_t totalBytesSent = 0;
     size_t frameSize = frame.size();
 
     while (totalBytesSent < frameSize) {
+      int sentBytes = 0;
       {
         std::lock_guard<std::mutex> lock(TCP_MutexMap[ssl]);
         sentBytes = SSL_write(ssl, frame.data() + totalBytesSent,
@@ -684,9 +687,10 @@ int HTTPBase::HTTP2_SendFrames_TS(SSL *ssl,
         int error = SSL_get_error(ssl, sentBytes);
         if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
           // std::cout << "SSL buffer full, retrying..." << std::endl;
-          if (retryCount < maxRetries) {
+          if (retryCount < MAX_RETRIES) {
             retryCount++;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(SEND_DELAY_MS));
             continue;
           } else {
             LogError("Max retries reached while trying to receive data");
@@ -706,9 +710,6 @@ int HTTPBase::HTTP2_SendFrames_TS(SSL *ssl,
 
 int HTTPBase::HTTP2_SendFrame(SSL *ssl, std::vector<uint8_t> &frame) {
   // std::cout << "Sending HTTP2 response" << std::endl;
-
-  uint8_t frameType = frame[3];
-  const int maxRetries = 5;
   size_t totalBytesSent = 0;
   size_t frameSize = frame.size();
   int retryCount = 0;
@@ -722,9 +723,9 @@ int HTTPBase::HTTP2_SendFrame(SSL *ssl, std::vector<uint8_t> &frame) {
     } else {
       int error = SSL_get_error(ssl, sentBytes);
       if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
-        if (retryCount < maxRetries) {
+        if (retryCount < MAX_RETRIES) {
           retryCount++;
-          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          std::this_thread::sleep_for(std::chrono::milliseconds(SEND_DELAY_MS));
           continue;
         } else {
           LogError("Max retries reached while trying to receive data");
@@ -746,7 +747,6 @@ int HTTPBase::HTTP2_SendFrames(SSL *ssl,
                                std::vector<std::vector<uint8_t>> &frames) {
   // std::cout << "Sending HTTP2 response" << std::endl;
 
-  const int maxRetries = 5;
   for (auto &frame : frames) {
     size_t totalBytesSent = 0;
     size_t frameSize = frame.size();
@@ -761,9 +761,10 @@ int HTTPBase::HTTP2_SendFrames(SSL *ssl,
       } else {
         int error = SSL_get_error(ssl, sentBytes);
         if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
-          if (retryCount < maxRetries) {
+          if (retryCount < MAX_RETRIES) {
             retryCount++;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(SEND_DELAY_MS));
             continue;
           } else {
             LogError("Max retries reached while trying to receive data");
