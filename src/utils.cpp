@@ -1,6 +1,8 @@
 #include "utils.hpp"
 
 #include <msquic.h>
+#include <zconf.h>
+#include <zlib.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -27,17 +29,6 @@ const QUIC_REGISTRATION_CONFIG RegConfig = {"quicsample",
 
 // The protocol name used in the Application Layer Protocol Negotiation (ALPN).
 const QUIC_BUFFER Alpn = {sizeof("h3") - 1, (uint8_t *)"h3"};
-
-// const uint8_t AlpnProtocols[] = {
-//     // HTTP/1.1
-//     8, (uint8_t*)"http/1.1",  // length 8 for "http/1.1"
-//
-//     // HTTP/2
-//     2, (uint8_t*)"h2",        // length 2 for "h2"
-//
-//     // HTTP/3
-//     2, (uint8_t*)"h3"         // length 2 for "h3"
-// };
 
 // The UDP port used by the server side of the protocol.
 const uint16_t UdpPort = 4567;
@@ -150,6 +141,63 @@ void PrintBytes(void *buf, size_t len) {
   printf("\n");
 }
 
+uint64_t CompressFile(const std::string &inputFile,
+                      const std::string &outputFile, CompressionType type) {
+  std::ifstream inFileStream(inputFile, std::ios::binary);
+  if (!inFileStream) {
+    LogError("Failed to open input file\n");
+    return 0;
+  }
+
+  // Create output file
+  std::ofstream file(outputFile, std::ios::binary | std::ios::out);
+  file.close();
+
+  std::ofstream outFileStream(outputFile, std::ios::binary);
+  if (!outFileStream) {
+    LogError("Failed to open output file\n");
+    return 0;
+  }
+
+  // Will read file stream as chars until end of file ({}), to the vector
+  std::vector<char> buffer(std::istreambuf_iterator<char>(inFileStream), {});
+
+  uLongf compressedSize = compressBound(buffer.size());
+  std::vector<Bytef> compressedData(compressedSize);
+
+  z_stream zStream = {};
+  zStream.next_in = reinterpret_cast<Bytef *>(buffer.data());
+  zStream.avail_in = buffer.size();
+  zStream.next_out = compressedData.data();
+  zStream.avail_out = compressedSize;
+
+  int windowBits =
+      (type == GZIP) ? 15 + 16 : 15; // 15 for Deflate, +16 for Gzip
+
+  if (deflateInit2(&zStream, Z_BEST_COMPRESSION, Z_DEFLATED, windowBits, 8,
+                   Z_DEFAULT_STRATEGY) != Z_OK) {
+    LogError("Compression initialization failed\n");
+    return 0;
+  }
+
+  if (deflate(&zStream, Z_FINISH) != Z_STREAM_END) {
+    LogError("Compression failed\n");
+    deflateEnd(&zStream);
+    return 0;
+  }
+
+  outFileStream.write(reinterpret_cast<const char *>(compressedData.data()),
+                      (long)zStream.total_out);
+
+  deflateEnd(&zStream);
+
+  std::cout << ((type == GZIP) ? "Gzip" : "Deflate")
+            << " compression successful: " << outputFile << "\n";
+
+  // ASsuming small files
+  return zStream.total_out;
+}
+
 void PrintUsage() {
   printf("\n"
          "Server runs a simple client or server.\n"
@@ -158,6 +206,7 @@ void PrintUsage() {
          "\n"
          "  ./server -client -unsecure -target:{IPAddress|Hostname} "
          "[-ticket:<ticket>]\n"
+         "[-requests:requests.txt]\n"
          "  ./server -server -cert_hash:<...>\n"
          "  ./server -server -cert_file:<...> -key_file:<...> "
          "[-password:<...>]\n");

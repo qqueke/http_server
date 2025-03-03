@@ -15,7 +15,7 @@
 // #define QUIC_DEBUG
 
 void ClientSend(_In_ HQUIC Connection, void *Context) {
-  HTTPClient *client = (HTTPClient *)Context;
+  HttpClient *client = (HttpClient *)Context;
   QUIC_STATUS Status;
 
   int i = 0;
@@ -29,7 +29,7 @@ void ClientSend(_In_ HQUIC Connection, void *Context) {
     // QUIC_STREAM_OPEN_FLAG_UNIDIRECTIONAL
     if (QUIC_FAILED(Status = MsQuic->StreamOpen(
                         Connection, QUIC_STREAM_OPEN_FLAG_NONE,
-                        HTTPClient::StreamCallback, Context, &Stream))) {
+                        HttpClient::StreamCallback, Context, &Stream))) {
       printf("StreamOpen failed, 0x%x!\n", Status);
       if (QUIC_FAILED(Status)) {
         MsQuic->ConnectionShutdown(Connection,
@@ -60,7 +60,7 @@ void ClientSend(_In_ HQUIC Connection, void *Context) {
       std::unordered_map<std::string, std::string> headersMap;
 
       // Change this function to work for response and request
-      HTTPBase::ReqHeaderToPseudoHeader(headers, headersMap);
+      HttpCore::ReqHeaderToPseudoHeader(headers, headersMap);
 
       std::vector<uint8_t> encodedHeaders;
 
@@ -71,20 +71,16 @@ void ClientSend(_In_ HQUIC Connection, void *Context) {
         LogError("Failed to acquire stream id");
       }
 
-      HTTPBase::QPACK_EncodeHeaders(streamId, headersMap, encodedHeaders);
-
+      client->EncodeQPACKHeaders(&Stream, headersMap, encodedHeaders);
       // Put header frame and data frames in frames response
       std::vector<std::vector<uint8_t>> frames;
 
-      // Build frames
-      frames.emplace_back(HTTPBase::HTTP3_BuildHeaderFrame(encodedHeaders));
+      frames.emplace_back(
+          client->BuildHttp3Frame(Frame::HEADERS, 0, encodedHeaders));
 
-      frames.emplace_back(HTTPBase::HTTP3_BuildDataFrame(body));
+      frames.emplace_back(client->BuildHttp3Frame(Frame::DATA, 0, {}, body));
 
-      if (HTTPBase::HTTP3_SendFramesToNewConn(Connection, Stream, frames) ==
-          -1) {
-        return;
-      }
+      client->SendBatch(Stream, frames, true);
     }
   }
 }
@@ -92,11 +88,11 @@ void ClientSend(_In_ HQUIC Connection, void *Context) {
 // The clients's callback for stream events from MsQuic.
 _IRQL_requires_max_(DISPATCH_LEVEL)
     _Function_class_(QUIC_STREAM_CALLBACK) QUIC_STATUS QUIC_API
-    HTTPClient::StreamCallback(_In_ HQUIC Stream, _In_opt_ void *Context,
+    HttpClient::StreamCallback(_In_ HQUIC Stream, _In_opt_ void *Context,
                                _Inout_ QUIC_STREAM_EVENT *Event) {
   // UNREFERENCED_PARAMETER(Context);
 
-  HTTPClient *client = (HTTPClient *)Context;
+  HttpClient *client = (HttpClient *)Context;
 
   switch (Event->Type) {
   case QUIC_STREAM_EVENT_SEND_COMPLETE:
@@ -190,10 +186,30 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
   return QUIC_STATUS_SUCCESS;
 }
 
+// Saves file in format: Ticket Length | Ticket
+void SaveResumptionTicketToFile(const uint8_t *resumptionTicket,
+                                uint32_t ticketLength) {
+  const std::string filename = "ticket";
+  std::ofstream outFile(filename, std::ios::binary);
+
+  if (outFile.is_open()) {
+    uint32_t networkOrder = htonl(ticketLength);
+    outFile.write(reinterpret_cast<const char *>(&networkOrder),
+                  sizeof(networkOrder));
+
+    outFile.write(reinterpret_cast<const char *>(resumptionTicket),
+                  ticketLength);
+    outFile.close();
+    std::cout << "Resumption ticket saved to file: " << filename << std::endl;
+  } else {
+    std::cout << "Failed to open file for writing: " << filename << std::endl;
+  }
+}
+
 // The clients's callback for connection events from MsQuic.
 _IRQL_requires_max_(DISPATCH_LEVEL)
     _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API
-    HTTPClient::ConnectionCallback(_In_ HQUIC Connection,
+    HttpClient::ConnectionCallback(_In_ HQUIC Connection,
                                    _In_opt_ void *Context,
                                    _Inout_ QUIC_CONNECTION_EVENT *Event) {
   // UNREFERENCED_PARAMETER(Context);
@@ -255,16 +271,22 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     printf("[conn][%p] Resumption ticket received (%u bytes):\n", Connection,
            Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength);
 #endif
+    {
+      SaveResumptionTicketToFile(
+          Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket,
+          Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength);
 
-    // for (uint32_t i = 0;
-    //      i < Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength;
-    //      i++)
-    //      {
-    //   printf("%.2X",
-    //          (uint8_t)Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket[i]);
-    // }
-    // printf("\n");
-    break;
+      // for (uint32_t i = 0;
+      //      i < Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength;
+      //      i++) {
+      //   printf("%.2X",
+      //          (uint8_t)Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket[i]);
+      // }
+      // printf("\n");
+
+      break;
+    }
+
   default:
     break;
   }

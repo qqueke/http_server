@@ -43,9 +43,6 @@ LDFLAGS += -L$(MSQUIC_BUILD)/bin/Release
 
 # Linked libraries
 # LDFLAGS += -lasan
-# LDFLAGS += -static-libasan
-# LDFLAGS += -ltcmalloc
-
 # LDFLAGS += -lprofiler -ltcmalloc
 LDFLAGS += -lssl -lcrypto -lz
 LDFLAGS += -lmsquic
@@ -59,6 +56,12 @@ ROUTER_SRC = $(SRCDIR)/router.cpp
 ROUTES_SRC = $(SRCDIR)/routes.cpp
 LOG_SRC = $(SRCDIR)/log.cpp
 S_CALLBACKS_SRC = $(SRCDIR)/sCallbacks.cpp
+
+CODEC_SRC = $(SRCDIR)/codec.cpp
+FRAMEBUILDER_SRC = $(SRCDIR)/framebuilder.cpp
+
+TRANSPORT_SRC = $(SRCDIR)/transport.cpp
+
 
 # Source files for client
 CLIENT_SRC = $(SRCDIR)/client.cpp
@@ -75,6 +78,11 @@ ROUTER_OBJ = $(BUILDDIR)/router.o
 ROUTES_OBJ = $(BUILDDIR)/routes.o
 LOG_OBJ = $(BUILDDIR)/log.o
 S_CALLBACKS_OBJ = $(BUILDDIR)/sCallbacks.o
+
+CODEC_OBJ = $(BUILDDIR)/codec.o
+FRAMEBUILDER_OBJ = $(BUILDDIR)/framebuilder.o
+TRANSPORT_OBJ = $(BUILDDIR)/transport.o
+
 
 # Object files for client
 CLIENT_OBJ = $(BUILDDIR)/client.o
@@ -95,47 +103,47 @@ dependencies:
 	mkdir -p lib
 
 	# Clone or update ls-qpack repository
-	# @if [ ! -d "lib/ls-qpack" ]; then \
-	# 	git clone --depth 1 $(LS_QPACK_REPO) lib/ls-qpack; \
-	# 	mkdir -p $(LS_QPACK_BUILD); \
-	# 	cd $(LS_QPACK_BUILD) && cmake .. && make; \
-	# else \
-	# 	cd lib/ls-qpack && git pull; \
-	# 	if ! git diff --quiet; then \
-	# 		mkdir -p $(LS_QPACK_BUILD); \
-	# 		cd $(LS_QPACK_BUILD) && cmake .. && make; \
-	# 	fi; \
-	# fi
+	@if [ ! -d "lib/ls-qpack" ]; then \
+		git clone --depth 1 $(LS_QPACK_REPO) lib/ls-qpack; \
+		mkdir -p $(LS_QPACK_BUILD); \
+		cd $(LS_QPACK_BUILD) && cmake .. && make; \
+	else \
+		cd lib/ls-qpack && git pull; \
+		if ! git diff --quiet; then \
+			mkdir -p $(LS_QPACK_BUILD); \
+			cd $(LS_QPACK_BUILD) && cmake .. && make; \
+		fi; \
+	fi
 
 	# Clone or update ls-hpack repository
-	# @if [ ! -d "lib/ls-hpack" ]; then \
-	# 	git clone --depth 1 $(LS_HPACK_REPO) lib/ls-hpack; \
-	# 	mkdir -p $(LS_HPACK_BUILD); \
-	# 	cd $(LS_HPACK_BUILD) && cmake .. && make; \
-	# else \
-	# 	cd lib/ls-hpack && git pull; \
-	# 	if ! git diff --quiet; then \
-	# 		mkdir -p $(LS_HPACK_BUILD); \
-	# 		cd $(LS_HPACK_BUILD) && cmake .. && make; \
-	# 	fi; \
-	# fi
+	@if [ ! -d "lib/ls-hpack" ]; then \
+		git clone --depth 1 $(LS_HPACK_REPO) lib/ls-hpack; \
+		mkdir -p $(LS_HPACK_BUILD); \
+		cd $(LS_HPACK_BUILD) && cmake .. && make; \
+	else \
+		cd lib/ls-hpack && git pull; \
+		if ! git diff --quiet; then \
+			mkdir -p $(LS_HPACK_BUILD); \
+			cd $(LS_HPACK_BUILD) && cmake .. && make; \
+		fi; \
+	fi
 
 	# Clone or update msquic repository
-	# @if [ ! -d "lib/msquic" ]; then \
-	# 	git clone --depth 1 $(MSQUIC_REPO) lib/msquic; \
-	# 	cd lib/msquic && git submodule update --init --recursive; \
-	# 	mkdir -p $(MSQUIC_BUILD); \
-	# 	cd $(MSQUIC_BUILD) && cmake .. && make; \
-	# else \
-	# 	cd lib/msquic && git pull; \
-	# 	if ! git diff --quiet; then \
-	# 		mkdir -p $(MSQUIC_BUILD); \
-	# 		cd $(MSQUIC_BUILD) && cmake .. && make; \
-	# 	fi; \
-	# fi
+	@if [ ! -d "lib/msquic" ]; then \
+		git clone --depth 1 $(MSQUIC_REPO) lib/msquic; \
+		cd lib/msquic && git submodule update --init --recursive; \
+		mkdir -p $(MSQUIC_BUILD); \
+		cd $(MSQUIC_BUILD) && cmake .. && make; \
+	else \
+		cd lib/msquic && git pull; \
+		if ! git diff --quiet; then \
+			mkdir -p $(MSQUIC_BUILD); \
+			cd $(MSQUIC_BUILD) && cmake .. && make; \
+		fi; \
+	fi
 
 # Build the main executable
-server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(S_CALLBACKS_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(COMMON_OBJ) $(CLIENT_OBJ) $(C_CALLBACKS_OBJ)
+server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(S_CALLBACKS_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(COMMON_OBJ) $(CLIENT_OBJ) $(C_CALLBACKS_OBJ) $(CODEC_OBJ) $(FRAMEBUILDER_OBJ) $(TRANSPORT_OBJ)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Rules for building object files
@@ -167,6 +175,15 @@ $(BUILDDIR)/common.o: $(COMMON_SRC) $(INCDIR)/common.hpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BUILDDIR)/utils.o: $(UTILS_SRC) $(INCDIR)/utils.hpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(BUILDDIR)/codec.o: $(CODEC_SRC) $(INCDIR)/codec.hpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(BUILDDIR)/framebuilder.o: $(FRAMEBUILDER_SRC) $(INCDIR)/framebuilder.hpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(BUILDDIR)/transport.o: $(TRANSPORT_SRC) $(INCDIR)/transport.hpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # Clean target

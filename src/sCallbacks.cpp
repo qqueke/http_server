@@ -13,10 +13,10 @@
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
     _Function_class_(QUIC_STREAM_CALLBACK) QUIC_STATUS QUIC_API
-    HTTPServer::StreamCallback(_In_ HQUIC Stream, _In_opt_ void *Context,
+    HttpServer::StreamCallback(_In_ HQUIC Stream, _In_opt_ void *Context,
                                _Inout_ QUIC_STREAM_EVENT *Event) {
   // UNREFERENCED_PARAMETER(Context);
-  HTTPServer *server = (HTTPServer *)Context;
+  HttpServer *server = (HttpServer *)Context;
 
   // HTTPServer *server = HTTPServer::GetInstance();
   switch (Event->Type) {
@@ -80,21 +80,53 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     server->ParseStreamBuffer(Stream, server->QuicBufferMap[Stream], data);
 
     // std::unordered_map<std::string, std::string> headersMap;
+#ifdef ECHO
     std::cout << "HTTP3 Request:\n";
     for (const auto &header : server->QuicDecodedHeadersMap[Stream]) {
       std::cout << header.first << ": " << header.second << "\n";
     }
     std::cout << data << std::endl;
+#endif
     // bool acceptEncoding;
 
     // Validate Request
     server->ValidatePseudoHeaders(server->QuicDecodedHeadersMap[Stream]);
 
     // Route Request
-    std::string status = server->ServerRouter->RouteRequest(
+    auto [headers, body] = server->ServerRouter->RouteRequest(
         server->QuicDecodedHeadersMap[Stream][":method"],
-        server->QuicDecodedHeadersMap[Stream][":path"], data, Protocol::HTTP3,
-        (void *)Stream);
+        server->QuicDecodedHeadersMap[Stream][":path"]);
+
+    {
+      std::unordered_map<std::string, std::string> headersMap;
+      headersMap.reserve(2);
+
+      HttpCore::RespHeaderToPseudoHeader(headers, headersMap);
+
+      std::vector<uint8_t> encodedHeaders;
+
+      // uint64_t streamId{};
+      // auto len = (uint32_t)sizeof(streamId);
+      //
+      // if (QUIC_FAILED(MsQuic->GetParam(Stream, QUIC_PARAM_STREAM_ID, &len,
+      //                                  &streamId))) {
+      //   LogError("Failed to acquire stream id");
+      // }
+
+      server->EncodeQPACKHeaders(&Stream, headersMap, encodedHeaders);
+      // HttpCore::QPACK_EncodeHeaders(streamId, headersMap, encodedHeaders);
+
+      std::vector<std::vector<uint8_t>> frames;
+      frames.reserve(2);
+
+      frames.emplace_back(
+          server->BuildHttp3Frame(Frame::HEADERS, 0, encodedHeaders));
+
+      frames.emplace_back(server->BuildHttp3Frame(Frame::DATA, 0, {}, body));
+
+      server->SendBatch(Stream, frames, true);
+      // HttpCore::HTTP3_SendFrames(Stream, frames);
+    }
 
     auto endTime = std::chrono::high_resolution_clock::now();
 
@@ -102,14 +134,17 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 
     // std::cout << "Request handled in " << elapsed.count() << "
     // seconds\n";
-    std::ostringstream logStream;
-    logStream << "Protocol: HTTP3 "
-              << "Method: " << server->QuicDecodedHeadersMap[Stream][":method"]
-              << " Path: " << server->QuicDecodedHeadersMap[Stream][":path"]
-              << " Status: " << status << " Elapsed time: " << elapsed.count()
-              << " s";
-
-    LogRequest(logStream.str());
+    // std::ostringstream logStream;
+    // logStream << "Protocol: HTTP3 "
+    //           << "Method: " <<
+    //           server->QuicDecodedHeadersMap[Stream][":method"]
+    //           << " Path: " <<
+    //           server->QuicDecodedHeadersMap[Stream][":path"]
+    //           << " Status: " << status << " Elapsed time: " <<
+    //           elapsed.count()
+    //           << " s";
+    //
+    // LogRequest(logStream.str());
 
     server->QuicDecodedHeadersMap.erase(Stream);
     server->QuicBufferMap.erase(Stream);
@@ -144,7 +179,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 // The server's callback for connection events from MsQuic.
 _IRQL_requires_max_(DISPATCH_LEVEL)
     _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API
-    HTTPServer::ConnectionCallback(_In_ HQUIC Connection,
+    HttpServer::ConnectionCallback(_In_ HQUIC Connection,
                                    _In_opt_ void *Context,
                                    _Inout_ QUIC_CONNECTION_EVENT *Event) {
   UNREFERENCED_PARAMETER(Context);
@@ -208,11 +243,12 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     printf("[strm][%p] Peer started\n", Event->PEER_STREAM_STARTED.Stream);
 #endif
     MsQuic->SetCallbackHandler(Event->PEER_STREAM_STARTED.Stream,
-                               (void *)HTTPServer::StreamCallback, Context);
+                               (void *)HttpServer::StreamCallback, Context);
 
     break;
   case QUIC_CONNECTION_EVENT_RESUMED:
 
+    printf("[conn][%p] Connection resumed!\n", Connection);
     // The connection succeeded in doing a TLS resumption of a previous
     // connection's session.
 #ifdef QUIC_DEBUG
@@ -230,7 +266,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 // Using context to send HTTPServer instance
 _IRQL_requires_max_(PASSIVE_LEVEL)
     _Function_class_(QUIC_LISTENER_CALLBACK) QUIC_STATUS QUIC_API
-    HTTPServer::ListenerCallback(_In_ HQUIC Listener, _In_opt_ void *Context,
+    HttpServer::ListenerCallback(_In_ HQUIC Listener, _In_opt_ void *Context,
                                  _Inout_ QUIC_LISTENER_EVENT *Event) {
   UNREFERENCED_PARAMETER(Listener);
   UNREFERENCED_PARAMETER(Context);
@@ -243,7 +279,7 @@ _IRQL_requires_max_(PASSIVE_LEVEL)
     // app MUST set the callback handler before returning.
 
     MsQuic->SetCallbackHandler(Event->NEW_CONNECTION.Connection,
-                               (void *)HTTPServer::ConnectionCallback, Context);
+                               (void *)HttpServer::ConnectionCallback, Context);
     Status = MsQuic->ConnectionSetConfiguration(
         Event->NEW_CONNECTION.Connection, Configuration);
     break;

@@ -77,8 +77,8 @@ int main(int argc, char *argv[]) {
   if (GetFlag(argc, argv, "help") || GetFlag(argc, argv, "?")) {
     PrintUsage();
   } else if (GetFlag(argc, argv, "client")) {
-    std::unique_ptr<HTTPClient> client =
-        std::make_unique<HTTPClient>(argc, argv);
+    std::unique_ptr<HttpClient> client =
+        std::make_unique<HttpClient>(argc, argv);
 
     client->Run(argc, argv);
 
@@ -89,14 +89,11 @@ int main(int argc, char *argv[]) {
     signal(SIGTERM, signalHandler); // Termination signal
 
     {
-      // std::unique_ptr<HTTPServer> server =
-      //     std::make_unique<HTTPServer>(argc, argv);
+      std::unique_ptr<HttpServer> server =
+          std::make_unique<HttpServer>(argc, argv);
 
-      // std::unique_ptr<HTTPServer> server =
-      //     std::make_unique<HTTPServer::GetInstance()>;
-
-      HTTPServer::Initialize(argc, argv);
-      std::unique_ptr<HTTPServer> server(HTTPServer::GetInstance());
+      // HttpServer::Initialize(argc, argv);
+      // std::unique_ptr<HttpServer> server(HttpServer::GetInstance());
       // nice to have this as a function declared elsewhere
       // server->AddRoute("GET", "/hello", helloHandler);
       // server->AddRoute("GET", "/goodbye", goodbyeHandler);

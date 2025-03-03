@@ -9,7 +9,6 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <atomic>
 #include <cassert>
 #include <cerrno>
 #include <cstdint>
@@ -23,20 +22,12 @@
 #include "common.hpp"
 #include "router.hpp"
 
-class HTTPServer : public HTTPBase {
+class HttpServer : public HttpCore {
 private:
-  static HTTPServer *instance;
+  static HttpServer *instance;
   static std::mutex instanceMutex;
 
   std::mutex strerrorMutex;
-
-  std::atomic<int> activeConnections;
-
-  // TCP stuff
-  // int serverSock;
-  // sockaddr_in serverAddr;
-  // struct timeval timeout;
-  // SSL_CTX *ctx;
 
   // QUIC stuff
   QUIC_STATUS Status;
@@ -44,8 +35,6 @@ private:
   QUIC_ADDR Address;
 
   std::string threadSafeStrerror(int errnum);
-
-  HTTPServer(int argc, char *argv[]);
 
   void HandleHTTP1Request(SSL *clientSSL);
 
@@ -59,16 +48,17 @@ private:
   std::unordered_map<HQUIC, std::vector<uint8_t>> ConnectionSettings;
 
 public:
-  static void Initialize(int argc, char *argv[]);
-  static HTTPServer *GetInstance();
+  HttpServer(int argc, char *argv[]);
 
   std::unique_ptr<Router> ServerRouter;
 
-  HTTPServer(const HTTPServer &) = delete;
-  HTTPServer(HTTPServer &&) = delete;
-  HTTPServer &operator=(const HTTPServer &) = delete;
-  HTTPServer &operator=(HTTPServer &&) = delete;
-  ~HTTPServer();
+  HttpServer(const HttpServer &) = delete;
+  HttpServer(HttpServer &&) = delete;
+  HttpServer &operator=(const HttpServer &) = delete;
+  HttpServer &operator=(HttpServer &&) = delete;
+  ~HttpServer();
+
+  // int SendHttp2Response(std::string &headers, std::string &body);
 
   static int QPACK_ProcessHeader(void *hblock_ctx, struct lsxpack_header *xhdr);
 
@@ -85,7 +75,6 @@ public:
                                 _Inout_ QUIC_CONNECTION_EVENT *Event);
 
   // The server's callback for listener events from MsQuic.
-  // Using context to send HTTPServer instance
   _IRQL_requires_max_(PASSIVE_LEVEL)
       _Function_class_(QUIC_LISTENER_CALLBACK) QUIC_STATUS QUIC_API
       static ListenerCallback(_In_ HQUIC Listener, _In_opt_ void *Context,
@@ -94,12 +83,6 @@ public:
   /*------------PURE VIRTUAL FUNCTIONS -----------------------*/
   unsigned char LoadQUICConfiguration(
       _In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[]) override;
-
-  void QPACK_DecodeHeaders(HQUIC stream,
-                           std::vector<uint8_t> &encodedHeaders) override;
-
-  void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
-                         std::string &data) override;
 
   /*-------------------------------------------*/
 

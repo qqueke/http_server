@@ -13,19 +13,25 @@
 #include <vector>
 
 #include "crypto.h"
-
+#define ECHO
 #define _CRT_SECURE_NO_WARNINGS 1
 #define UDP_PORT 4567
 #ifndef UNREFERENCED_PARAMETER
 #define UNREFERENCED_PARAMETER(P) (void)(P)
 #endif
 
+// #define ROUTE_HANDLER                                                          \
+//   std::function<std::string(const std::string &, Protocol, void *,             \
+//                             const std::string)>
+
 #define ROUTE_HANDLER                                                          \
-  std::function<std::string(const std::string &, Protocol, void *,             \
-                            const std::string)>
+  std::function<std::pair<std::string, std::string>(const std::string &)>
+
 #define STATUS_CODE std::string
 
 enum class Protocol { HTTP1, HTTP2, HTTP3 };
+
+enum CompressionType { DEFLATE, GZIP };
 
 enum : int {
   BUFFER_SIZE = 1024,
@@ -94,7 +100,7 @@ enum Frame : uint8_t {
   CONTINUATION = 0x9
 };
 
-enum class HTTP2Settings : uint8_t {
+enum HTTP2Settings : uint16_t {
   HEADER_TABLE_SIZE = 0x1,      // Default: 4096
   ENABLE_PUSH = 0x2,            // Default: 1
   MAX_CONCURRENT_STREAMS = 0x3, // Default: Infinite
@@ -108,8 +114,13 @@ struct HTTP2Context {
   struct lshpack_enc *enc;
   uint32_t streamId;
 
-  HTTP2Context(SSL *s, struct lshpack_enc *e, uint32_t id)
-      : ssl(s), enc(e), streamId(id) {}
+  uint8_t instanceType;
+  void *instanceCtx;
+
+  HTTP2Context(SSL *s, struct lshpack_enc *e, uint32_t id, uint8_t type,
+               void *instance)
+      : ssl(s), enc(e), streamId(id), instanceType(type),
+        instanceCtx(instance) {}
 };
 
 extern const QUIC_API_TABLE *MsQuic;
@@ -136,8 +147,7 @@ typedef struct st_hblock_ctx {
   struct lsxpack_header xhdr;
   size_t buf_off;
   char buf[0x1000];
-  void *instance_ctx;
-  HQUIC stream;
+  std::unordered_map<std::string, std::string> *decodedHeadersMap;
 } hblock_ctx_t;
 
 typedef struct QUIC_CREDENTIAL_CONFIG_HELPER {
@@ -151,6 +161,9 @@ typedef struct QUIC_CREDENTIAL_CONFIG_HELPER {
 } QUIC_CREDENTIAL_CONFIG_HELPER;
 
 struct ssl_st; // Forward declaration of ssl_st
+
+uint64_t CompressFile(const std::string &inputFile,
+                      const std::string &outputFile, CompressionType type);
 
 bool isFlagSet(uint8_t flags, HTTP2Flags flag);
 

@@ -1,5 +1,6 @@
 #include "server.hpp"
 
+#include <fcntl.h>
 #include <lshpack.h>
 #include <msquic.h>
 #include <netdb.h>
@@ -9,12 +10,13 @@
 #include <openssl/ssl.h>
 #include <poll.h>
 #include <sys/poll.h>
+#include <sys/sendfile.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <zlib.h>
 
 #include <array>
-#include <atomic>
 #include <cassert>
 #include <cerrno>
 #include <cstddef>
@@ -24,7 +26,6 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <set>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -37,14 +38,8 @@
 #include "utils.hpp"
 
 // #define HTTP2_DEBUG
-static std::unordered_map<std::string, std::string> responseCache;
-static std::mutex responseMutex;
-static std::mutex cacheMutex;
 
 bool shouldShutdown(false);
-
-HTTPServer *HTTPServer::instance = nullptr;
-std::mutex HTTPServer::instanceMutex;
 
 int alpnSelectCallback(SSL *ssl, const unsigned char **out,
                        unsigned char *outlen, const unsigned char *in,
@@ -72,21 +67,124 @@ int alpnSelectCallback(SSL *ssl, const unsigned char **out,
   return SSL_TLSEXT_ERR_NOACK;
 }
 
-int HTTPServer::QPACK_ProcessHeader(void *hblock_ctx,
-                                    struct lsxpack_header *xhdr) {
-  std::string headerKey(xhdr->buf + xhdr->name_offset, xhdr->name_len);
-  std::string headerValue(xhdr->buf + xhdr->val_offset, xhdr->val_len);
+// std::string Router::StaticFileHandler(const std::string &filePath,
+//                                       bool acceptEncoding, Protocol protocol,
+//                                       void *context) {
+//   std::string headers = "HTTP/1.1 200 OK\r\n";
+//
+//   uint64_t fileSize = 0;
+//   if (acceptEncoding) {
+//     struct stat buf{};
+//     int error = stat((filePath + ".gz").c_str(), &buf);
+//     // File exists
+//     if (error == 0) {
+//       fileSize = buf.st_size;
+//     } else {
+//       fileSize = CompressFile(filePath, filePath + ".gz", GZIP);
+//     }
+//   }
+//
+//   if (fileSize != 0) {
+//     headers += "Content-Encoding: gzip\r\n";
+//     headers += "Content-Length: " + std::to_string(fileSize) + "\r\n\r\n";
+//   }
+//
+//   static constexpr std::string_view altSvcHeader =
+//       "Alt-Svc: h3=\":4567\"; ma=86400\r\n";
+//
+//   switch (protocol) {
+//   case Protocol::HTTP1:
+//
+//   {
+//     size_t headerEnd = headers.find("\r\n\r\n");
+//     if (headerEnd != std::string::npos) {
+//       headers.insert(headerEnd + 2, altSvcHeader);
+//     }
+//
+//     std::string response = headers + body;
+//     SSL *clientSSL = (SSL *)context;
+//
+//     sendFile(clientSSL, filePath, acceptEncoding);
+//     HttpCore::HTTP1_SendMessage(clientSSL, response);
+//   }
+//
+//   break;
+//   case Protocol::HTTP2:
+//
+//   {
+//     HTTP2Context *ctx = (HTTP2Context *)context;
+//
+//     SSL *clientSSL = ctx->ssl;
+//     struct lshpack_enc *enc = ctx->enc;
+//     uint32_t streamId = ctx->streamId;
+//
+//     std::unordered_map<std::string, std::string> headersMap;
+//
+//     headersMap.reserve(2);
+//
+//     HttpCore::RespHeaderToPseudoHeader(headers, headersMap);
+//
+//     headersMap["alt-svc"] = "h3=\":4567\"; ma=86400";
+//
+//     std::vector<uint8_t> headerFrame(256);
+//
+//     HttpCore::HPACK_EncodeHeaderIntoFrame(*enc, headersMap, headerFrame);
+//
+//     std::vector<std::vector<uint8_t>> frames;
+//
+//     frames.reserve(2);
+//
+//     HttpCore::HTTP2_FillHeaderFrame(headerFrame, streamId);
+//
+//     frames.emplace_back(std::move(headerFrame));
+//
+//     frames.emplace_back(
+//         std::move(HttpCore::HTTP2_BuildDataFrame(body, streamId)));
+//
+//     HttpCore::HTTP2_SendFrames(clientSSL, frames);
+//   }
+//
+//   break;
+//
+//   case Protocol::HTTP3:
+//
+//   {
+//     HQUIC Stream = (HQUIC)context;
+//     std::unordered_map<std::string, std::string> headersMap;
+//     headersMap.reserve(2);
+//
+//     HttpCore::RespHeaderToPseudoHeader(headers, headersMap);
+//
+//     std::vector<uint8_t> encodedHeaders;
+//
+//     uint64_t streamId{};
+//     uint32_t len = (uint32_t)sizeof(streamId);
+//     if (QUIC_FAILED(
+//             MsQuic->GetParam(Stream, QUIC_PARAM_STREAM_ID, &len, &streamId)))
+//             {
+//       LogError("Failed to acquire stream id");
+//     }
+//
+//     HttpCore::QPACK_EncodeHeaders(streamId, headersMap, encodedHeaders);
+//
+//     std::vector<std::vector<uint8_t>> frames;
+//     frames.reserve(2);
+//
+//     frames.emplace_back(HttpCore::HTTP3_BuildHeaderFrame(encodedHeaders));
+//
+//     frames.emplace_back(HttpCore::HTTP3_BuildDataFrame(body));
+//
+//     HttpCore::HTTP3_SendFrames(Stream, frames);
+//   }
+//
+//   break;
+//   default:
+//     LogError("Unknown Protocol");
+//     break;
+//   }
+// }
 
-  hblock_ctx_t *block_ctx = (hblock_ctx_t *)hblock_ctx;
-  // block_ctx->stream
-  HTTPServer *server = HTTPServer::GetInstance();
-
-  server->QuicDecodedHeadersMap[block_ctx->stream][headerKey] = headerValue;
-
-  return 0;
-}
-
-unsigned char HTTPServer::LoadQUICConfiguration(
+unsigned char HttpServer::LoadQUICConfiguration(
     _In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[]) {
   QUIC_SETTINGS Settings = {0};
 
@@ -174,110 +272,6 @@ unsigned char HTTPServer::LoadQUICConfiguration(
   }
 
   return TRUE;
-}
-
-void HTTPServer::QPACK_DecodeHeaders(HQUIC stream,
-                                     std::vector<uint8_t> &encodedHeaders) {
-  std::vector<struct lsqpack_dec> dec(1);
-
-  uint64_t streamId{};
-  uint32_t len = (uint32_t)sizeof(streamId);
-  if (QUIC_FAILED(
-          MsQuic->GetParam(stream, QUIC_PARAM_STREAM_ID, &len, &streamId))) {
-    LogError("Failed to acquire stream id");
-  }
-
-  struct lsqpack_dec_hset_if hset_if;
-  hset_if.dhi_unblocked = HTTPBase::dhiUnblocked;
-  hset_if.dhi_prepare_decode = HTTPBase::dhiPrepareDecode;
-  hset_if.dhi_process_header = QPACK_ProcessHeader;
-
-  enum lsqpack_dec_opts dec_opts {};
-  lsqpack_dec_init(dec.data(), NULL, 0x1000, 0, &hset_if, dec_opts);
-
-  // hblock_ctx_t *blockCtx = (hblock_ctx_t *)malloc(sizeof(hblock_ctx_t));
-
-  std::vector<hblock_ctx_t> blockCtx(1);
-
-  memset(&blockCtx.back(), 0, sizeof(hblock_ctx_t));
-  blockCtx.back().stream = stream;
-
-  const unsigned char *encodedHeadersPtr = encodedHeaders.data();
-  size_t totalHeaderSize = encodedHeaders.size();
-
-  enum lsqpack_read_header_status readStatus;
-
-  readStatus = lsqpack_dec_header_in(dec.data(), &blockCtx.back(), streamId,
-                                     totalHeaderSize, &encodedHeadersPtr,
-                                     totalHeaderSize, NULL, NULL);
-
-  lsqpack_dec_cleanup(dec.data());
-}
-
-void HTTPServer::ParseStreamBuffer(HQUIC Stream,
-                                   std::vector<uint8_t> &streamBuffer,
-                                   std::string &data) {
-  auto iter = streamBuffer.begin();
-
-  while (iter < streamBuffer.end()) {
-    // Ensure we have enough data for a frame (frameType + frameLength)
-    if (std::distance(iter, streamBuffer.end()) < 3) {
-      LogError("Bad frame format (Not enough data)");
-      break;
-    }
-
-    // Read the frame type
-    uint64_t frameType = ReadVarint(iter, streamBuffer.end());
-
-    // Read the frame length
-    uint64_t frameLength = ReadVarint(iter, streamBuffer.end());
-
-    // Ensure the payload doesn't exceed the bounds of the buffer
-    if (std::distance(iter, streamBuffer.end()) < frameLength) {
-      LogError("Payload exceeds buffer bounds");
-      break;
-    }
-
-    // Handle the frame based on the type
-    switch (frameType) {
-    case 0x01: // HEADERS frame
-      // std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
-
-      {
-        std::vector<uint8_t> encodedHeaders(iter, iter + frameLength);
-
-        QPACK_DecodeHeaders(Stream, encodedHeaders);
-
-        // headers = std::string(iter, iter + frameLength);
-      }
-      break;
-
-    case 0x00: // DATA frame
-      // std::cout << "[strm][" << Stream << "] Received DATA frame\n";
-      // Data might have been transmitted over multiple frames
-      data += std::string(iter, iter + frameLength);
-      break;
-
-    default: // Unknown frame type
-      std::cout << "[strm][" << Stream << "] Unknown frame type: 0x" << std::hex
-                << frameType << std::dec << "\n";
-      break;
-    }
-
-    iter += frameLength;
-  }
-
-  // Optionally, print any remaining unprocessed data in the buffer
-  if (iter < streamBuffer.end()) {
-    std::ostringstream oss;
-    oss << "Data left to read on Buffer from Stream, 0x" << std::hex << Stream
-        << "!";
-    LogError(oss.str());
-
-    // std::cout.write(reinterpret_cast<const char *>(&(*iter)),
-    //                 streamBuffer.end() - iter);
-    // std::cout << std::endl;
-  }
 }
 
 static void verifyContentType(const std::string &filePath,
@@ -419,69 +413,12 @@ static void sendFile(SSL *clientSSL, const std::string &filePath,
   close(fileFd);
 }
 
-enum CompressionType { DEFLATE, GZIP };
-
-bool compressData(const std::string &inputFile, const std::string &outputFile,
-                  CompressionType type) {
-  std::ifstream inFileStream(inputFile, std::ios::binary);
-  if (!inFileStream) {
-    LogError("Failed to open input file\n");
-    return false;
-  }
-
-  // Create output file
-  std::ofstream file(outputFile, std::ios::binary | std::ios::out);
-  file.close();
-
-  std::ofstream outFileStream(outputFile, std::ios::binary);
-  if (!outFileStream) {
-    LogError("Failed to open output file\n");
-    return false;
-  }
-
-  // Will read file stream as chars until end of file ({}), to the vector
-  std::vector<char> buffer(std::istreambuf_iterator<char>(inFileStream), {});
-
-  uLongf compressedSize = compressBound(buffer.size());
-  std::vector<Bytef> compressedData(compressedSize);
-
-  z_stream zStream = {};
-  zStream.next_in = reinterpret_cast<Bytef *>(buffer.data());
-  zStream.avail_in = buffer.size();
-  zStream.next_out = compressedData.data();
-  zStream.avail_out = compressedSize;
-
-  int windowBits =
-      (type == GZIP) ? 15 + 16 : 15; // 15 for Deflate, +16 for Gzip
-
-  if (deflateInit2(&zStream, Z_BEST_COMPRESSION, Z_DEFLATED, windowBits, 8,
-                   Z_DEFAULT_STRATEGY) != Z_OK) {
-    LogError("Compression initialization failed\n");
-    return false;
-  }
-
-  if (deflate(&zStream, Z_FINISH) != Z_STREAM_END) {
-    LogError("Compression failed\n");
-    deflateEnd(&zStream);
-    return false;
-  }
-
-  outFileStream.write(reinterpret_cast<const char *>(compressedData.data()),
-                      (long)zStream.total_out);
-
-  deflateEnd(&zStream);
-
-  std::cout << ((type == GZIP) ? "Gzip" : "Deflate")
-            << " compression successful: " << outputFile << "\n";
-  return true;
-}
-
-std::string HTTPServer::threadSafeStrerror(int errnum) {
+std::string HttpServer::threadSafeStrerror(int errnum) {
   std::lock_guard<std::mutex> lock(strerrorMutex);
   return {strerror(errnum)};
 }
 
-void HTTPServer::staticFileHandler(SSL *clientSSL, const std::string &filePath,
+void HttpServer::staticFileHandler(SSL *clientSSL, const std::string &filePath,
                                    bool acceptEncoding) {
   if (acceptEncoding) {
     // find if a precomputed compressed file exists and send it
@@ -494,7 +431,7 @@ void HTTPServer::staticFileHandler(SSL *clientSSL, const std::string &filePath,
     }
 
     // otherwise compress it on the fly and send It
-    if (compressData(filePath, filePath + ".gz", GZIP)) {
+    if (CompressFile(filePath, filePath + ".gz", GZIP)) {
       sendFile(clientSSL, filePath + ".gz", acceptEncoding);
       return;
     }
@@ -505,13 +442,7 @@ void HTTPServer::staticFileHandler(SSL *clientSSL, const std::string &filePath,
   sendFile(clientSSL, filePath, acceptEncoding);
 }
 
-void HTTPServer::storeInCache(const std::string &cacheKey,
-                              const std::string &response) {
-  std::lock_guard<std::mutex> lock(cacheMutex);
-  responseCache[cacheKey] = response;
-}
-
-void HTTPServer::ValidateHeaders(const std::string &request,
+void HttpServer::ValidateHeaders(const std::string &request,
                                  std::string &method, std::string &path,
                                  std::string &body, bool &acceptEncoding) {
   std::istringstream requestStream(request);
@@ -600,16 +531,11 @@ void HTTPServer::ValidateHeaders(const std::string &request,
   std::cout << "Request successfully validated!\n";
 }
 
-void HTTPServer::ValidatePseudoHeaders(
+void HttpServer::ValidatePseudoHeaders(
     std::unordered_map<std::string, std::string> &headersMap) {
   static constexpr std::array<std::string_view, 3> requiredHeaders = {
       ":method", ":scheme", ":path"};
 
-  // std::cout << "received headers:\n";
-  // for (const auto &[key, value] : headersMap) {
-  //   std::cout << key << ": " << value << "\n";
-  // }
-  // std::cout << std::endl;
   for (const auto &header : requiredHeaders) {
     if (headersMap.find(std::string(header)) == headersMap.end()) {
       // LogError("Failed to validate pseudo-headers (missing header field)");
@@ -618,21 +544,15 @@ void HTTPServer::ValidatePseudoHeaders(
       return;
     }
   }
-
-  // If all validations pass
-  // std::cout << "Request successfully validated pseudo-headers!\n";
 }
 
-void HTTPServer::HandleHTTP2Request(SSL *ssl) {
+void HttpServer::HandleHTTP2Request(SSL *ssl) {
   static constexpr std::array<uint8_t, 24> HTTP2_PrefaceBytes = {
       0x50, 0x52, 0x49, 0x20, 0x2A, 0x20, 0x48, 0x54, 0x54, 0x50, 0x2F, 0x32,
       0x2E, 0x30, 0x0D, 0x0A, 0x0D, 0x0A, 0x53, 0x4D, 0x0D, 0x0A, 0x0D, 0x0A};
 
   std::vector<uint8_t> buffer;
   buffer.reserve(65535);
-
-  std::vector<uint8_t> frame;
-  frame.reserve(FRAME_HEADER_LENGTH + 256);
 
   struct lshpack_dec dec{};
   lshpack_dec_init(&dec);
@@ -648,7 +568,7 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
   std::unordered_map<uint32_t, std::vector<uint8_t>> EncodedHeadersBufferMap;
   std::unordered_map<uint32_t, std::string> TcpDataMap;
 
-  std::string status{};
+  // std::string auto [headers, body]{};
 
   uint32_t connectionWindowSize{};
   std::unordered_map<uint32_t, uint32_t> streamWindowSizeMap;
@@ -659,42 +579,22 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
   bool receivedPreface = false;
 
   uint32_t nRequests = 0;
-  uint8_t retryCount = 0;
 
-  int offset = 0;
+  int readOffset = 0;
+  int writeOffset = 0;
   int bytesReceived = 0;
   size_t nReadableBytes = 0;
 
   // TODO: implement circular buffer
 
   while (!shouldShutdown && !GOAWAY) {
-    bytesReceived =
-        SSL_read(ssl, buffer.data() + offset, (int)buffer.capacity() - offset);
-
-    if (bytesReceived == 0) {
-      // LogError("Client closed the connection");
+    bytesReceived = Receive(ssl, buffer, writeOffset);
+    if (bytesReceived == ERROR) {
       break;
-    } else if (bytesReceived < 0) {
-      int error = SSL_get_error(ssl, bytesReceived);
-
-      if (error == SSL_ERROR_WANT_READ || error == SSL_ERROR_WANT_WRITE) {
-        if (retryCount < MAX_RETRIES) {
-          retryCount++;
-          std::this_thread::sleep_for(std::chrono::milliseconds(RECV_DELAY_MS));
-          continue;
-        } else {
-          LogError("Max retries reached while trying to receive data");
-          break;
-        }
-      } else {
-        LogError(GetSSLErrorMessage(error));
-        break;
-      }
     }
 
+    writeOffset += bytesReceived;
     nReadableBytes += (size_t)bytesReceived;
-
-    retryCount = 0;
 
     if (!receivedPreface) {
       if (nReadableBytes < PREFACE_LENGTH) {
@@ -704,20 +604,23 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
       if (memcmp(HTTP2_PrefaceBytes.data(), buffer.data(), PREFACE_LENGTH) !=
           0) {
         LogError("Invalid HTTP/2 preface, closing connection.");
-        continue;
+        break;
       }
 
 #ifdef HTTP2_DEBUG
       std::cout << "HTTP/2 Connection Preface received!\n";
 #endif
+
+      Send(ssl, BuildHttp2Frame(Frame::SETTINGS));
+
       receivedPreface = true;
-      offset = PREFACE_LENGTH;
+      readOffset = PREFACE_LENGTH;
       nReadableBytes -= PREFACE_LENGTH;
     }
 
     // If we received atleast the frame header
     while (FRAME_HEADER_LENGTH <= nReadableBytes && !GOAWAY) {
-      uint8_t *framePtr = buffer.data() + offset;
+      uint8_t *framePtr = buffer.data() + readOffset;
 
       uint32_t payloadLength = (static_cast<uint32_t>(framePtr[0]) << 16) |
                                (static_cast<uint32_t>(framePtr[1]) << 8) |
@@ -725,11 +628,8 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
 
       if (payloadLength > MAX_PAYLOAD_FRAME_SIZE) {
         GOAWAY = true;
-        {
-          HTTPBase::HTTP2_FillGoAwayFrame(frame, 0,
-                                          HTTP2ErrorCode::FRAME_SIZE_ERROR);
-          HTTPBase::HTTP2_SendFrame(ssl, frame);
-        }
+        Send(ssl, BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                  HTTP2ErrorCode::FRAME_SIZE_ERROR));
         break;
       }
 
@@ -742,11 +642,9 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
 
       if (expectingContFrame && frameType != Frame::CONTINUATION) {
         GOAWAY = true;
-        {
-          HTTPBase::HTTP2_FillGoAwayFrame(frame, frameStream,
-                                          HTTP2ErrorCode::PROTOCOL_ERROR);
-          HTTPBase::HTTP2_SendFrame(ssl, frame);
-        }
+
+        Send(ssl, BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                  HTTP2ErrorCode::PROTOCOL_ERROR));
         break;
       }
 
@@ -763,24 +661,47 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
         // std::cout << TcpDataMap[frameStream] << std::endl;
 
         if (isFlagSet(frameFlags, END_STREAM_FLAG)) {
-          // std::cout << "Request: \n";
-          // for (auto &[key, value] : TcpDecodedHeadersMap[frameStream]) {
-          //   std::cout << key << ": " << value << "\n";
-          // }
-          // std::cout << TcpDataMap[frameStream] << std::endl;
+#ifdef ECHO
+          std::cout << "HTTP2 Request: \n";
+          for (auto &[key, value] : TcpDecodedHeadersMap[frameStream]) {
+            std::cout << key << ": " << value << "\n";
+          }
+          std::cout << TcpDataMap[frameStream] << std::endl;
+#endif
+          HttpServer::ValidatePseudoHeaders(TcpDecodedHeadersMap[frameStream]);
 
-          HTTPServer::ValidatePseudoHeaders(TcpDecodedHeadersMap[frameStream]);
-
-          HTTP2Context context(ssl, &enc, frameStream);
-          status = ServerRouter->RouteRequest(
+          auto [headers, body] = ServerRouter->RouteRequest(
               TcpDecodedHeadersMap[frameStream][":method"],
               TcpDecodedHeadersMap[frameStream][":path"],
-              TcpDataMap[frameStream], Protocol::HTTP2, &context);
+              TcpDataMap[frameStream]);
 
-          {
-            HTTPBase::HTTP2_FillWindowUpdateFrame(frame, 0, 65536);
-            HTTPBase::HTTP2_SendFrame(ssl, frame);
+          std::unordered_map<std::string, std::string> headersMap;
+          headersMap.reserve(2);
+
+          HttpCore::RespHeaderToPseudoHeader(headers, headersMap);
+          headersMap["alt-svc"] = "h3=\":4567\"; ma=86400";
+
+          std::vector<uint8_t> encodedHeaders(256);
+
+          EncodeHPACKHeaders(enc, headersMap, encodedHeaders);
+
+          if (body == "") {
+            Send(ssl, BuildHttp2Frame(Frame::HEADERS, 0, frameStream, 0, 0,
+                                      encodedHeaders));
+
+          } else {
+            std::vector<std::vector<uint8_t>> frames;
+            frames.reserve(2);
+            frames.emplace_back(BuildHttp2Frame(Frame::HEADERS, 0, frameStream,
+                                                0, 0, encodedHeaders));
+
+            frames.emplace_back(
+                BuildHttp2Frame(Frame::DATA, 0, frameStream, 0, 0, {}, body));
+
+            SendBatch(ssl, frames);
           }
+
+          Send(ssl, BuildHttp2Frame(Frame::WINDOW_UPDATE, 0, 0, 0, 65536));
 
           ++nRequests;
 
@@ -797,11 +718,8 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
 
         if (frameStream == 0) {
           GOAWAY = true;
-          {
-            HTTPBase::HTTP2_FillGoAwayFrame(frame, frameStream,
-                                            HTTP2ErrorCode::PROTOCOL_ERROR);
-            HTTPBase::HTTP2_SendFrame(ssl, frame);
-          }
+          Send(ssl, BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                    HTTP2ErrorCode::PROTOCOL_ERROR));
           break;
         }
 
@@ -824,12 +742,8 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
               payloadEnd - headerBlockStart - padLength;
 
           if (headerBlockStart + headerBlockLength > payloadEnd) {
-            {
-              HTTPBase::HTTP2_FillRstStreamFrame(
-                  frame, frameStream, HTTP2ErrorCode::FRAME_SIZE_ERROR);
-
-              HTTPBase::HTTP2_SendFrame(ssl, frame);
-            }
+            Send(ssl, BuildHttp2Frame(Frame::RST_STREAM, 0, frameStream,
+                                      HTTP2ErrorCode::FRAME_SIZE_ERROR));
             break;
           }
 
@@ -840,32 +754,50 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
 
           if (isFlagSet(frameFlags, END_STREAM_FLAG) &&
               isFlagSet(frameFlags, END_HEADERS_FLAG)) {
-            HTTPBase::HPACK_DecodeHeaders(dec,
-                                          TcpDecodedHeadersMap[frameStream],
-                                          EncodedHeadersBufferMap[frameStream]);
+            DecodeHPACKHeaders(dec, EncodedHeadersBufferMap[frameStream],
+                               TcpDecodedHeadersMap[frameStream]);
 
-            HTTPServer::ValidatePseudoHeaders(
+#ifdef ECHO
+            std::cout << "HTTP2 Request: \n";
+            for (auto &[key, value] : TcpDecodedHeadersMap[frameStream]) {
+              std::cout << key << ": " << value << "\n";
+            }
+            std::cout << TcpDataMap[frameStream] << std::endl;
+#endif
+
+            HttpServer::ValidatePseudoHeaders(
                 TcpDecodedHeadersMap[frameStream]);
 
-            HTTP2Context context(ssl, &enc, frameStream);
-
-            // std::cout << "Request: \n";
-            // for (auto &[key, value] : TcpDecodedHeadersMap[frameStream]) {
-            //   std::cout << key << ": " << value << "\n";
-            // }
-            // std::cout << TcpDataMap[frameStream] << std::endl;
-
-            status = ServerRouter->RouteRequest(
+            auto [headers, body] = ServerRouter->RouteRequest(
                 TcpDecodedHeadersMap[frameStream][":method"],
-                TcpDecodedHeadersMap[frameStream][":path"],
-                TcpDataMap[frameStream], Protocol::HTTP2, &context);
+                TcpDecodedHeadersMap[frameStream][":path"]);
 
-            // Try to prevent stream from stalling by sending a new window
-            // update
-            {
-              HTTPBase::HTTP2_FillWindowUpdateFrame(frame, 0, 65536);
-              HTTPBase::HTTP2_SendFrame(ssl, frame);
+            std::unordered_map<std::string, std::string> headersMap;
+            headersMap.reserve(2);
+
+            HttpCore::RespHeaderToPseudoHeader(headers, headersMap);
+            headersMap["alt-svc"] = "h3=\":4567\"; ma=86400";
+
+            std::vector<uint8_t> encodedHeaders(256);
+
+            EncodeHPACKHeaders(enc, headersMap, encodedHeaders);
+
+            if (body == "") {
+              Send(ssl, BuildHttp2Frame(Frame::HEADERS, 0, frameStream, 0, 0,
+                                        encodedHeaders));
+            } else {
+              std::vector<std::vector<uint8_t>> frames;
+              frames.reserve(2);
+              frames.emplace_back(BuildHttp2Frame(
+                  Frame::HEADERS, 0, frameStream, 0, 0, encodedHeaders));
+
+              frames.emplace_back(
+                  BuildHttp2Frame(Frame::DATA, 0, frameStream, 0, 0, {}, body));
+
+              SendBatch(ssl, frames);
             }
+
+            Send(ssl, BuildHttp2Frame(Frame::WINDOW_UPDATE, 0, 0, 0, 65536));
 
             ++nRequests;
             TcpDataMap.erase(frameStream);
@@ -875,9 +807,8 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
           }
 
           if (isFlagSet(frameFlags, END_HEADERS_FLAG)) {
-            HTTPBase::HPACK_DecodeHeaders(dec,
-                                          TcpDecodedHeadersMap[frameStream],
-                                          EncodedHeadersBufferMap[frameStream]);
+            DecodeHPACKHeaders(dec, EncodedHeadersBufferMap[frameStream],
+                               TcpDecodedHeadersMap[frameStream]);
           } else {
             expectingContFrame = true;
           }
@@ -898,20 +829,13 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
 #endif
         if (frameStream == 0) {
           GOAWAY = true;
-          {
-            HTTPBase::HTTP2_FillGoAwayFrame(frame, frameStream,
-                                            HTTP2ErrorCode::PROTOCOL_ERROR);
-            HTTPBase::HTTP2_SendFrame(ssl, frame);
-          }
-
+          Send(ssl, BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                    HTTP2ErrorCode::PROTOCOL_ERROR));
           break;
         } else if (payloadLength != 4) {
           GOAWAY = true;
-          {
-            HTTPBase::HTTP2_FillGoAwayFrame(frame, frameStream,
-                                            HTTP2ErrorCode::FRAME_SIZE_ERROR);
-            HTTPBase::HTTP2_SendFrame(ssl, frame);
-          }
+          Send(ssl, BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                    HTTP2ErrorCode::FRAME_SIZE_ERROR));
           break;
         }
 
@@ -931,14 +855,33 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
         std::cout << "[strm][" << frameStream << "] SETTINGS frame\n";
 #endif
 
-        {
-          if (isFlagSet(frameFlags, HTTP2Flags::NONE_FLAG)) {
-            // Parse their settings and update this connection settings
-            // to be the minimum between ours and theirs
-          }
+        if (payloadLength % 6 != 0) {
+          GOAWAY = true;
+          Send(ssl, BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                    HTTP2ErrorCode::FRAME_SIZE_ERROR));
+          break;
+        } else if (frameStream != 0) {
+          GOAWAY = true;
+          Send(ssl, BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                    HTTP2ErrorCode::FRAME_SIZE_ERROR));
+          break;
+        }
 
-          HTTPBase::HTTP2_FillSettingsFrame(frame, frameFlags);
-          HTTPBase::HTTP2_SendFrame(ssl, frame);
+        if (isFlagSet(frameFlags, HTTP2Flags::NONE_FLAG)) {
+          // Parse their settings and update this connection settings
+          // to be the minimum between ours and theirs
+
+          Send(ssl,
+               BuildHttp2Frame(Frame::SETTINGS, HTTP2Flags::SETTINGS_ACK_FLAG));
+
+        } else if (isFlagSet(frameFlags, HTTP2Flags::SETTINGS_ACK_FLAG)) {
+          if (payloadLength != 0) {
+            GOAWAY = true;
+
+            Send(ssl, BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                      HTTP2ErrorCode::FRAME_SIZE_ERROR));
+            break;
+          }
         }
 
         break;
@@ -953,34 +896,27 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
 
         if (frameStream != 0) {
           GOAWAY = true;
-          {
-            HTTPBase::HTTP2_FillGoAwayFrame(frame, frameStream,
-                                            HTTP2ErrorCode::PROTOCOL_ERROR);
-            HTTPBase::HTTP2_SendFrame(ssl, frame);
-          }
-
+          Send(ssl, BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                    HTTP2ErrorCode::PROTOCOL_ERROR));
           break;
         } else if (payloadLength != 8) {
           GOAWAY = true;
-          {
-            HTTPBase::HTTP2_FillGoAwayFrame(frame, frameStream,
-                                            HTTP2ErrorCode::FRAME_SIZE_ERROR);
-            HTTPBase::HTTP2_SendFrame(ssl, frame);
-          }
+          Send(ssl, BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                    HTTP2ErrorCode::FRAME_SIZE_ERROR));
           break;
         }
 
         if (!isFlagSet(frameFlags, HTTP2Flags::PING_ACK_FLAG)) {
-          {
-            if (frame.size() != FRAME_HEADER_LENGTH + payloadLength) {
-              frame.resize(FRAME_HEADER_LENGTH + payloadLength);
-            }
-
-            memcpy(frame.data(), framePtr, FRAME_HEADER_LENGTH + payloadLength);
-            frame[4] = HTTP2Flags::PING_ACK_FLAG;
-
-            HTTPBase::HTTP2_SendFrame(ssl, frame);
-          }
+          // {
+          //   if (frame.size() != FRAME_HEADER_LENGTH + payloadLength) {
+          //     frame.resize(FRAME_HEADER_LENGTH + payloadLength);
+          //   }
+          //
+          //   memcpy(frame.data(), framePtr, FRAME_HEADER_LENGTH +
+          //   payloadLength); frame[4] = HTTP2Flags::PING_ACK_FLAG;
+          //
+          //   Send(ssl, frame);
+          // }
         }
 
         break;
@@ -991,18 +927,6 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
         std::cout << "[strm][" << frameStream << "] GOAWAY frame\n";
 #endif
         GOAWAY = true;
-
-        // ACK?
-        // {
-        //   HTTPBase::HTTP2_BuildGoAwayFrame2(frame, frameStream,
-        //                                     HTTP2ErrorCode::NO_ERROR);
-        //   HTTPBase::HTTP2_SendFrame(ssl, frame);
-        // }
-
-        // TcpDataMap.erase(frameStream);
-        // TcpDecodedHeadersMap.erase(frameStream);
-        // EncodedHeadersBufferMap.erase(frameStream);
-
         break;
 
       case Frame::WINDOW_UPDATE:
@@ -1018,21 +942,13 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
           // std::cout << "Window increment: " << windowIncrement << "\n";
           if (windowIncrement == 0) {
             GOAWAY = true;
-
-            {
-              HTTPBase::HTTP2_FillGoAwayFrame(frame, frameStream,
-                                              HTTP2ErrorCode::PROTOCOL_ERROR);
-              HTTPBase::HTTP2_SendFrame(ssl, frame);
-            }
+            Send(ssl, BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                      HTTP2ErrorCode::FRAME_SIZE_ERROR));
             break;
           } else if (payloadLength != 4) {
             GOAWAY = true;
-
-            {
-              HTTPBase::HTTP2_FillGoAwayFrame(frame, frameStream,
-                                              HTTP2ErrorCode::FRAME_SIZE_ERROR);
-              HTTPBase::HTTP2_SendFrame(ssl, frame);
-            }
+            Send(ssl, BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                      HTTP2ErrorCode::FRAME_SIZE_ERROR));
             break;
           }
 
@@ -1040,21 +956,16 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
             connectionWindowSize += windowIncrement;
             if (connectionWindowSize > MAX_FLOW_WINDOW_SIZE) {
               GOAWAY = true;
-              {
-                HTTPBase::HTTP2_FillGoAwayFrame(
-                    frame, frameStream, HTTP2ErrorCode::FLOW_CONTROL_ERROR);
-                HTTPBase::HTTP2_SendFrame(ssl, frame);
-              }
+
+              Send(ssl, BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                        HTTP2ErrorCode::FLOW_CONTROL_ERROR));
               break;
             }
           } else {
             streamWindowSizeMap[frameStream] += windowIncrement;
             if (streamWindowSizeMap[frameStream] > MAX_FLOW_WINDOW_SIZE) {
-              {
-                HTTPBase::HTTP2_FillGoAwayFrame(
-                    frame, frameStream, HTTP2ErrorCode::FLOW_CONTROL_ERROR);
-                HTTPBase::HTTP2_SendFrame(ssl, frame);
-              }
+              Send(ssl, BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                        HTTP2ErrorCode::FLOW_CONTROL_ERROR));
               break;
             }
           }
@@ -1069,11 +980,8 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
 
         if (frameStream == 0) {
           GOAWAY = true;
-          {
-            HTTPBase::HTTP2_FillGoAwayFrame(frame, frameStream,
-                                            HTTP2ErrorCode::PROTOCOL_ERROR);
-            HTTPBase::HTTP2_SendFrame(ssl, frame);
-          }
+          Send(ssl, BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                    HTTP2ErrorCode::PROTOCOL_ERROR));
           break;
         }
 
@@ -1087,24 +995,50 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
               isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             expectingContFrame = false;
 
-            HTTPBase::HPACK_DecodeHeaders(dec,
-                                          TcpDecodedHeadersMap[frameStream],
-                                          EncodedHeadersBufferMap[frameStream]);
+            DecodeHPACKHeaders(dec, EncodedHeadersBufferMap[frameStream],
+                               TcpDecodedHeadersMap[frameStream]);
 
-            HTTPServer::ValidatePseudoHeaders(
+#ifdef ECHO
+            std::cout << "HTTP2 Request: \n";
+            for (auto &[key, value] : TcpDecodedHeadersMap[frameStream]) {
+              std::cout << key << ": " << value << "\n";
+            }
+#endif
+
+            HttpServer::ValidatePseudoHeaders(
                 TcpDecodedHeadersMap[frameStream]);
 
-            HTTP2Context context(ssl, &enc, frameStream);
-
-            status = ServerRouter->RouteRequest(
+            auto [headers, body] = ServerRouter->RouteRequest(
                 TcpDecodedHeadersMap[frameStream][":method"],
-                TcpDecodedHeadersMap[frameStream][":path"],
-                TcpDataMap[frameStream], Protocol::HTTP2, &context);
+                TcpDecodedHeadersMap[frameStream][":path"]);
 
-            {
-              HTTPBase::HTTP2_FillWindowUpdateFrame(frame, 0, 65536);
-              HTTPBase::HTTP2_SendFrame(ssl, frame);
+            std::unordered_map<std::string, std::string> headersMap;
+            headersMap.reserve(2);
+
+            HttpCore::RespHeaderToPseudoHeader(headers, headersMap);
+            headersMap["alt-svc"] = "h3=\":4567\"; ma=86400";
+
+            std::vector<uint8_t> encodedHeaders(256);
+
+            EncodeHPACKHeaders(enc, headersMap, encodedHeaders);
+
+            if (body == "") {
+              Send(ssl, BuildHttp2Frame(Frame::HEADERS, 0, frameStream, 0, 0,
+                                        encodedHeaders));
+
+            } else {
+              std::vector<std::vector<uint8_t>> frames;
+              frames.reserve(2);
+              frames.emplace_back(BuildHttp2Frame(
+                  Frame::HEADERS, 0, frameStream, 0, 0, encodedHeaders));
+
+              frames.emplace_back(
+                  BuildHttp2Frame(Frame::DATA, 0, frameStream, 0, 0, {}, body));
+
+              SendBatch(ssl, frames);
             }
+
+            Send(ssl, BuildHttp2Frame(Frame::WINDOW_UPDATE, 0, 0, 0, 65536));
 
             ++nRequests;
 
@@ -1116,11 +1050,9 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
 
           if (isFlagSet(frameFlags, END_HEADERS_FLAG)) {
             expectingContFrame = false;
-            // Decode and wait for request body
+            DecodeHPACKHeaders(dec, EncodedHeadersBufferMap[frameStream],
+                               TcpDecodedHeadersMap[frameStream]);
 
-            HTTPBase::HPACK_DecodeHeaders(dec,
-                                          TcpDecodedHeadersMap[frameStream],
-                                          EncodedHeadersBufferMap[frameStream]);
           }
           // Expecting another continuation frame ...
           else {
@@ -1136,14 +1068,15 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
       }
 
       // Move the offset to the next frame
-      offset += (int)FRAME_HEADER_LENGTH + payloadLength;
+      readOffset += (int)FRAME_HEADER_LENGTH + payloadLength;
 
       // Decrement readably bytes by the current frame size
       nReadableBytes -= (size_t)FRAME_HEADER_LENGTH + payloadLength;
     }
 
     if (nReadableBytes == 0) {
-      offset = 0;
+      writeOffset = 0;
+      readOffset = 0;
     }
   }
 
@@ -1166,7 +1099,7 @@ void HTTPServer::HandleHTTP2Request(SSL *ssl) {
   // LogRequest(logStream.str());
 }
 
-void HTTPServer::HandleHTTP1Request(SSL *ssl) {
+void HttpServer::HandleHTTP1Request(SSL *ssl) {
   auto startTime = std::chrono::high_resolution_clock::now();
   std::array<char, BUFFER_SIZE> buffer{};
   std::string request;
@@ -1210,8 +1143,20 @@ void HTTPServer::HandleHTTP1Request(SSL *ssl) {
 
     ValidateHeaders(request, method, path, body, acceptEncoding);
 
-    status =
-        ServerRouter->RouteRequest(method, path, body, Protocol::HTTP1, ssl);
+    auto [headers, resBody] = ServerRouter->RouteRequest(method, path, body);
+
+    static constexpr std::string_view altSvcHeader =
+        "Alt-Svc: h3=\":4567\"; ma=86400\r\n";
+
+    size_t headerEnd = headers.find("\r\n\r\n");
+    if (headerEnd != std::string::npos) {
+      headers.insert(headerEnd + 2, altSvcHeader);
+    }
+
+    std::string response = headers + resBody;
+
+    std::vector<uint8_t> responseBytes(response.begin(), response.end());
+    Send(ssl, responseBytes);
   }
 
   // Timer should end  here and log it to the file
@@ -1228,7 +1173,7 @@ void HTTPServer::HandleHTTP1Request(SSL *ssl) {
   LogRequest(logStream.str());
 }
 
-void HTTPServer::RequestThreadHandler(int clientSocket) {
+void HttpServer::RequestThreadHandler(int clientSocket) {
   // Create SSL object
   SSL *ssl = SSL_new(SSL_ctx);
 
@@ -1262,16 +1207,6 @@ void HTTPServer::RequestThreadHandler(int clientSocket) {
     }
   }
 
-  // if (activeConnections >= MAX_CONNECTIONS) {
-  //   ServerRouter->RouteRequest("BR", "", "", Protocol::HTTP1, ssl);
-  //   LogError("Connections limit exceeded");
-  //   SSL_free(ssl);
-  //   close(clientSock);
-  //   return;
-  // }
-  //
-  // activeConnections++;
-
   // Protocol must not be freed
   const unsigned char *protocol = nullptr;
   unsigned int protocolLen = 0;
@@ -1288,32 +1223,24 @@ void HTTPServer::RequestThreadHandler(int clientSocket) {
   // SSL_shutdown(ssl);
   SSL_free(ssl);
   close(clientSocket);
-  // activeConnections--;
 }
 
-HTTPServer::~HTTPServer() {
-  // if (serverSock != -1) {
-  //   close(serverSock);
-  // }
-
+HttpServer::~HttpServer() {
   // Wait for TCP thread to close the socket and set it to -1
   while (TCP_Socket != -1) {
   }
 
-  // lshpack_enc_cleanup(&enc);
-  // lshpack_dec_cleanup(&dec);
   SSL_CTX_free(SSL_ctx);
 
-  LogError("Server shutdown.");
   std::cout << "Server shutdown gracefully" << std::endl;
 }
 
-void HTTPServer::AddRoute(const std::string &method, const std::string &path,
+void HttpServer::AddRoute(const std::string &method, const std::string &path,
                           const ROUTE_HANDLER &handler) {
   ServerRouter->AddRoute(method, path, handler);
 }
 
-void HTTPServer::RunTCP() {
+void HttpServer::RunTCP() {
   if (listen(TCP_Socket, MAX_PENDING_CONNECTIONS) == ERROR) {
     LogError(threadSafeStrerror(errno));
     return;
@@ -1406,7 +1333,7 @@ void HTTPServer::RunTCP() {
   TCP_Socket = -1;
 }
 
-void HTTPServer::RunQUIC() {
+void HttpServer::RunQUIC() {
   // Starts listening for incoming connections.
   if (QUIC_FAILED(Status =
                       MsQuic->ListenerStart(Listener, &Alpn, 1, &Address))) {
@@ -1423,17 +1350,16 @@ void HTTPServer::RunQUIC() {
   }
 }
 
-void HTTPServer::Run() {
-  std::thread quicThread(&HTTPServer::RunQUIC, this);
+void HttpServer::Run() {
+  std::thread quicThread(&HttpServer::RunQUIC, this);
   quicThread.detach();
 
   RunTCP();
 }
 
-void HTTPServer::PrintFromServer() { std::cout << "Hello from server\n"; }
+void HttpServer::PrintFromServer() { std::cout << "Hello from server\n"; }
 
-HTTPServer::HTTPServer(int argc, char *argv[])
-    : Status(0), activeConnections(0), Listener(nullptr) {
+HttpServer::HttpServer(int argc, char *argv[]) : Status(0), Listener(nullptr) {
   //------------------------ HTTP/1/2 TCP SETUP----------------------
   struct addrinfo hints;
   memset(&hints, 0, sizeof(hints));
@@ -1541,18 +1467,3 @@ HTTPServer::HTTPServer(int argc, char *argv[])
   }
   ServerRouter = std::make_unique<Router>();
 };
-
-void HTTPServer::Initialize(int argc, char *argv[]) {
-  std::lock_guard<std::mutex> lock(instanceMutex); // Ensure thread-safety
-  if (!instance) {
-    instance = new HTTPServer(argc, argv);
-  }
-}
-
-HTTPServer *HTTPServer::GetInstance() {
-  std::lock_guard<std::mutex> lock(instanceMutex); // Ensure thread-safety
-  if (!instance) {
-    return nullptr;
-  }
-  return instance; // Return raw pointer to the instance
-}

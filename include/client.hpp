@@ -8,11 +8,11 @@
 #include "common.hpp"
 #include "utils.hpp"
 
-class HTTPClient : public HTTPBase {
+class HttpClient : public HttpCore {
 private:
 public:
-  HTTPClient(int argc, char *argv[]);
-  ~HTTPClient();
+  HttpClient(int argc, char *argv[]);
+  ~HttpClient();
 
   // std::unordered_map<SSL *, std::mutex> TCP_MutexMap;
 
@@ -46,14 +46,6 @@ public:
   void Run(int argc, char *argv[]);
 
   unsigned char LoadQUICConfiguration(int argc, char *argv[]) override;
-
-  void QPACK_DecodeHeaders(HQUIC stream,
-                           std::vector<uint8_t> &encodedHeaders) override;
-
-  void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &streamBuffer,
-                         std::string &data) override;
-
-  static int dhiProcessHeader(void *hblock_ctx, struct lsxpack_header *xhdr);
 };
 
 #endif

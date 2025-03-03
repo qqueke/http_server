@@ -27,7 +27,7 @@ inline std::string helloHandler(SSL *clientSSL, const std::string &cacheKey) {
     LogError("Failed to send response");
   }
 
-  HTTPServer::storeInCache(cacheKey, std::string(httpResponse));
+  HttpServer::storeInCache(cacheKey, std::string(httpResponse));
 
   return "200 OK";
 }
@@ -44,7 +44,7 @@ inline std::string goodbyeHandler(SSL *clientSSL, const std::string &cacheKey) {
     LogError("Failed to send response");
   }
 
-  HTTPServer::storeInCache(cacheKey, std::string(httpResponse));
+  HttpServer::storeInCache(cacheKey, std::string(httpResponse));
 
   return "200 OK";
 }
