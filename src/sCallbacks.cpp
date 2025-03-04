@@ -93,7 +93,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     server->ValidatePseudoHeaders(server->QuicDecodedHeadersMap[Stream]);
 
     // Route Request
-    auto [headers, body] = server->ServerRouter->RouteRequest(
+    auto [headers, body] = server->router->RouteRequest(
         server->QuicDecodedHeadersMap[Stream][":method"],
         server->QuicDecodedHeadersMap[Stream][":path"]);
 

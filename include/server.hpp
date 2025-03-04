@@ -20,12 +20,16 @@
 #include <unordered_set>
 
 #include "common.hpp"
+#include "framehandler.hpp"
 #include "router.hpp"
+#include "tlsmanager.hpp"
+
+class Http2FrameHandler;
 
 class HttpServer : public HttpCore {
 private:
-  static HttpServer *instance;
-  static std::mutex instanceMutex;
+  std::unique_ptr<TlsManager> tlsManager;
+  std::unique_ptr<Http2FrameHandler> http2FrameHandler;
 
   std::mutex strerrorMutex;
 
@@ -40,6 +44,9 @@ private:
 
   void HandleHTTP2Request(SSL *clientSSL);
 
+  void HandleDataFrame(uint32_t frameStream, const uint8_t *framePtr,
+                       uint32_t payloadLength, uint8_t frameFlags, SSL *ssl);
+
   void RequestThreadHandler(int clientSock);
 
   void RunTCP();
@@ -50,14 +57,13 @@ private:
 public:
   HttpServer(int argc, char *argv[]);
 
-  std::unique_ptr<Router> ServerRouter;
-
   HttpServer(const HttpServer &) = delete;
   HttpServer(HttpServer &&) = delete;
   HttpServer &operator=(const HttpServer &) = delete;
   HttpServer &operator=(HttpServer &&) = delete;
   ~HttpServer();
 
+  std::unique_ptr<Router> router;
   // int SendHttp2Response(std::string &headers, std::string &body);
 
   static int QPACK_ProcessHeader(void *hblock_ctx, struct lsxpack_header *xhdr);

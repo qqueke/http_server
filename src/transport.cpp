@@ -27,40 +27,6 @@ int TcpTransport::SendBatch(void *connection,
   }
 
   return 0;
-
-  // SSL *ssl = static_cast<SSL *>(connection);
-  // for (const auto &chunk : bytes) {
-  //   uint32_t retryCount = 0;
-  //   size_t totalBytesSent = 0;
-  //   size_t arraySize = chunk.size();
-  //
-  //   while (totalBytesSent < arraySize) {
-  //     int sentBytes = SSL_write(ssl, chunk.data() + totalBytesSent,
-  //                               (int)(arraySize - totalBytesSent));
-  //
-  //     if (sentBytes > 0) {
-  //       totalBytesSent += sentBytes;
-  //     } else {
-  //       int error = SSL_get_error(ssl, sentBytes);
-  //       if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
-  //         if (retryCount < _retryCount) {
-  //           ++retryCount;
-  //           std::this_thread::sleep_for(
-  //               std::chrono::milliseconds(_sendDelayMS));
-  //           continue;
-  //         } else {
-  //           LogError("Max retries reached while trying to send data");
-  //           break;
-  //         }
-  //         continue;
-  //       } else {
-  //         LogError(GetSSLErrorMessage(error));
-  //         return ERROR;
-  //       }
-  //     }
-  //   }
-  // }
-  // return 0;
 }
 
 int TcpTransport::Send(void *connection, const std::vector<uint8_t> &bytes) {
@@ -143,44 +109,6 @@ int TcpTransport::SendBatch_TS(void *connection,
   }
 
   return 0;
-
-  // SSL *ssl = static_cast<SSL *>(connection);
-  //
-  // for (const auto &chunk : bytes) {
-  //   uint32_t retryCount = 0;
-  //   size_t totalBytesSent = 0;
-  //   size_t arraySize = chunk.size();
-  //
-  //   while (totalBytesSent < arraySize) {
-  //     int sentBytes = 0;
-  //     {
-  //       std::lock_guard<std::mutex> lock(mut);
-  //       sentBytes = SSL_write(ssl, chunk.data() + totalBytesSent,
-  //                             (int)(arraySize - totalBytesSent));
-  //     }
-  //     if (sentBytes > 0) {
-  //       totalBytesSent += sentBytes;
-  //     } else {
-  //       int error = SSL_get_error(ssl, sentBytes);
-  //       if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
-  //         if (retryCount < _retryCount) {
-  //           ++retryCount;
-  //           std::this_thread::sleep_for(
-  //               std::chrono::milliseconds(_sendDelayMS));
-  //           continue;
-  //         } else {
-  //           LogError("Max retries reached while trying to send data");
-  //           break;
-  //         }
-  //         continue;
-  //       } else {
-  //         LogError(GetSSLErrorMessage(error));
-  //         return ERROR;
-  //       }
-  //     }
-  //   }
-  // }
-  // return 0;
 }
 
 int TcpTransport::Send_TS(void *connection, const std::vector<uint8_t> &bytes,

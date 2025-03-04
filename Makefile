@@ -60,8 +60,11 @@ S_CALLBACKS_SRC = $(SRCDIR)/sCallbacks.cpp
 CODEC_SRC = $(SRCDIR)/codec.cpp
 FRAMEBUILDER_SRC = $(SRCDIR)/framebuilder.cpp
 
+FRAMEHANDLER_SRC = $(SRCDIR)/framehandler.cpp
+
 TRANSPORT_SRC = $(SRCDIR)/transport.cpp
 
+TLSMANAGER_SRC = $(SRCDIR)/tlsmanager.cpp
 
 # Source files for client
 CLIENT_SRC = $(SRCDIR)/client.cpp
@@ -83,7 +86,9 @@ CODEC_OBJ = $(BUILDDIR)/codec.o
 FRAMEBUILDER_OBJ = $(BUILDDIR)/framebuilder.o
 TRANSPORT_OBJ = $(BUILDDIR)/transport.o
 
+TLSMANAGER_OBJ = $(BUILDDIR)/tlsmanager.o
 
+FRAMEHANDLER_OBJ = $(BUILDDIR)/framehandler.o
 # Object files for client
 CLIENT_OBJ = $(BUILDDIR)/client.o
 C_CALLBACKS_OBJ = $(BUILDDIR)/cCallbacks.o
@@ -143,7 +148,7 @@ dependencies:
 	fi
 
 # Build the main executable
-server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(S_CALLBACKS_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(COMMON_OBJ) $(CLIENT_OBJ) $(C_CALLBACKS_OBJ) $(CODEC_OBJ) $(FRAMEBUILDER_OBJ) $(TRANSPORT_OBJ)
+server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(S_CALLBACKS_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(COMMON_OBJ) $(CLIENT_OBJ) $(C_CALLBACKS_OBJ) $(CODEC_OBJ) $(FRAMEBUILDER_OBJ) $(FRAMEHANDLER_OBJ) $(TRANSPORT_OBJ) $(TLSMANAGER_OBJ)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Rules for building object files
@@ -183,9 +188,14 @@ $(BUILDDIR)/codec.o: $(CODEC_SRC) $(INCDIR)/codec.hpp
 $(BUILDDIR)/framebuilder.o: $(FRAMEBUILDER_SRC) $(INCDIR)/framebuilder.hpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+$(BUILDDIR)/framehandler.o: $(FRAMEHANDLER_SRC) $(INCDIR)/framehandler.hpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
 $(BUILDDIR)/transport.o: $(TRANSPORT_SRC) $(INCDIR)/transport.hpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+$(BUILDDIR)/tlsmanager.o: $(TLSMANAGER_SRC) $(INCDIR)/tlsmanager.hpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 # Clean target
 clean:
 	rm -f $(BUILDDIR)/*.o server client
