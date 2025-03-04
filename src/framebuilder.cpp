@@ -31,6 +31,47 @@ static void EncodeVarint(std::vector<uint8_t> &buffer, uint64_t value) {
   }
 }
 
+std::vector<uint8_t>
+Http2FrameBuilder::BuildFrame(Frame type, uint8_t frameFlags, uint32_t streamId,
+                              uint32_t errorCode, uint32_t increment,
+                              const std::vector<uint8_t> &encodedHeaders,
+                              const std::string &data) {
+  switch (type) {
+  case Frame::DATA:
+    return BuildDataFrame(data, streamId);
+  case Frame::HEADERS:
+    return BuildHeaderFrame(encodedHeaders, streamId);
+  case Frame::GOAWAY:
+    return BuildGoAwayFrame(streamId, errorCode);
+  case Frame::SETTINGS:
+    return BuildSettingsFrame(frameFlags);
+  case Frame::RST_STREAM:
+    return BuildRstStreamFrame(streamId, errorCode);
+  case Frame::WINDOW_UPDATE:
+    return BuildWindowUpdateFrame(streamId, increment);
+  default:
+    return {};
+  }
+}
+
+std::vector<uint8_t>
+Http3FrameBuilder::BuildFrame(Frame type, uint32_t streamId,
+                              const std::vector<uint8_t> &encodedHeaders,
+                              const std::string &data) {
+  switch (type) {
+  case Frame::DATA:
+    return BuildDataFrame(data);
+  case Frame::HEADERS:
+    return BuildHeaderFrame(encodedHeaders);
+  case Frame::GOAWAY:
+    return BuildGoAwayFrame(streamId);
+  case Frame::SETTINGS:
+    return BuildSettingsFrame();
+  default:
+    return {};
+  }
+}
+
 std::vector<uint8_t> Http2FrameBuilder::BuildDataFrame(const std::string &data,
                                                        uint32_t streamId) {
   uint8_t frameType = Frame::DATA;

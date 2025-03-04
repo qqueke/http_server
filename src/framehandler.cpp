@@ -18,7 +18,6 @@ int Http2FrameHandler::ProcessFrame(void *context, uint8_t frameType,
 
     return HandleDataFrame(context, frameStream, buffer, readOffset,
                            payloadLength, frameFlags, ssl);
-    break;
   case Frame::HEADERS:
 #ifdef HTTP2_DEBUG
     std::cout << "[strm][" << frameStream << "] HEADERS frame\n";
@@ -26,7 +25,6 @@ int Http2FrameHandler::ProcessFrame(void *context, uint8_t frameType,
 
     return HandleHeadersFrame(context, frameStream, buffer, readOffset,
                               payloadLength, frameFlags, ssl);
-    break;
   case Frame::PRIORITY:
 #ifdef HTTP2_DEBUG
     std::cout << "[strm][" << frameStream << "] PRIORITY frame\n";
@@ -34,7 +32,6 @@ int Http2FrameHandler::ProcessFrame(void *context, uint8_t frameType,
 
     return HandlePriorityFrame(context, frameStream, buffer, readOffset,
                                payloadLength, frameFlags, ssl);
-    break;
   case Frame::RST_STREAM:
 #ifdef HTTP2_DEBUG
     std::cout << "[strm][" << frameStream << "] RST_STREAM frame\n";
@@ -50,7 +47,6 @@ int Http2FrameHandler::ProcessFrame(void *context, uint8_t frameType,
 
     return HandleSettingsFrame(context, frameStream, buffer, readOffset,
                                payloadLength, frameFlags, ssl);
-    break;
   case Frame::PING:
 #ifdef HTTP2_DEBUG
     std::cout << "[strm][" << frameStream << "] PING frame\n";
@@ -58,7 +54,6 @@ int Http2FrameHandler::ProcessFrame(void *context, uint8_t frameType,
 
     return HandlePingFrame(context, frameStream, buffer, readOffset,
                            payloadLength, frameFlags, ssl);
-    break;
   case Frame::GOAWAY:
 #ifdef HTTP2_DEBUG
     std::cout << "[strm][" << frameStream << "] GOAWAY frame\n";
@@ -66,7 +61,6 @@ int Http2FrameHandler::ProcessFrame(void *context, uint8_t frameType,
 
     return HandleGoAwayFrame(context, frameStream, buffer, readOffset,
                              payloadLength, frameFlags, ssl);
-    break;
   case Frame::CONTINUATION:
 #ifdef HTTP2_DEBUG
     std::cout << "[strm][" << frameStream << "] CONTINUATION frame\n";
@@ -74,7 +68,6 @@ int Http2FrameHandler::ProcessFrame(void *context, uint8_t frameType,
 
     return HandleContinuationFrame(context, frameStream, buffer, readOffset,
                                    payloadLength, frameFlags, ssl);
-    break;
   case Frame::WINDOW_UPDATE:
 #ifdef HTTP2_DEBUG
     std::cout << "[strm][" << frameStream << "] WINDOW_UPDATE frame\n";
@@ -85,9 +78,7 @@ int Http2FrameHandler::ProcessFrame(void *context, uint8_t frameType,
   default:
     LogError("Unknown frame type");
     return ERROR;
-    break;
   }
-  return ERROR;
 }
 
 int Http2FrameHandler::HandleDataFrame(void *context, uint32_t frameStream,
@@ -95,20 +86,15 @@ int Http2FrameHandler::HandleDataFrame(void *context, uint32_t frameStream,
                                        uint32_t readOffset,
                                        uint32_t payloadLength,
                                        uint8_t frameFlags, SSL *ssl) {
+  int ret = 0;
   Http2FrameContext &frameContext =
       *reinterpret_cast<Http2FrameContext *>(context);
 
-  std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
-      &TcpDecodedHeadersMap = frameContext.TcpDecodedHeadersMap;
-
-  std::unordered_map<uint32_t, std::vector<uint8_t>> &EncodedHeadersBufferMap =
-      frameContext.EncodedHeadersBufferMap;
-  std::unordered_map<uint32_t, std::string> &TcpDataMap =
-      frameContext.TcpDataMap;
-
-  struct lshpack_dec &dec = frameContext.dec;
-
-  struct lshpack_enc &enc = frameContext.enc;
+  auto &TcpDecodedHeadersMap = frameContext.TcpDecodedHeadersMap;
+  auto &EncodedHeadersBufferMap = frameContext.EncodedHeadersBufferMap;
+  auto &TcpDataMap = frameContext.TcpDataMap;
+  auto &dec = frameContext.dec;
+  auto &enc = frameContext.enc;
 
   const uint8_t *framePtr = buffer.data() + readOffset;
 
@@ -137,25 +123,26 @@ int Http2FrameHandler::HandleDataFrame(void *context, uint32_t frameStream,
     HttpCore::RespHeaderToPseudoHeader(headers, headersMap);
     headersMap["alt-svc"] = "h3=\":4567\"; ma=86400";
 
-    std::vector<uint8_t> encodedHeaders(256);
-    server->EncodeHPACKHeaders(enc, headersMap, encodedHeaders);
+    std::vector<uint8_t> EncodedHeaders(256);
+    server->EncodeHPACKHeaders(enc, headersMap, EncodedHeaders);
 
     if (body.empty()) {
-      server->Send(ssl, server->BuildHttp2Frame(Frame::HEADERS, 0, frameStream,
-                                                0, 0, encodedHeaders));
+      (void)server->Send(ssl,
+                         server->BuildHttp2Frame(Frame::HEADERS, 0, frameStream,
+                                                 0, 0, EncodedHeaders));
     } else {
       std::vector<std::vector<uint8_t>> frames;
       frames.reserve(2);
       frames.emplace_back(server->BuildHttp2Frame(
-          Frame::HEADERS, 0, frameStream, 0, 0, encodedHeaders));
+          Frame::HEADERS, 0, frameStream, 0, 0, EncodedHeaders));
       frames.emplace_back(
           server->BuildHttp2Frame(Frame::DATA, 0, frameStream, 0, 0, {}, body));
 
-      server->SendBatch(ssl, frames);
+      (void)server->SendBatch(ssl, frames);
     }
 
-    server->Send(ssl,
-                 server->BuildHttp2Frame(Frame::WINDOW_UPDATE, 0, 0, 0, 65536));
+    (void)server->Send(
+        ssl, server->BuildHttp2Frame(Frame::WINDOW_UPDATE, 0, 0, 0, 65536));
 
     TcpDataMap.erase(frameStream);
     TcpDecodedHeadersMap.erase(frameStream);
@@ -172,27 +159,20 @@ int Http2FrameHandler::HandleHeadersFrame(void *context, uint32_t frameStream,
   Http2FrameContext &frameContext =
       *reinterpret_cast<Http2FrameContext *>(context);
 
-  std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
-      &TcpDecodedHeadersMap = frameContext.TcpDecodedHeadersMap;
+  auto &TcpDecodedHeadersMap = frameContext.TcpDecodedHeadersMap;
+  auto &EncodedHeadersBufferMap = frameContext.EncodedHeadersBufferMap;
+  auto &TcpDataMap = frameContext.TcpDataMap;
+  auto &dec = frameContext.dec;
+  auto &enc = frameContext.enc;
 
-  std::unordered_map<uint32_t, std::vector<uint8_t>> &EncodedHeadersBufferMap =
-      frameContext.EncodedHeadersBufferMap;
-  std::unordered_map<uint32_t, std::string> &TcpDataMap =
-      frameContext.TcpDataMap;
-
-  struct lshpack_dec &dec = frameContext.dec;
-
-  struct lshpack_enc &enc = frameContext.enc;
-
-  bool &goAway = frameContext.goAway;
   bool &expectingContFrame = frameContext.expectingContFrame;
 
   const uint8_t *framePtr = buffer.data() + readOffset;
 
   if (frameStream == 0) {
-    goAway = true;
-    server->Send(ssl, server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
-                                              HTTP2ErrorCode::PROTOCOL_ERROR));
+    (void)server->Send(ssl,
+                       server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                               HTTP2ErrorCode::PROTOCOL_ERROR));
     return ERROR;
   }
 
@@ -214,9 +194,9 @@ int Http2FrameHandler::HandleHeadersFrame(void *context, uint32_t frameStream,
   uint32_t headerBlockLength = payloadEnd - headerBlockStart - padLength;
 
   if (headerBlockStart + headerBlockLength > payloadEnd) {
-    server->Send(ssl,
-                 server->BuildHttp2Frame(Frame::RST_STREAM, 0, frameStream,
-                                         HTTP2ErrorCode::FRAME_SIZE_ERROR));
+    (void)server->Send(
+        ssl, server->BuildHttp2Frame(Frame::RST_STREAM, 0, frameStream,
+                                     HTTP2ErrorCode::FRAME_SIZE_ERROR));
     return ERROR;
   }
 
@@ -250,27 +230,28 @@ int Http2FrameHandler::HandleHeadersFrame(void *context, uint32_t frameStream,
     HttpCore::RespHeaderToPseudoHeader(headers, headersMap);
     headersMap["alt-svc"] = "h3=\":4567\"; ma=86400";
 
-    std::vector<uint8_t> encodedHeaders(256);
+    std::vector<uint8_t> EncodedHeaders(256);
 
-    server->EncodeHPACKHeaders(enc, headersMap, encodedHeaders);
+    server->EncodeHPACKHeaders(enc, headersMap, EncodedHeaders);
 
     if (body == "") {
-      server->Send(ssl, server->BuildHttp2Frame(Frame::HEADERS, 0, frameStream,
-                                                0, 0, encodedHeaders));
+      (void)server->Send(ssl,
+                         server->BuildHttp2Frame(Frame::HEADERS, 0, frameStream,
+                                                 0, 0, EncodedHeaders));
     } else {
       std::vector<std::vector<uint8_t>> frames;
       frames.reserve(2);
       frames.emplace_back(server->BuildHttp2Frame(
-          Frame::HEADERS, 0, frameStream, 0, 0, encodedHeaders));
+          Frame::HEADERS, 0, frameStream, 0, 0, EncodedHeaders));
 
       frames.emplace_back(
           server->BuildHttp2Frame(Frame::DATA, 0, frameStream, 0, 0, {}, body));
 
-      server->SendBatch(ssl, frames);
+      (void)server->SendBatch(ssl, frames);
     }
 
-    server->Send(ssl,
-                 server->BuildHttp2Frame(Frame::WINDOW_UPDATE, 0, 0, 0, 65536));
+    (void)server->Send(
+        ssl, server->BuildHttp2Frame(Frame::WINDOW_UPDATE, 0, 0, 0, 65536));
 
     TcpDataMap.erase(frameStream);
     TcpDecodedHeadersMap.erase(frameStream);
@@ -305,40 +286,30 @@ int Http2FrameHandler::HandleRstStreamFrame(void *context, uint32_t frameStream,
   Http2FrameContext &frameContext =
       *reinterpret_cast<Http2FrameContext *>(context);
 
-  std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
-      &TcpDecodedHeadersMap = frameContext.TcpDecodedHeadersMap;
+  auto &TcpDecodedHeadersMap = frameContext.TcpDecodedHeadersMap;
+  auto &EncodedHeadersBufferMap = frameContext.EncodedHeadersBufferMap;
+  auto &TcpDataMap = frameContext.TcpDataMap;
+  auto &dec = frameContext.dec;
+  auto &enc = frameContext.enc;
 
-  std::unordered_map<uint32_t, std::vector<uint8_t>> &EncodedHeadersBufferMap =
-      frameContext.EncodedHeadersBufferMap;
-  std::unordered_map<uint32_t, std::string> &TcpDataMap =
-      frameContext.TcpDataMap;
-
-  struct lshpack_dec &dec = frameContext.dec;
-
-  struct lshpack_enc &enc = frameContext.enc;
-
-  bool &goAway = frameContext.goAway;
   bool &expectingContFrame = frameContext.expectingContFrame;
 
   const uint8_t *framePtr = buffer.data() + readOffset;
 
   if (frameStream == 0) {
-    goAway = true;
-    server->Send(ssl, server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
-                                              HTTP2ErrorCode::PROTOCOL_ERROR));
+    (void)server->Send(ssl,
+                       server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                               HTTP2ErrorCode::PROTOCOL_ERROR));
     return ERROR;
   } else if (payloadLength != 4) {
-    goAway = true;
-    server->Send(ssl,
-                 server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
-                                         HTTP2ErrorCode::FRAME_SIZE_ERROR));
+    (void)server->Send(
+        ssl, server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                     HTTP2ErrorCode::FRAME_SIZE_ERROR));
     return ERROR;
   }
 
-  {
-    uint32_t error = (framePtr[9] << 24) | (framePtr[10] << 16) |
-                     (framePtr[11] << 8) | framePtr[12];
-  }
+  uint32_t error = (framePtr[9] << 24) | (framePtr[10] << 16) |
+                   (framePtr[11] << 8) | framePtr[12];
 
   TcpDataMap.erase(frameStream);
   TcpDecodedHeadersMap.erase(frameStream);
@@ -352,22 +323,15 @@ int Http2FrameHandler::HandleSettingsFrame(void *context, uint32_t frameStream,
                                            uint32_t readOffset,
                                            uint32_t payloadLength,
                                            uint8_t frameFlags, SSL *ssl) {
-  Http2FrameContext &frameContext =
-      *reinterpret_cast<Http2FrameContext *>(context);
-
-  bool &goAway = frameContext.goAway;
-
   if (payloadLength % 6 != 0) {
-    goAway = true;
-    server->Send(ssl,
-                 server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
-                                         HTTP2ErrorCode::FRAME_SIZE_ERROR));
+    (void)server->Send(
+        ssl, server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                     HTTP2ErrorCode::FRAME_SIZE_ERROR));
     return ERROR;
   } else if (frameStream != 0) {
-    goAway = true;
-    server->Send(ssl,
-                 server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
-                                         HTTP2ErrorCode::FRAME_SIZE_ERROR));
+    (void)server->Send(
+        ssl, server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                     HTTP2ErrorCode::FRAME_SIZE_ERROR));
     return ERROR;
   }
 
@@ -375,16 +339,15 @@ int Http2FrameHandler::HandleSettingsFrame(void *context, uint32_t frameStream,
     // Parse their settings and update this connection settings
     // to be the minimum between ours and theirs
 
-    server->Send(ssl, server->BuildHttp2Frame(Frame::SETTINGS,
-                                              HTTP2Flags::SETTINGS_ACK_FLAG));
+    (void)server->Send(ssl,
+                       server->BuildHttp2Frame(Frame::SETTINGS,
+                                               HTTP2Flags::SETTINGS_ACK_FLAG));
 
   } else if (isFlagSet(frameFlags, HTTP2Flags::SETTINGS_ACK_FLAG)) {
     if (payloadLength != 0) {
-      goAway = true;
-
-      server->Send(ssl,
-                   server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
-                                           HTTP2ErrorCode::FRAME_SIZE_ERROR));
+      (void)server->Send(
+          ssl, server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                       HTTP2ErrorCode::FRAME_SIZE_ERROR));
       return ERROR;
     }
   }
@@ -400,18 +363,15 @@ int Http2FrameHandler::HandlePingFrame(void *context, uint32_t frameStream,
   Http2FrameContext &frameContext =
       *reinterpret_cast<Http2FrameContext *>(context);
 
-  bool &goAway = frameContext.goAway;
-
   if (frameStream != 0) {
-    goAway = true;
-    server->Send(ssl, server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
-                                              HTTP2ErrorCode::PROTOCOL_ERROR));
+    (void)server->Send(ssl,
+                       server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                               HTTP2ErrorCode::PROTOCOL_ERROR));
     return ERROR;
   } else if (payloadLength != 8) {
-    goAway = true;
-    server->Send(ssl,
-                 server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
-                                         HTTP2ErrorCode::FRAME_SIZE_ERROR));
+    (void)server->Send(
+        ssl, server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                     HTTP2ErrorCode::FRAME_SIZE_ERROR));
     return ERROR;
   }
 
@@ -436,12 +396,6 @@ int Http2FrameHandler::HandleGoAwayFrame(void *context, uint32_t frameStream,
                                          uint32_t readOffset,
                                          uint32_t payloadLength,
                                          uint8_t frameFlags, SSL *ssl) {
-  Http2FrameContext &frameContext =
-      *reinterpret_cast<Http2FrameContext *>(context);
-
-  bool &goAway = frameContext.goAway;
-  goAway = true;
-
   return 0;
 }
 
@@ -451,26 +405,19 @@ int Http2FrameHandler::HandleContinuationFrame(
   Http2FrameContext &frameContext =
       *reinterpret_cast<Http2FrameContext *>(context);
 
-  std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
-      &TcpDecodedHeadersMap = frameContext.TcpDecodedHeadersMap;
+  auto &TcpDecodedHeadersMap = frameContext.TcpDecodedHeadersMap;
+  auto &EncodedHeadersBufferMap = frameContext.EncodedHeadersBufferMap;
+  auto &TcpDataMap = frameContext.TcpDataMap;
+  auto &dec = frameContext.dec;
+  auto &enc = frameContext.enc;
 
-  std::unordered_map<uint32_t, std::vector<uint8_t>> &EncodedHeadersBufferMap =
-      frameContext.EncodedHeadersBufferMap;
-  std::unordered_map<uint32_t, std::string> &TcpDataMap =
-      frameContext.TcpDataMap;
-
-  struct lshpack_dec &dec = frameContext.dec;
-
-  struct lshpack_enc &enc = frameContext.enc;
-
-  bool &goAway = frameContext.goAway;
   bool &expectingContFrame = frameContext.expectingContFrame;
 
   const uint8_t *framePtr = buffer.data() + readOffset;
   if (frameStream == 0) {
-    goAway = true;
-    server->Send(ssl, server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
-                                              HTTP2ErrorCode::PROTOCOL_ERROR));
+    (void)server->Send(ssl,
+                       server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                               HTTP2ErrorCode::PROTOCOL_ERROR));
     return ERROR;
   }
 
@@ -505,28 +452,29 @@ int Http2FrameHandler::HandleContinuationFrame(
     HttpCore::RespHeaderToPseudoHeader(headers, headersMap);
     headersMap["alt-svc"] = "h3=\":4567\"; ma=86400";
 
-    std::vector<uint8_t> encodedHeaders(256);
+    std::vector<uint8_t> EncodedHeaders(256);
 
-    server->EncodeHPACKHeaders(enc, headersMap, encodedHeaders);
+    server->EncodeHPACKHeaders(enc, headersMap, EncodedHeaders);
 
     if (body == "") {
-      server->Send(ssl, server->BuildHttp2Frame(Frame::HEADERS, 0, frameStream,
-                                                0, 0, encodedHeaders));
+      (void)server->Send(ssl,
+                         server->BuildHttp2Frame(Frame::HEADERS, 0, frameStream,
+                                                 0, 0, EncodedHeaders));
 
     } else {
       std::vector<std::vector<uint8_t>> frames;
       frames.reserve(2);
       frames.emplace_back(server->BuildHttp2Frame(
-          Frame::HEADERS, 0, frameStream, 0, 0, encodedHeaders));
+          Frame::HEADERS, 0, frameStream, 0, 0, EncodedHeaders));
 
       frames.emplace_back(
           server->BuildHttp2Frame(Frame::DATA, 0, frameStream, 0, 0, {}, body));
 
-      server->SendBatch(ssl, frames);
+      (void)server->SendBatch(ssl, frames);
     }
 
-    server->Send(ssl,
-                 server->BuildHttp2Frame(Frame::WINDOW_UPDATE, 0, 0, 0, 65536));
+    (void)server->Send(
+        ssl, server->BuildHttp2Frame(Frame::WINDOW_UPDATE, 0, 0, 0, 65536));
 
     TcpDataMap.erase(frameStream);
     TcpDecodedHeadersMap.erase(frameStream);
@@ -554,20 +502,11 @@ int Http2FrameHandler::HandleWindowUpdateFrame(
   Http2FrameContext &frameContext =
       *reinterpret_cast<Http2FrameContext *>(context);
 
-  std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
-      &TcpDecodedHeadersMap = frameContext.TcpDecodedHeadersMap;
-
-  std::unordered_map<uint32_t, std::vector<uint8_t>> &EncodedHeadersBufferMap =
-      frameContext.EncodedHeadersBufferMap;
-  std::unordered_map<uint32_t, std::string> &TcpDataMap =
-      frameContext.TcpDataMap;
-
-  struct lshpack_dec &dec = frameContext.dec;
-
-  struct lshpack_enc &enc = frameContext.enc;
-
-  bool &goAway = frameContext.goAway;
-  bool &expectingContFrame = frameContext.expectingContFrame;
+  auto &TcpDecodedHeadersMap = frameContext.TcpDecodedHeadersMap;
+  auto &EncodedHeadersBufferMap = frameContext.EncodedHeadersBufferMap;
+  auto &TcpDataMap = frameContext.TcpDataMap;
+  auto &dec = frameContext.dec;
+  auto &enc = frameContext.enc;
 
   const uint8_t *framePtr = buffer.data() + readOffset;
 
@@ -576,16 +515,14 @@ int Http2FrameHandler::HandleWindowUpdateFrame(
 
   // std::cout << "Window increment: " << windowIncrement << "\n";
   if (windowIncrement == 0) {
-    goAway = true;
-    server->Send(ssl,
-                 server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
-                                         HTTP2ErrorCode::FRAME_SIZE_ERROR));
+    (void)server->Send(
+        ssl, server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                     HTTP2ErrorCode::FRAME_SIZE_ERROR));
     return ERROR;
   } else if (payloadLength != 4) {
-    goAway = true;
-    server->Send(ssl,
-                 server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
-                                         HTTP2ErrorCode::FRAME_SIZE_ERROR));
+    (void)server->Send(
+        ssl, server->BuildHttp2Frame(Frame::GOAWAY, 0, 0,
+                                     HTTP2ErrorCode::FRAME_SIZE_ERROR));
     return ERROR;
   }
 

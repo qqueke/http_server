@@ -58,46 +58,15 @@ HttpCore::BuildHttp2Frame(Frame type, uint8_t frameFlags, uint32_t streamId,
                           uint32_t errorCode, uint32_t increment,
                           const std::vector<uint8_t> &encodedHeaders,
                           const std::string &data) {
-  switch (type) {
-  case Frame::DATA:
-    return http2FrameBuilder->BuildDataFrame(data, streamId);
-  case Frame::HEADERS:
-    return http2FrameBuilder->BuildHeaderFrame(encodedHeaders, streamId);
-  case Frame::GOAWAY: {
-    return http2FrameBuilder->BuildGoAwayFrame(streamId, errorCode);
-  }
-  case Frame::SETTINGS: {
-    return http2FrameBuilder->BuildSettingsFrame(frameFlags);
-  }
-  case Frame::RST_STREAM: {
-    return http2FrameBuilder->BuildRstStreamFrame(streamId, errorCode);
-  }
-  case Frame::WINDOW_UPDATE: {
-    return http2FrameBuilder->BuildWindowUpdateFrame(streamId, increment);
-  }
-  }
-
-  return {};
+  return http2FrameBuilder->BuildFrame(type, frameFlags, streamId, errorCode,
+                                       increment, encodedHeaders, data);
 }
 
 std::vector<uint8_t>
-HttpCore::BuildHttp3Frame(Frame type, uint32_t streamOrPushId,
+HttpCore::BuildHttp3Frame(Frame type, uint32_t streamId,
                           const std::vector<uint8_t> &encodedHeaders,
                           const std::string &data) {
-  switch (type) {
-  case Frame::DATA:
-    return http3FrameBuilder->BuildDataFrame(data);
-  case Frame::HEADERS:
-    return http3FrameBuilder->BuildHeaderFrame(encodedHeaders);
-  case Frame::GOAWAY: {
-    return http3FrameBuilder->BuildGoAwayFrame(streamOrPushId);
-  }
-  case Frame::SETTINGS: {
-    return http3FrameBuilder->BuildSettingsFrame();
-  }
-  }
-
-  return {};
+  return http3FrameBuilder->BuildFrame(type, streamId, encodedHeaders, data);
 }
 
 int HttpCore::Send(void *connection, const std::vector<uint8_t> &bytes,

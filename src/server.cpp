@@ -601,8 +601,7 @@ void HttpServer::HandleHTTP2Request(SSL *ssl) {
   bool expectingContFrame = false;
   bool goAway = false;
   Http2FrameContext context(TcpDecodedHeadersMap, EncodedHeadersBufferMap,
-                            TcpDataMap, enc, dec, num, goAway,
-                            expectingContFrame);
+                            TcpDataMap, enc, dec, expectingContFrame);
 
   // Test(&context);
   // std::cout << "After test: " << (int)num << std::endl;
@@ -1010,9 +1009,6 @@ HttpServer::HttpServer(int argc, char *argv[]) : Status(0), Listener(nullptr) {
   setsockopt(TCP_Socket, SOL_SOCKET, SO_RCVBUF, &buffSize, sizeof(buffSize));
   setsockopt(TCP_Socket, SOL_SOCKET, SO_SNDBUF, &buffSize, sizeof(buffSize));
 
-  // SSL_load_error_strings();
-  // SSL_library_init();
-  // OpenSSL_add_all_algorithms();
   router = std::make_unique<Router>();
 
   http2FrameHandler = std::make_unique<Http2FrameHandler>(this);
@@ -1021,34 +1017,7 @@ HttpServer::HttpServer(int argc, char *argv[]) : Status(0), Listener(nullptr) {
   tlsManager->LoadCertificates("certificates/server.crt",
                                "certificates/server.key");
 
-  // OPENSSL_init_ssl(OPENSSL_INIT_LOAD_SSL_STRINGS, nullptr);
-  // OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CRYPTO_STRINGS, nullptr);
-  //
-  // SSL_ctx = SSL_CTX_new(SSLv23_server_method());
-  // if (!SSL_ctx) {
-  //   LogError("Failed to create SSL context");
-  //   exit(EXIT_FAILURE);
-  // }
-  //
-  // if (SSL_CTX_use_certificate_file(SSL_ctx, "certificates/server.crt",
-  //                                  SSL_FILETYPE_PEM) <= 0) {
-  //   LogError("Failed to load server certificate");
-  //   exit(EXIT_FAILURE);
-  // }
-  //
-  // if (SSL_CTX_use_PrivateKey_file(SSL_ctx, "certificates/server.key",
-  //                                 SSL_FILETYPE_PEM) <= 0) {
-  //   LogError("Failed to load server private key");
-  //   exit(EXIT_FAILURE);
-  // }
-  //
-  // if (!SSL_CTX_check_private_key(SSL_ctx)) {
-  //   LogError("Private key does not match the certificate");
-  //   exit(EXIT_FAILURE);
-  // }
-  //
-  // SSL_CTX_set_alpn_select_cb(SSL_ctx, alpnSelectCallback, NULL);
-
+  // Create class
   //------------------------ HTTP3 QUIC SETUP----------------------
   // Configures the address used for the listener to listen on all IP
   // addresses and the given UDP port.

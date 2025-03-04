@@ -9,8 +9,16 @@
 #include <string>
 #include <vector>
 
+#include "utils.hpp"
+
 class Http2FrameBuilder {
 public:
+  std::vector<uint8_t> BuildFrame(Frame type, uint8_t frameFlags,
+                                  uint32_t streamId, uint32_t errorCode,
+                                  uint32_t increment,
+                                  const std::vector<uint8_t> &encodedHeaders,
+                                  const std::string &data);
+
   std::vector<uint8_t> BuildDataFrame(const std::string &data,
                                       uint32_t streamId = 0);
 
@@ -31,6 +39,10 @@ public:
 
 class Http3FrameBuilder {
 public:
+  std::vector<uint8_t> BuildFrame(Frame type, uint32_t streamId,
+                                  const std::vector<uint8_t> &encodedHeaders,
+                                  const std::string &data);
+
   std::vector<uint8_t> BuildDataFrame(const std::string &data);
 
   std::vector<uint8_t>

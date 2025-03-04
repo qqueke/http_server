@@ -12,19 +12,15 @@
 class HttpServer;
 
 struct Http2FrameContext {
-  // References to the original data maps
   std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
       &TcpDecodedHeadersMap;
   std::unordered_map<uint32_t, std::vector<uint8_t>> &EncodedHeadersBufferMap;
   std::unordered_map<uint32_t, std::string> &TcpDataMap;
 
-  // References to the HPACK encoder and decoder
   struct lshpack_enc &enc;
   struct lshpack_dec &dec;
-  bool &goAway;
   bool &expectingContFrame;
 
-  uint8_t &num;
   // Constructor that accepts references to the original data
   Http2FrameContext(
       std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
@@ -32,11 +28,11 @@ struct Http2FrameContext {
       std::unordered_map<uint32_t, std::vector<uint8_t>>
           &EncodedHeadersBufferMap,
       std::unordered_map<uint32_t, std::string> &TcpDataMap,
-      struct lshpack_enc &enc, struct lshpack_dec &dec, uint8_t &num,
-      bool &GOAWAY, bool &expectingContFrame)
+      struct lshpack_enc &enc, struct lshpack_dec &dec,
+      bool &expectingContFrame)
       : TcpDecodedHeadersMap(TcpDecodedHeadersMap),
         EncodedHeadersBufferMap(EncodedHeadersBufferMap),
-        TcpDataMap(TcpDataMap), enc(enc), dec(dec), num(num), goAway(GOAWAY),
+        TcpDataMap(TcpDataMap), enc(enc), dec(dec),
         expectingContFrame(expectingContFrame) {}
 };
 
