@@ -13,84 +13,36 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <unordered_set>
 
 #include "common.hpp"
 #include "framehandler.hpp"
+#include "quicserver.hpp"
 #include "router.hpp"
-#include "tlsmanager.hpp"
+#include "tcpserver.hpp"
 
-class Http2FrameHandler;
-
-class HttpServer : public HttpCore {
+class HttpServer : public HttpCore,
+                   public std::enable_shared_from_this<HttpServer> {
 private:
-  std::unique_ptr<TlsManager> tlsManager;
-  std::unique_ptr<Http2FrameHandler> http2FrameHandler;
+  std::unique_ptr<TcpServer> tcpServer;
+  std::unique_ptr<QuicServer> quicServer;
 
   std::mutex strerrorMutex;
 
-  // QUIC stuff
-  QUIC_STATUS Status;
-  HQUIC Listener;
-  QUIC_ADDR Address;
-
   std::string threadSafeStrerror(int errnum);
-
-  void HandleHTTP1Request(SSL *clientSSL);
-
-  void HandleHTTP2Request(SSL *clientSSL);
-
-  void HandleDataFrame(uint32_t frameStream, const uint8_t *framePtr,
-                       uint32_t payloadLength, uint8_t frameFlags, SSL *ssl);
-
-  void RequestThreadHandler(int clientSock);
-
-  void RunTCP();
-  void RunQUIC();
 
   std::unordered_map<HQUIC, std::vector<uint8_t>> ConnectionSettings;
 
 public:
   HttpServer(int argc, char *argv[]);
 
-  HttpServer(const HttpServer &) = delete;
-  HttpServer(HttpServer &&) = delete;
-  HttpServer &operator=(const HttpServer &) = delete;
-  HttpServer &operator=(HttpServer &&) = delete;
   ~HttpServer();
 
-  std::unique_ptr<Router> router;
-  // int SendHttp2Response(std::string &headers, std::string &body);
-
-  static int QPACK_ProcessHeader(void *hblock_ctx, struct lsxpack_header *xhdr);
-
-  // The server's callback for stream events from MsQuic.
-  _IRQL_requires_max_(DISPATCH_LEVEL)
-      _Function_class_(QUIC_STREAM_CALLBACK) QUIC_STATUS QUIC_API
-      static StreamCallback(_In_ HQUIC Stream, _In_opt_ void *Context,
-                            _Inout_ QUIC_STREAM_EVENT *Event);
-
-  // The server's callback for connection events from MsQuic.
-  _IRQL_requires_max_(DISPATCH_LEVEL)
-      _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API
-      static ConnectionCallback(_In_ HQUIC Connection, _In_opt_ void *Context,
-                                _Inout_ QUIC_CONNECTION_EVENT *Event);
-
-  // The server's callback for listener events from MsQuic.
-  _IRQL_requires_max_(PASSIVE_LEVEL)
-      _Function_class_(QUIC_LISTENER_CALLBACK) QUIC_STATUS QUIC_API
-      static ListenerCallback(_In_ HQUIC Listener, _In_opt_ void *Context,
-                              _Inout_ QUIC_LISTENER_EVENT *Event);
-
-  /*------------PURE VIRTUAL FUNCTIONS -----------------------*/
-  unsigned char LoadQUICConfiguration(
-      _In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[]) override;
-
-  /*-------------------------------------------*/
+  std::unique_ptr<HttpCore> http;
+  // std::unique_ptr<Router> router;
+  std::shared_ptr<Router> router;
 
   void staticFileHandler(SSL *clientSSL, const std::string &filePath,
                          bool acceptEncoding);

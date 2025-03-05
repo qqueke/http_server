@@ -16,13 +16,13 @@
 #include "utils.hpp"
 
 HttpCore::HttpCore() {
-  hpackCodec = std::make_unique<HpackCodec>();
+  // hpackCodec = std::make_unique<HpackCodec>();
   qpackCodec = std::make_unique<QpackCodec>();
 
-  http2FrameBuilder = std::make_unique<Http2FrameBuilder>();
+  // http2FrameBuilder = std::make_unique<Http2FrameBuilder>();
   http3FrameBuilder = std::make_unique<Http3FrameBuilder>();
 
-  tcpTransport = std::make_unique<TcpTransport>();
+  // tcpTransport = std::make_unique<TcpTransport>();
   quicTransport = std::make_unique<QuicTransport>();
 }
 

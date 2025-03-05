@@ -31,8 +31,6 @@ protected:
   std::unique_ptr<TcpTransport> tcpTransport;
   std::unique_ptr<QuicTransport> quicTransport;
 
-  virtual unsigned char LoadQUICConfiguration(int argc, char *argv[]) = 0;
-
 public:
   /*----------------------------------------------------------*/
   HttpCore();

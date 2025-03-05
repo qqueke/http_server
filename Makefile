@@ -74,6 +74,9 @@ C_CALLBACKS_SRC = $(SRCDIR)/cCallbacks.cpp
 COMMON_SRC = $(SRCDIR)/common.cpp
 UTILS_SRC = $(SRCDIR)/utils.cpp
 
+TCPSERVER_SRC = $(SRCDIR)/tcpserver.cpp
+
+QUICSERVER_SRC = $(SRCDIR)/quicserver.cpp
 # Object files for server
 MAIN_OBJ = $(BUILDDIR)/main.o
 SERVER_OBJ = $(BUILDDIR)/server.o
@@ -89,6 +92,11 @@ TRANSPORT_OBJ = $(BUILDDIR)/transport.o
 TLSMANAGER_OBJ = $(BUILDDIR)/tlsmanager.o
 
 FRAMEHANDLER_OBJ = $(BUILDDIR)/framehandler.o
+
+
+TCPSERVER_OBJ = $(BUILDDIR)/tcpserver.o
+
+QUICSERVER_OBJ = $(BUILDDIR)/quicserver.o
 # Object files for client
 CLIENT_OBJ = $(BUILDDIR)/client.o
 C_CALLBACKS_OBJ = $(BUILDDIR)/cCallbacks.o
@@ -148,26 +156,26 @@ dependencies:
 	fi
 
 # Build the main executable
-server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(S_CALLBACKS_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(COMMON_OBJ) $(CLIENT_OBJ) $(C_CALLBACKS_OBJ) $(CODEC_OBJ) $(FRAMEBUILDER_OBJ) $(FRAMEHANDLER_OBJ) $(TRANSPORT_OBJ) $(TLSMANAGER_OBJ)
+server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(S_CALLBACKS_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(COMMON_OBJ) $(CLIENT_OBJ) $(C_CALLBACKS_OBJ) $(CODEC_OBJ) $(FRAMEBUILDER_OBJ) $(FRAMEHANDLER_OBJ) $(TRANSPORT_OBJ) $(TLSMANAGER_OBJ) $(TCPSERVER_OBJ) $(QUICSERVER_OBJ)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Rules for building object files
-$(BUILDDIR)/main.o: $(MAIN_SRC) $(SERVER_SRC) $(ROUTES_SRC)
+$(MAIN_OBJ): $(MAIN_SRC) $(SERVER_SRC) $(ROUTES_SRC)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/server.o: $(SERVER_SRC) $(ROUTER_SRC) $(INCDIR)/server.hpp
+$(SERVER_OBJ): $(SERVER_SRC) $(ROUTER_SRC) $(INCDIR)/server.hpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/router.o: $(ROUTER_SRC) $(INCDIR)/router.hpp
+$(ROUTER_OBJ): $(ROUTER_SRC) $(INCDIR)/router.hpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/routes.o: $(ROUTES_SRC) $(ROUTER_SRC)
+$(ROUTES_OBJ): $(ROUTES_SRC) $(ROUTER_SRC)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BUILDDIR)/log.o: $(LOG_SRC) $(INCDIR)/log.hpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/client.o: $(CLIENT_SRC) $(INCDIR)/utils.hpp
+$(CLIENT_OBJ): $(CLIENT_SRC) $(INCDIR)/utils.hpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BUILDDIR)/sCallbacks.o: $(S_CALLBACKS_SRC) 
@@ -192,6 +200,12 @@ $(BUILDDIR)/framehandler.o: $(FRAMEHANDLER_SRC) $(INCDIR)/framehandler.hpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BUILDDIR)/transport.o: $(TRANSPORT_SRC) $(INCDIR)/transport.hpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(BUILDDIR)/tcpserver.o: $(TCPSERVER_SRC) $(INCDIR)/tcpserver.hpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(BUILDDIR)/quicserver.o: $(QUICSERVER_SRC) $(INCDIR)/quicserver.hpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BUILDDIR)/tlsmanager.o: $(TLSMANAGER_SRC) $(INCDIR)/tlsmanager.hpp

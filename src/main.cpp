@@ -89,14 +89,8 @@ int main(int argc, char *argv[]) {
     signal(SIGTERM, signalHandler); // Termination signal
 
     {
-      std::unique_ptr<HttpServer> server =
-          std::make_unique<HttpServer>(argc, argv);
-
-      // HttpServer::Initialize(argc, argv);
-      // std::unique_ptr<HttpServer> server(HttpServer::GetInstance());
-      // nice to have this as a function declared elsewhere
-      // server->AddRoute("GET", "/hello", helloHandler);
-      // server->AddRoute("GET", "/goodbye", goodbyeHandler);
+      std::shared_ptr<HttpServer> server =
+          std::make_shared<HttpServer>(argc, argv);
 
       std::thread([]() { periodicFlush(); }).detach();
 

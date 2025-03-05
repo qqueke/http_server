@@ -45,7 +45,7 @@ public:
 
   void Run(int argc, char *argv[]);
 
-  unsigned char LoadQUICConfiguration(int argc, char *argv[]) override;
+  unsigned char LoadQUICConfiguration(int argc, char *argv[]);
 };
 
 #endif
