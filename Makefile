@@ -50,56 +50,64 @@ LDFLAGS += -lls-qpack
 LDFLAGS += -lls-hpack
 
 # Source files for server
-MAIN_SRC = $(SRCDIR)/main.cpp
-SERVER_SRC = $(SRCDIR)/server.cpp
-ROUTER_SRC = $(SRCDIR)/router.cpp
-ROUTES_SRC = $(SRCDIR)/routes.cpp
-LOG_SRC = $(SRCDIR)/log.cpp
-S_CALLBACKS_SRC = $(SRCDIR)/sCallbacks.cpp
+MAIN_SRC = $(SRCDIR)/main.cc
+SERVER_SRC = $(SRCDIR)/server.cc
+ROUTER_SRC = $(SRCDIR)/router.cc
+ROUTES_SRC = $(SRCDIR)/routes.cc
+LOG_SRC = $(SRCDIR)/log.cc
 
-CODEC_SRC = $(SRCDIR)/codec.cpp
-FRAMEBUILDER_SRC = $(SRCDIR)/framebuilder.cpp
+CODEC_SRC = $(SRCDIR)/codec.cc
+HTTP2_FRAME_BUILDER_SRC = $(SRCDIR)/http2_frame_builder.cc
 
-FRAMEHANDLER_SRC = $(SRCDIR)/framehandler.cpp
+HTTP2_FRAME_HANDLER_SRC = $(SRCDIR)/http2_frame_handler.cc
 
-TRANSPORT_SRC = $(SRCDIR)/transport.cpp
+TRANSPORT_SRC = $(SRCDIR)/transport.cc
 
-TLSMANAGER_SRC = $(SRCDIR)/tlsmanager.cpp
+TLS_MANAGER_SRC = $(SRCDIR)/tls_manager.cc
 
 # Source files for client
-CLIENT_SRC = $(SRCDIR)/client.cpp
-C_CALLBACKS_SRC = $(SRCDIR)/cCallbacks.cpp
+CLIENT_SRC = $(SRCDIR)/client.cc
 
 # Common source files
-COMMON_SRC = $(SRCDIR)/common.cpp
-UTILS_SRC = $(SRCDIR)/utils.cpp
+COMMON_SRC = $(SRCDIR)/common.cc
+UTILS_SRC = $(SRCDIR)/utils.cc
 
-TCPSERVER_SRC = $(SRCDIR)/tcpserver.cpp
+TCP_SERVER_SRC = $(SRCDIR)/tcp_server.cc
 
-QUICSERVER_SRC = $(SRCDIR)/quicserver.cpp
+TCP_CLIENT_SRC = $(SRCDIR)/tcp_client.cc
+
+QUIC_SERVER_SRC = $(SRCDIR)/quic_server.cc
+
+QUIC_CLIENT_SRC = $(SRCDIR)/quic_client.cc
+
+
 # Object files for server
 MAIN_OBJ = $(BUILDDIR)/main.o
 SERVER_OBJ = $(BUILDDIR)/server.o
 ROUTER_OBJ = $(BUILDDIR)/router.o
 ROUTES_OBJ = $(BUILDDIR)/routes.o
 LOG_OBJ = $(BUILDDIR)/log.o
-S_CALLBACKS_OBJ = $(BUILDDIR)/sCallbacks.o
 
 CODEC_OBJ = $(BUILDDIR)/codec.o
-FRAMEBUILDER_OBJ = $(BUILDDIR)/framebuilder.o
+HTTP2_FRAME_BUILDER_OBJ = $(BUILDDIR)/http2_frame_builder.o
 TRANSPORT_OBJ = $(BUILDDIR)/transport.o
 
-TLSMANAGER_OBJ = $(BUILDDIR)/tlsmanager.o
+TLS_MANAGER_OBJ = $(BUILDDIR)/tls_manager.o
 
-FRAMEHANDLER_OBJ = $(BUILDDIR)/framehandler.o
+HTTP2_FRAME_HANDLER_OBJ = $(BUILDDIR)/http2_frame_handler.o
 
 
-TCPSERVER_OBJ = $(BUILDDIR)/tcpserver.o
+TCP_SERVER_OBJ = $(BUILDDIR)/tcp_server.o
 
-QUICSERVER_OBJ = $(BUILDDIR)/quicserver.o
+TCP_CLIENT_OBJ = $(BUILDDIR)/tcp_client.o
+
+
+QUIC_SERVER_OBJ = $(BUILDDIR)/quicserver.o
+
+QUIC_CLIENT_OBJ = $(BUILDDIR)/quicclient.o
+
 # Object files for client
 CLIENT_OBJ = $(BUILDDIR)/client.o
-C_CALLBACKS_OBJ = $(BUILDDIR)/cCallbacks.o
 
 # Common object files
 COMMON_OBJ = $(BUILDDIR)/common.o
@@ -156,59 +164,59 @@ dependencies:
 	fi
 
 # Build the main executable
-server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(S_CALLBACKS_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(COMMON_OBJ) $(CLIENT_OBJ) $(C_CALLBACKS_OBJ) $(CODEC_OBJ) $(FRAMEBUILDER_OBJ) $(FRAMEHANDLER_OBJ) $(TRANSPORT_OBJ) $(TLSMANAGER_OBJ) $(TCPSERVER_OBJ) $(QUICSERVER_OBJ)
+server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(COMMON_OBJ) $(CLIENT_OBJ) $(CODEC_OBJ) $(HTTP2_FRAME_BUILDER_OBJ) $(HTTP2_FRAME_HANDLER_OBJ) $(TRANSPORT_OBJ) $(TLS_MANAGER_OBJ) $(TCP_SERVER_OBJ) $(TCP_CLIENT_OBJ) $(QUIC_SERVER_OBJ) $(QUIC_CLIENT_OBJ)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Rules for building object files
 $(MAIN_OBJ): $(MAIN_SRC) $(SERVER_SRC) $(ROUTES_SRC)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(SERVER_OBJ): $(SERVER_SRC) $(ROUTER_SRC) $(INCDIR)/server.hpp
+$(SERVER_OBJ): $(SERVER_SRC) $(ROUTER_SRC) $(INCDIR)/server.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(ROUTER_OBJ): $(ROUTER_SRC) $(INCDIR)/router.hpp
+$(ROUTER_OBJ): $(ROUTER_SRC) $(INCDIR)/router.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(ROUTES_OBJ): $(ROUTES_SRC) $(ROUTER_SRC)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/log.o: $(LOG_SRC) $(INCDIR)/log.hpp
+$(BUILDDIR)/log.o: $(LOG_SRC) $(INCDIR)/log.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(CLIENT_OBJ): $(CLIENT_SRC) $(INCDIR)/utils.hpp
+$(CLIENT_OBJ): $(CLIENT_SRC) $(INCDIR)/utils.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/sCallbacks.o: $(S_CALLBACKS_SRC) 
+$(COMMON_OBJ): $(COMMON_SRC) $(INCDIR)/common.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/cCallbacks.o: $(C_CALLBACKS_SRC) 
+$(UTILS_OBJ): $(UTILS_SRC) $(INCDIR)/utils.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/common.o: $(COMMON_SRC) $(INCDIR)/common.hpp
+$(CODEC_OBJ): $(CODEC_SRC) $(INCDIR)/codec.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/utils.o: $(UTILS_SRC) $(INCDIR)/utils.hpp
+$(HTTP2_FRAME_BUILDER_OBJ): $(HTTP2_FRAME_BUILDER_SRC) $(INCDIR)/http2_frame_builder.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/codec.o: $(CODEC_SRC) $(INCDIR)/codec.hpp
+$(HTTP2_FRAME_HANDLER_OBJ): $(HTTP2_FRAME_HANDLER_SRC) $(INCDIR)/http2_frame_handler.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/framebuilder.o: $(FRAMEBUILDER_SRC) $(INCDIR)/framebuilder.hpp
+$(TRANSPORT_OBJ): $(TRANSPORT_SRC) $(INCDIR)/transport.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/framehandler.o: $(FRAMEHANDLER_SRC) $(INCDIR)/framehandler.hpp
+$(TCP_SERVER_OBJ): $(TCP_SERVER_SRC) $(INCDIR)/tcp_server.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/transport.o: $(TRANSPORT_SRC) $(INCDIR)/transport.hpp
+$(TCP_CLIENT_OBJ): $(TCP_CLIENT_SRC) $(INCDIR)/tcp_client.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/tcpserver.o: $(TCPSERVER_SRC) $(INCDIR)/tcpserver.hpp
+$(QUIC_SERVER_OBJ): $(QUIC_SERVER_SRC) $(INCDIR)/quic_server.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/quicserver.o: $(QUICSERVER_SRC) $(INCDIR)/quicserver.hpp
+$(QUIC_CLIENT_OBJ): $(QUIC_CLIENT_SRC) $(INCDIR)/quic_client.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/tlsmanager.o: $(TLSMANAGER_SRC) $(INCDIR)/tlsmanager.hpp
+$(TLS_MANAGER_OBJ): $(TLS_MANAGER_SRC) $(INCDIR)/tls_manager.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 # Clean target
 clean:
@@ -216,5 +224,5 @@ clean:
 
 # Testing target 
 test:
-	$(CXX) $(CXXFLAGS) $(TESTDIR)/*.cpp -o $(BUILDDIR)/tests && ./$(BUILDDIR)/tests
+	$(CXX) $(CXXFLAGS) $(TESTDIR)/*.cc -o $(BUILDDIR)/tests && ./$(BUILDDIR)/tests
 
