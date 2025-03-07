@@ -191,46 +191,25 @@ int TcpTransport::Read_TS(void *connection, std::vector<uint8_t> &buffer,
 
 int QuicTransport::SendBatch(void *connection,
                              const std::vector<std::vector<uint8_t>> &bytes) {
-  HQUIC stream = static_cast<HQUIC>(connection);
+  const size_t size = bytes.size();
 
-  QUIC_STATUS status;
-  uint8_t *sendBufferRaw;
-  QUIC_BUFFER *sendBuffer;
+  for (size_t i = 0; i < size; ++i) {
+    const auto &chunk = bytes[i];
+    bool is_last_chunk = (i == size - 1);
 
-  for (const auto &chunk : bytes) {
-    sendBufferRaw = (uint8_t *)malloc(sizeof(QUIC_BUFFER) + chunk.size());
-
-    if (sendBufferRaw == NULL) {
-      LogError("SendBuffer allocation failed");
-      status = QUIC_STATUS_OUT_OF_MEMORY;
-      if (QUIC_FAILED(status)) {
-        ms_quic_->StreamShutdown(stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
+    // Handle chunk
+    if (is_last_chunk) {
+      if (Send(connection, chunk, QUIC_SEND_FLAG_FIN) == ERROR) {
         return ERROR;
       }
-    }
 
-    sendBuffer = (QUIC_BUFFER *)sendBufferRaw;
-    sendBuffer->Buffer = sendBufferRaw + sizeof(QUIC_BUFFER);
-    sendBuffer->Length = chunk.size();
-
-    memcpy(sendBuffer->Buffer, chunk.data(), chunk.size());
-
-    if (QUIC_FAILED(status = ms_quic_->StreamSend(
-                        stream, sendBuffer, 1,
-                        (&chunk == &bytes.back()) ? QUIC_SEND_FLAG_FIN
-                                                  : QUIC_SEND_FLAG_DELAY_SEND,
-                        sendBuffer))) {
-      std::ostringstream oss;
-      oss << "StreamSend failed, 0x" << std::hex << status;
-      LogError(oss.str());
-
-      free(sendBufferRaw);
-      if (QUIC_FAILED(status)) {
-        ms_quic_->StreamShutdown(stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
+    } else {
+      if (Send(connection, chunk) == ERROR) {
         return ERROR;
       }
     }
   }
+
   return 0;
 }
 
@@ -275,23 +254,55 @@ int QuicTransport::Send(void *connection, const std::vector<uint8_t> &bytes) {
   return 0;
 }
 
-int QuicTransport::Read(void *connection, std::vector<uint8_t> &buffer,
-                        uint32_t write_offset) {
-  return ERROR;
+int QuicTransport::Send(void *connection, const std::vector<uint8_t> &bytes,
+                        enum QUIC_SEND_FLAGS flag) {
+  HQUIC stream = static_cast<HQUIC>(connection);
+
+  QUIC_STATUS status;
+  uint8_t *sendBufferRaw;
+  QUIC_BUFFER *sendBuffer;
+
+  sendBufferRaw = (uint8_t *)malloc(sizeof(QUIC_BUFFER) + bytes.size());
+
+  if (sendBufferRaw == NULL) {
+    LogError("SendBuffer allocation failed");
+    status = QUIC_STATUS_OUT_OF_MEMORY;
+    if (QUIC_FAILED(status)) {
+      ms_quic_->StreamShutdown(stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
+      return ERROR;
+    }
+  }
+
+  sendBuffer = (QUIC_BUFFER *)sendBufferRaw;
+  sendBuffer->Buffer = sendBufferRaw + sizeof(QUIC_BUFFER);
+  sendBuffer->Length = bytes.size();
+
+  memcpy(sendBuffer->Buffer, bytes.data(), bytes.size());
+
+  if (QUIC_FAILED(status = ms_quic_->StreamSend(stream, sendBuffer, 1, flag,
+                                                sendBuffer))) {
+    std::ostringstream oss;
+    oss << "StreamSend failed, 0x" << std::hex << status;
+    LogError(oss.str());
+
+    free(sendBufferRaw);
+    if (QUIC_FAILED(status)) {
+      ms_quic_->StreamShutdown(stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
+      return ERROR;
+    }
+  }
+
+  return 0;
 }
 
-int QuicTransport::SendBatch_TS(void *connection,
-                                const std::vector<std::vector<uint8_t>> &bytes,
-                                std::mutex &mut) {
-  return ERROR;
-}
-
-int QuicTransport::Send_TS(void *connection, const std::vector<uint8_t> &bytes,
-                           std::mutex &mut) {
-  return ERROR;
-}
-
-int QuicTransport::Read_TS(void *connection, std::vector<uint8_t> &buffer,
-                           uint32_t write_offset, std::mutex &mut) {
-  return ERROR;
-}
+// int QuicTransport::SendBatch_TS(void *connection,
+//                                 const std::vector<std::vector<uint8_t>>
+//                                 &bytes, std::mutex &mut) {
+//   return ERROR;
+// }
+//
+// int QuicTransport::Send_TS(void *connection, const std::vector<uint8_t>
+// &bytes,
+//                            std::mutex &mut) {
+//   return ERROR;
+// }

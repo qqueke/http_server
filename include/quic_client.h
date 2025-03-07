@@ -6,14 +6,14 @@
 #include <memory>
 
 #include "codec.h"
-#include "http2_frame_builder.h"
+#include "http3_frame_builder.h"
 #include "router.h"
 #include "transport.h"
 
 // #include "http2_frame_handler.h"
 
 class QuicClient {
- public:
+public:
   explicit QuicClient(
       int argc, char *argv[],
       const std::vector<std::pair<std::string, std::string>> &requests);
@@ -28,7 +28,6 @@ class QuicClient {
 
   const std::vector<std::pair<std::string, std::string>> requests_;
 
- private:
   std::weak_ptr<Router> router_;
 
   std::shared_ptr<QuicTransport> transport_;
@@ -37,6 +36,7 @@ class QuicClient {
 
   std::shared_ptr<QpackCodec> codec_;
 
+private:
   static const QUIC_API_TABLE *ms_quic_;
 
   HQUIC registration_;
@@ -66,4 +66,4 @@ class QuicClient {
                                 _Inout_ QUIC_CONNECTION_EVENT *Event);
 };
 
-#endif  // QUICCLIENT_HPP
+#endif // QUICCLIENT_HPP

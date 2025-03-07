@@ -3,14 +3,17 @@
 #include <cstdlib>
 #include <format>
 #include <iostream>
+#include <memory>
 #include <sstream>
 
+#include "http3_frame_builder.h"
+#include "http3_frame_handler.h"
 #include "log.h"
 // #include "server.h"
 #include "common.h"
 
 static std::vector<uint8_t> ReadResumptionTicketFromFile() {
-  const std::string filename = "ticket";  // Hardcoded filename
+  const std::string filename = "ticket"; // Hardcoded filename
   uint32_t ticketLength = 0;
 
   // Open the file in binary mode
@@ -32,102 +35,6 @@ static std::vector<uint8_t> ReadResumptionTicketFromFile() {
 
   std::cout << "Failed to open file for reading: " << filename << std::endl;
   return {};
-}
-
-static uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
-                           const std::vector<uint8_t>::iterator &end) {
-  // Check if there's enough data for at least the first byte
-  if (iter + 1 >= end) {
-    LogError("Buffer overflow in ReadVarint");
-    return ERROR;
-  }
-
-  // Read the first byte
-  uint64_t value = *iter++;
-  uint8_t prefix =
-      value >> 6;  // Get the prefix to determine the length of the varint
-  size_t length = 1 << prefix;  // 1, 2, 4, or 8 bytes
-
-  value &= 0x3F;  // Mask out the 2 most significant bits
-
-  // Check if we have enough data for the full varint
-  if (iter + length - 1 >= end) {
-    LogError("Error: Not enough data in buffer for full varint\n");
-    return ERROR;
-  }
-
-  // Read the remaining bytes of the varint
-  for (size_t i = 1; i < length; ++i) {
-    value = (value << 8) | *iter++;
-  }
-
-  return value;
-}
-
-void QuicClient::ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &strm_buf,
-                                   std::string &data) {
-  auto iter = strm_buf.begin();
-
-  while (iter < strm_buf.end()) {
-    // Ensure we have enough data for a frame (frame_type + frameLength)
-    if (std::distance(iter, strm_buf.end()) < 3) {
-      // std::cout << "Error: Bad frame format (Not enough data)\n";
-      break;
-    }
-
-    // Read the frame type
-    uint64_t frame_type = ReadVarint(iter, strm_buf.end());
-
-    // Read the frame length
-    uint64_t frameLength = ReadVarint(iter, strm_buf.end());
-
-    // Ensure the payload doesn't exceed the bounds of the buffer
-    if (std::distance(iter, strm_buf.end()) < frameLength) {
-      std::cout << "Error: Payload exceeds buffer bounds\n";
-      break;
-    }
-
-    // Handle the frame based on the type
-    switch (frame_type) {
-      case Frame::DATA:  // DATA frame
-        // std::cout << "[strm][" << Stream << "] Received DATA frame\n";
-        // Data might have been transmitted over multiple frames
-        data += std::string(iter, iter + frameLength);
-        break;
-
-      case Frame::HEADERS:
-        // std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
-
-        {
-          std::vector<uint8_t> encoded_headers(iter, iter + frameLength);
-
-          // QuicClient::QPACK_DecodeHeaders(Stream, encoded_headers);
-
-          codec_->Decode(&Stream, encoded_headers, quic_headers_map_[Stream]);
-
-          // headers = std::string(iter, iter + frameLength);
-        }
-
-        break;
-
-      default:  // Unknown frame type
-        std::cout << "[strm][" << Stream << "] Unknown frame type: 0x"
-                  << std::hex << frame_type << std::dec << "\n";
-        break;
-    }
-
-    iter += frameLength;
-  }
-  // std::cout << headers << data << "\n";
-
-  // Optionally, print any remaining unprocessed data in the buffer
-  if (iter < strm_buf.end()) {
-    std::cout << "Error: Remaining data for in Buffer from Stream: " << Stream
-              << "-------\n";
-    std::cout.write(reinterpret_cast<const char *>(&(*iter)),
-                    strm_buf.end() - iter);
-    std::cout << std::endl;
-  }
 }
 
 static void ValidatePseudoHeadersTmp(
@@ -424,96 +331,86 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
   QuicClient *client = (QuicClient *)Context;
 
   switch (Event->Type) {
-    case QUIC_STREAM_EVENT_SEND_COMPLETE:
-      // A previous StreamSend call has completed, and the context is being
-      // returned back to the app.
+  case QUIC_STREAM_EVENT_SEND_COMPLETE:
+    // A previous StreamSend call has completed, and the context is being
+    // returned back to the app.
 
-      // We set the send context to be the pointer that we can latter free
-      free(Event->SEND_COMPLETE.ClientContext);
+    // We set the send context to be the pointer that we can latter free
+    free(Event->SEND_COMPLETE.ClientContext);
 
 #ifdef QUIC_DEBUG
-      printf("[strm][%p] Data sent\n", Stream);
+    printf("[strm][%p] Data sent\n", Stream);
 #endif
-      break;
-    case QUIC_STREAM_EVENT_RECEIVE:
-      // Data was received from the peer on the stream.
+    break;
+  case QUIC_STREAM_EVENT_RECEIVE:
+    // Data was received from the peer on the stream.
 #ifdef QUIC_DEBUG
 
-      printf("[strm][%p] Data received\n", Stream);
+    printf("[strm][%p] Data received\n", Stream);
 #endif
-      if (client->quic_buffer_map_.find(Stream) ==
-          client->quic_buffer_map_.end()) {
-        client->quic_buffer_map_[Stream].reserve(256);
+    if (client->quic_buffer_map_.find(Stream) ==
+        client->quic_buffer_map_.end()) {
+      client->quic_buffer_map_[Stream].reserve(256);
+    }
+
+    for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++) {
+      const QUIC_BUFFER *buffer = &Event->RECEIVE.Buffers[i];
+
+      uint8_t *buf_ptr = buffer->Buffer;
+      uint8_t *buf_end = buffer->Buffer + buffer->Length;
+
+      if (buffer->Length > 0) {
+        std::vector<uint8_t> &strm_buf = client->quic_buffer_map_[Stream];
+        strm_buf.insert(strm_buf.end(), buf_ptr, buf_end);
       }
+    }
 
-      for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++) {
-        const QUIC_BUFFER *buffer = &Event->RECEIVE.Buffers[i];
+    break;
+  case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
 
-        uint8_t *bufferPointer = buffer->Buffer;
-        uint8_t *bufferEnd = buffer->Buffer + buffer->Length;
-
-        if (buffer->Length > 0) {
-          auto &strm_buf = client->quic_buffer_map_[Stream];
-          strm_buf.insert(strm_buf.end(), bufferPointer, bufferEnd);
-        }
-      }
-
-      break;
-    case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
-
-      // The peer gracefully shut down its send direction of the stream.
+    // The peer gracefully shut down its send direction of the stream.
 #ifdef QUIC_DEBUG
 
-      printf("[strm][%p] Peer aborted\n", Stream);
+    printf("[strm][%p] Peer aborted\n", Stream);
 #endif
-      break;
-    case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
-      // The peer aborted its send direction of the stream.
+    break;
+  case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
+    // The peer aborted its send direction of the stream.
 #ifdef QUIC_DEBUG
 
-      printf("[strm][%p] Peer shut down\n", Stream);
+    printf("[strm][%p] Peer shut down\n", Stream);
 #endif
-      if (client->quic_buffer_map_.find(Stream) ==
-          client->quic_buffer_map_.end()) {
-        LogError("No buffer found for Stream");
-        break;
-      }
-
-      {
-        std::string headers;
-        std::string data;
-
-        client->ParseStreamBuffer(Stream, client->quic_buffer_map_[Stream],
-                                  data);
-
-        if (client->quic_headers_map_[Stream].find(":status") ==
-            client->quic_headers_map_[Stream].end()) {
-          std::cout << "Error: Response missing :status field\n";
-        } else {
-          std::cout << "Status: "
-                    << client->quic_headers_map_[Stream][":status"] << " "
-                    << data << std::endl;
-        }
-      }
-
-      client->quic_headers_map_.erase(Stream);
-      client->quic_buffer_map_.erase(Stream);
-
+    if (client->quic_buffer_map_.find(Stream) ==
+        client->quic_buffer_map_.end()) {
+      LogError("No buffer found for Stream");
       break;
-    case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
-      // Both directions of the stream have been shut down and MsQuic is done
-      // with the stream. It can now be safely cleaned up.
+    }
+
+    {
+      std::unique_ptr<Http3FrameHandler> frame_handler =
+          std::make_unique<Http3FrameHandler>(
+              client->transport_, client->frame_builder_, client->codec_);
+
+      frame_handler->ProcessFrames(Stream, client->quic_buffer_map_[Stream]);
+    }
+
+    client->quic_buffer_map_.erase(Stream);
+
+    break;
+  case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
+    // Both directions of the stream have been shut down and MsQuic is done
+    // with the stream. It can now be safely cleaned up.
 
 #ifdef QUIC_DEBUG
 
-      printf("[strm][%p] Stream is officially closed\n", Stream);
+    printf("[strm][%p] Stream is officially closed\n", Stream);
 #endif
-      if (!Event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
-        ms_quic_->StreamClose(Stream);
-      }
-      break;
-    default:
-      break;
+    if (!Event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
+      ms_quic_->StreamClose(Stream);
+    }
+    break;
+  default:
+    break;
   }
   return QUIC_STATUS_SUCCESS;
 }
@@ -554,73 +451,73 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
   }
 
   switch (Event->Type) {
-    case QUIC_CONNECTION_EVENT_CONNECTED:
+  case QUIC_CONNECTION_EVENT_CONNECTED:
 //
 // The handshake has completed for the connection.
 #ifdef QUIC_DEBUG
 
-      printf("[conn][%p] Connected\n", Connection);
+    printf("[conn][%p] Connected\n", Connection);
 #endif
 
-      QuicSend(Connection, Context);
-      break;
-    case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT:
-      // The connection has been shut down by the transport. Generally, this
-      // is the expected way for the connection to shut down with this
-      // protocol, since we let idle timeout kill the connection.
-      if (Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status ==
-          QUIC_STATUS_CONNECTION_IDLE) {
-        printf("[conn][%p] Successfully shut down on idle.\n", Connection);
-      } else {
-        printf("[conn][%p] Shut down by transport, 0x%x\n", Connection,
-               Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status);
-      }
-      break;
-    case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
+    QuicSend(Connection, Context);
+    break;
+  case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT:
+    // The connection has been shut down by the transport. Generally, this
+    // is the expected way for the connection to shut down with this
+    // protocol, since we let idle timeout kill the connection.
+    if (Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status ==
+        QUIC_STATUS_CONNECTION_IDLE) {
+      printf("[conn][%p] Successfully shut down on idle.\n", Connection);
+    } else {
+      printf("[conn][%p] Shut down by transport, 0x%x\n", Connection,
+             Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status);
+    }
+    break;
+  case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
 #ifdef QUIC_DEBUG
 
-      printf("[conn][%p] Shut down by peer, 0x%llu\n", Connection,
-             (unsigned long long)Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
+    printf("[conn][%p] Shut down by peer, 0x%llu\n", Connection,
+           (unsigned long long)Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
 #endif
-      // The connection was explicitly shut down by the peer.
-      break;
-    case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
-      // The connection has completed the shutdown process and is ready to
-      // be safely cleaned up.
+    // The connection was explicitly shut down by the peer.
+    break;
+  case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
+    // The connection has completed the shutdown process and is ready to
+    // be safely cleaned up.
 
 #ifdef QUIC_DEBUG
 
-      printf("[conn][%p] Connection officially closed\n", Connection);
+    printf("[conn][%p] Connection officially closed\n", Connection);
 #endif
-      if (!Event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
-        ms_quic_->ConnectionClose(Connection);
-      }
-      break;
-    case QUIC_CONNECTION_EVENT_RESUMPTION_TICKET_RECEIVED:
+    if (!Event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
+      ms_quic_->ConnectionClose(Connection);
+    }
+    break;
+  case QUIC_CONNECTION_EVENT_RESUMPTION_TICKET_RECEIVED:
 // A resumption ticket (also called New Session Ticket or NST) was
 // received from the server.
 #ifdef QUIC_DEBUG
-      printf("[conn][%p] Resumption ticket received (%u bytes):\n", Connection,
-             Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength);
+    printf("[conn][%p] Resumption ticket received (%u bytes):\n", Connection,
+           Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength);
 #endif
-      {
-        SaveResumptionTicketToFile(
-            Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket,
-            Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength);
+    {
+      SaveResumptionTicketToFile(
+          Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket,
+          Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength);
 
-        // for (uint32_t i = 0;
-        //      i < Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength;
-        //      i++) {
-        //   printf("%.2X",
-        //          (uint8_t)Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket[i]);
-        // }
-        // printf("\n");
+      // for (uint32_t i = 0;
+      //      i < Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength;
+      //      i++) {
+      //   printf("%.2X",
+      //          (uint8_t)Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket[i]);
+      // }
+      // printf("\n");
 
-        break;
-      }
-
-    default:
       break;
+    }
+
+  default:
+    break;
   }
   return QUIC_STATUS_SUCCESS;
 }

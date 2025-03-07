@@ -6,14 +6,14 @@
 #include <memory>
 
 #include "codec.h"
-#include "http2_frame_builder.h"
+#include "http3_frame_builder.h"
 #include "router.h"
 #include "transport.h"
 
 // #include "http2_frame_handler.h"
 
 class QuicServer {
- public:
+public:
   explicit QuicServer(const std::shared_ptr<Router> &router, int argc,
                       char *argv[]);
   ~QuicServer();
@@ -23,7 +23,6 @@ class QuicServer {
 
   void Run();
 
- private:
   std::weak_ptr<Router> router_;
 
   std::shared_ptr<QuicTransport> transport_;
@@ -32,6 +31,7 @@ class QuicServer {
 
   std::shared_ptr<QpackCodec> codec_;
 
+private:
   static const QUIC_API_TABLE *ms_quic_;
 
   HQUIC registration_;
@@ -73,4 +73,4 @@ class QuicServer {
                               _Inout_ QUIC_LISTENER_EVENT *Event);
 };
 
-#endif  // QUICSERVER_HPP
+#endif // QUICSERVER_HPP

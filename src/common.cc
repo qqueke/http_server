@@ -16,13 +16,13 @@
 #include "utils.h"
 
 HttpCore::HttpCore() {
-  // hpackCodec = std::make_unique<HpackCodec>();
+  // hpack_codec = std::make_unique<HpackCodec>();
   qpackCodec = std::make_unique<QpackCodec>();
 
-  // http2FrameBuilder = std::make_unique<Http2FrameBuilder>();
+  // http2_frame_builder = std::make_unique<Http2FrameBuilder>();
   http3FrameBuilder = std::make_unique<Http3FrameBuilder>();
 
-  // tcpTransport = std::make_unique<TcpTransport>();
+  // tcp_transport = std::make_unique<TcpTransport>();
   quicTransport = std::make_unique<QuicTransport>();
 }
 
@@ -30,14 +30,14 @@ void HttpCore::EncodeHPACKHeaders(
     lshpack_enc &encoder,
     const std::unordered_map<std::string, std::string> &headers,
     std::vector<uint8_t> &encoded_headers) {
-  hpackCodec->Encode(static_cast<void *>(&encoder), headers, encoded_headers);
+  hpack_codec->Encode(static_cast<void *>(&encoder), headers, encoded_headers);
 }
 
 void HttpCore::DecodeHPACKHeaders(
     lshpack_dec &decoder, std::vector<uint8_t> &encoded_headers,
     std::unordered_map<std::string, std::string> &decodedHeaders) {
-  hpackCodec->Decode(static_cast<void *>(&decoder), encoded_headers,
-                     decodedHeaders);
+  hpack_codec->Decode(static_cast<void *>(&decoder), encoded_headers,
+                      decodedHeaders);
 }
 
 void HttpCore::EncodeQPACKHeaders(
@@ -53,17 +53,20 @@ void HttpCore::DecodeQPACKHeaders(
                      decodedHeaders);
 }
 
-std::vector<uint8_t> HttpCore::BuildHttp2Frame(
-    Frame type, uint8_t frame_flags, uint32_t stream_id, uint32_t errorCode,
-    uint32_t increment, const std::vector<uint8_t> &encoded_headers,
-    const std::string &data) {
-  return http2FrameBuilder->BuildFrame(type, frame_flags, stream_id, errorCode,
-                                       increment, encoded_headers, data);
+std::vector<uint8_t>
+HttpCore::BuildHttp2Frame(Frame type, uint8_t frame_flags, uint32_t stream_id,
+                          uint32_t errorCode, uint32_t increment,
+                          const std::vector<uint8_t> &encoded_headers,
+                          const std::string &data) {
+  return http2_frame_builder->BuildFrame(type, frame_flags, stream_id,
+                                         errorCode, increment, encoded_headers,
+                                         data);
 }
 
-std::vector<uint8_t> HttpCore::BuildHttp3Frame(
-    Frame type, uint32_t stream_id, const std::vector<uint8_t> &encoded_headers,
-    const std::string &data) {
+std::vector<uint8_t>
+HttpCore::BuildHttp3Frame(Frame type, uint32_t stream_id,
+                          const std::vector<uint8_t> &encoded_headers,
+                          const std::string &data) {
   return http3FrameBuilder->BuildFrame(type, stream_id, encoded_headers, data);
 }
 
@@ -72,7 +75,7 @@ int HttpCore::Send(void *connection, const std::vector<uint8_t> &bytes,
   if (useQuic) {
     return quicTransport->Send(connection, bytes);
   } else {
-    return tcpTransport->Send(connection, bytes);
+    return tcp_transport->Send(connection, bytes);
   }
 }
 
@@ -82,45 +85,40 @@ int HttpCore::SendBatch(void *connection,
   if (useQuic) {
     return quicTransport->SendBatch(connection, bytes);
   } else {
-    return tcpTransport->SendBatch(connection, bytes);
+    return tcp_transport->SendBatch(connection, bytes);
   }
 }
 
 int HttpCore::Receive(void *connection, std::vector<uint8_t> &buffer,
                       uint32_t write_offset, bool useQuic) {
-  if (useQuic) {
-    return quicTransport->Read(connection, buffer, write_offset);
-  } else {
-    return tcpTransport->Read(connection, buffer, write_offset);
-  }
+  return tcp_transport->Read(connection, buffer, write_offset);
 }
 
 int HttpCore::Send_TS(void *connection, const std::vector<uint8_t> &bytes,
                       std::mutex &mut, bool useQuic) {
-  if (useQuic) {
-    return quicTransport->Send_TS(connection, bytes, mut);
-  } else {
-    return tcpTransport->Send_TS(connection, bytes, mut);
-  }
+  // if (useQuic) {
+  //   return quicTransport->Send_TS(connection, bytes, mut);
+  // } else {
+  //   return tcp_transport->Send_TS(connection, bytes, mut);
+  // }
+  //
+  return ERROR;
 }
 
 int HttpCore::SendBatch_TS(void *connection,
                            const std::vector<std::vector<uint8_t>> &bytes,
                            std::mutex &mut, bool useQuic) {
-  if (useQuic) {
-    return quicTransport->SendBatch_TS(connection, bytes, mut);
-  } else {
-    return tcpTransport->SendBatch_TS(connection, bytes, mut);
-  }
+  // if (useQuic) {
+  //   return quicTransport->SendBatch_TS(connection, bytes, mut);
+  // } else {
+  //   return tcp_transport->SendBatch_TS(connection, bytes, mut);
+  // }
+  return ERROR;
 }
 
 int HttpCore::Receive_TS(void *connection, std::vector<uint8_t> &buffer,
                          uint32_t write_offset, std::mutex &mut, bool useQuic) {
-  if (useQuic) {
-    return quicTransport->Read_TS(connection, buffer, write_offset, mut);
-  } else {
-    return tcpTransport->Read_TS(connection, buffer, write_offset, mut);
-  }
+  return tcp_transport->Read_TS(connection, buffer, write_offset, mut);
 }
 
 // HTTP1 Request Formatted String to HTTP3 Headers Map
@@ -168,7 +166,8 @@ void HttpCore::ReqHeaderToPseudoHeader(
                        [](unsigned char c) { return std::tolower(c); });
 
         // Remove "Connection" header
-        if (key != "connection") headers_map[key] = value;
+        if (key != "connection")
+          headers_map[key] = value;
       }
     }
   }
@@ -265,10 +264,10 @@ uint64_t HttpCore::ReadVarint(std::vector<uint8_t>::iterator &iter,
   // Read the first byte
   uint64_t value = *iter++;
   uint8_t prefix =
-      value >> 6;  // Get the prefix to determine the length of the varint
-  size_t length = 1 << prefix;  // 1, 2, 4, or 8 bytes
+      value >> 6; // Get the prefix to determine the length of the varint
+  size_t length = 1 << prefix; // 1, 2, 4, or 8 bytes
 
-  value &= 0x3F;  // Mask out the 2 most significant bits
+  value &= 0x3F; // Mask out the 2 most significant bits
 
   // Check if we have enough data for the full varint
   if (iter + length - 1 >= end) {
@@ -309,32 +308,32 @@ void HttpCore::ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &strm_buf,
 
     // Handle the frame based on the type
     switch (frame_type) {
-      case Frame::DATA:  // DATA frame
-        // std::cout << "[strm][" << Stream << "] Received DATA frame\n";
-        // Data might have been transmitted over multiple frames
-        data += std::string(iter, iter + frameLength);
-        break;
+    case Frame::DATA: // DATA frame
+      // std::cout << "[strm][" << Stream << "] Received DATA frame\n";
+      // Data might have been transmitted over multiple frames
+      data += std::string(iter, iter + frameLength);
+      break;
 
-      case Frame::HEADERS:
-        // std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
+    case Frame::HEADERS:
+      // std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
 
-        {
-          std::vector<uint8_t> encoded_headers(iter, iter + frameLength);
+      {
+        std::vector<uint8_t> encoded_headers(iter, iter + frameLength);
 
-          // HttpClient::QPACK_DecodeHeaders(Stream, encoded_headers);
+        // HttpClient::QPACK_DecodeHeaders(Stream, encoded_headers);
 
-          DecodeQPACKHeaders(&Stream, encoded_headers,
-                             QuicDecodedHeadersMap[Stream]);
+        DecodeQPACKHeaders(&Stream, encoded_headers,
+                           QuicDecodedHeadersMap[Stream]);
 
-          // headers = std::string(iter, iter + frameLength);
-        }
+        // headers = std::string(iter, iter + frameLength);
+      }
 
-        break;
+      break;
 
-      default:  // Unknown frame type
-        std::cout << "[strm][" << Stream << "] Unknown frame type: 0x"
-                  << std::hex << frame_type << std::dec << "\n";
-        break;
+    default: // Unknown frame type
+      std::cout << "[strm][" << Stream << "] Unknown frame type: 0x" << std::hex
+                << frame_type << std::dec << "\n";
+      break;
     }
 
     iter += frameLength;

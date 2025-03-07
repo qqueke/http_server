@@ -5,21 +5,21 @@
 
 #include <memory>
 
-#include "http2_frame_handler.h"
+#include "codec.h"
+#include "http2_frame_builder.h"
 #include "router.h"
 #include "tls_manager.h"
+#include "transport.h"
 
 class TcpServer {
- public:
+public:
   explicit TcpServer(const std::shared_ptr<Router> &router);
   ~TcpServer();
 
   void Run();
 
- private:
+private:
   std::unique_ptr<TlsManager> tls_manager_;
-
-  std::unique_ptr<Http2ServerFrameHandler> frame_handler_;
 
   std::shared_ptr<TcpTransport> transport_;
 
@@ -38,4 +38,4 @@ class TcpServer {
   void HandleHTTP2Request(SSL *client_ssl);
 };
 
-#endif  // TCPSERVER_HPP
+#endif // TCPSERVER_HPP

@@ -38,21 +38,4 @@ public:
                                               uint32_t increment);
 };
 
-class Http3FrameBuilder {
-public:
-  std::vector<uint8_t>
-  BuildFrame(Frame type, uint32_t stream_id = 0,
-             const std::vector<uint8_t> &encoded_headers = {},
-             const std::string &data = "");
-
-  std::vector<uint8_t> BuildDataFrame(const std::string &data);
-
-  std::vector<uint8_t>
-  BuildHeaderFrame(const std::vector<uint8_t> &encoded_headers);
-
-  std::vector<uint8_t> BuildGoAwayFrame(uint32_t stream_id);
-
-  std::vector<uint8_t> BuildSettingsFrame();
-};
-
-#endif // http2_frame_builder.hPP
+#endif

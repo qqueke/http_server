@@ -59,7 +59,10 @@ LOG_SRC = $(SRCDIR)/log.cc
 CODEC_SRC = $(SRCDIR)/codec.cc
 HTTP2_FRAME_BUILDER_SRC = $(SRCDIR)/http2_frame_builder.cc
 
+HTTP3_FRAME_BUILDER_SRC = $(SRCDIR)/http3_frame_builder.cc
 HTTP2_FRAME_HANDLER_SRC = $(SRCDIR)/http2_frame_handler.cc
+
+HTTP3_FRAME_HANDLER_SRC = $(SRCDIR)/http3_frame_handler.cc
 
 TRANSPORT_SRC = $(SRCDIR)/transport.cc
 
@@ -90,12 +93,15 @@ LOG_OBJ = $(BUILDDIR)/log.o
 
 CODEC_OBJ = $(BUILDDIR)/codec.o
 HTTP2_FRAME_BUILDER_OBJ = $(BUILDDIR)/http2_frame_builder.o
+
+HTTP3_FRAME_BUILDER_OBJ = $(BUILDDIR)/http3_frame_builder.o
 TRANSPORT_OBJ = $(BUILDDIR)/transport.o
 
 TLS_MANAGER_OBJ = $(BUILDDIR)/tls_manager.o
 
 HTTP2_FRAME_HANDLER_OBJ = $(BUILDDIR)/http2_frame_handler.o
 
+HTTP3_FRAME_HANDLER_OBJ = $(BUILDDIR)/http3_frame_handler.o
 
 TCP_SERVER_OBJ = $(BUILDDIR)/tcp_server.o
 
@@ -164,7 +170,7 @@ dependencies:
 	fi
 
 # Build the main executable
-server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(COMMON_OBJ) $(CLIENT_OBJ) $(CODEC_OBJ) $(HTTP2_FRAME_BUILDER_OBJ) $(HTTP2_FRAME_HANDLER_OBJ) $(TRANSPORT_OBJ) $(TLS_MANAGER_OBJ) $(TCP_SERVER_OBJ) $(TCP_CLIENT_OBJ) $(QUIC_SERVER_OBJ) $(QUIC_CLIENT_OBJ)
+server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(COMMON_OBJ) $(CLIENT_OBJ) $(CODEC_OBJ) $(HTTP2_FRAME_BUILDER_OBJ) $(HTTP2_FRAME_HANDLER_OBJ) $(TRANSPORT_OBJ) $(HTTP3_FRAME_BUILDER_OBJ) $(HTTP3_FRAME_HANDLER_OBJ) $(TLS_MANAGER_OBJ) $(TCP_SERVER_OBJ) $(TCP_CLIENT_OBJ) $(QUIC_SERVER_OBJ) $(QUIC_CLIENT_OBJ)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Rules for building object files
@@ -198,7 +204,13 @@ $(CODEC_OBJ): $(CODEC_SRC) $(INCDIR)/codec.h
 $(HTTP2_FRAME_BUILDER_OBJ): $(HTTP2_FRAME_BUILDER_SRC) $(INCDIR)/http2_frame_builder.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+$(HTTP3_FRAME_BUILDER_OBJ): $(HTTP3_FRAME_BUILDER_SRC) $(INCDIR)/http3_frame_builder.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
 $(HTTP2_FRAME_HANDLER_OBJ): $(HTTP2_FRAME_HANDLER_SRC) $(INCDIR)/http2_frame_handler.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(HTTP3_FRAME_HANDLER_OBJ): $(HTTP3_FRAME_HANDLER_SRC) $(INCDIR)/http3_frame_handler.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(TRANSPORT_OBJ): $(TRANSPORT_SRC) $(INCDIR)/transport.h

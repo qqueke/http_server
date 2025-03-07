@@ -1,5 +1,5 @@
-#ifndef FRAMEBUILDER_HPP
-#define FRAMEBUILDER_HPP
+#ifndef HTTP2_FRAME_BUILDER_HPP
+#define HTTP2_FRAME_BUILDER_HPP
 
 #include <cstdint>
 #include <memory>
@@ -11,49 +11,9 @@
 #include "crypto.h"
 #include "router.h"
 
-struct Http2FrameContext {
-  const std::vector<uint8_t> &read_buffer;
-
-  std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
-      &decoded_headers_map;
-
-  std::unordered_map<uint32_t, std::vector<uint8_t>> &encoded_headers_map;
-
-  std::unordered_map<uint32_t, std::string> &data_map;
-
-  struct lshpack_enc &enc;
-
-  struct lshpack_dec &dec;
-
-  uint32_t &conn_win_size;
-
-  std::unordered_map<uint32_t, uint32_t> &strm_win_size_map;
-
-  bool &expect_cont_frame;
-
-  // Constructor that accepts references to the original data
-  Http2FrameContext(
-      const std::vector<uint8_t> &read_buf,
-      std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
-          &decodedHeadersMap,
-      std::unordered_map<uint32_t, std::vector<uint8_t>> &encoded_headers_map,
-      std::unordered_map<uint32_t, std::string> &dataMap,
-      struct lshpack_enc &enc, struct lshpack_dec &dec, uint32_t &conn_win_size,
-      std::unordered_map<uint32_t, uint32_t> &strm_win_size_map,
-      bool &expectingContFrame)
-      : read_buffer(read_buf),
-        decoded_headers_map(decodedHeadersMap),
-        encoded_headers_map(encoded_headers_map),
-        data_map(dataMap),
-        enc(enc),
-        dec(dec),
-        conn_win_size(conn_win_size),
-        strm_win_size_map(strm_win_size_map),
-        expect_cont_frame(expectingContFrame) {}
-};
-
 class IHttp2FrameHandler {
- public:
+public:
+  virtual ~IHttp2FrameHandler() = default;
   // virtual ~IHttp2FrameHandler() = default;
   virtual int ProcessFrame(void *context, uint8_t frame_type,
                            uint32_t frame_stream, uint32_t read_offset,
@@ -65,7 +25,7 @@ class IHttp2FrameHandler {
                               uint32_t payload_size, uint8_t frame_flags,
                               SSL *ssl, std::mutex &mut) = 0;
 
- private:
+private:
   virtual int HandleDataFrame(void *context, uint32_t frame_stream,
                               uint32_t read_offset, uint32_t payload_size,
                               uint8_t frame_flags, SSL *ssl) = 0;
@@ -153,17 +113,24 @@ class IHttp2FrameHandler {
                                          std::mutex &mut) = 0;
 };
 
-class Http2ServerFrameHandler : IHttp2FrameHandler {
- public:
-  explicit Http2ServerFrameHandler(
-      const std::shared_ptr<TcpTransport> &tcpTransport,
-      const std::shared_ptr<Http2FrameBuilder> &http2FrameBuilder,
-      const std::shared_ptr<HpackCodec> &hpackCodec,
-      const std::shared_ptr<Router> &router)
-      : transport_(tcpTransport),
-        frame_builder_(http2FrameBuilder),
-        codec_(hpackCodec),
-        router_(router) {}
+class Http2FrameHandler : IHttp2FrameHandler {
+public:
+  // Server constructor
+  explicit Http2FrameHandler(
+      const std::shared_ptr<TcpTransport> &tcp_transport,
+      const std::shared_ptr<Http2FrameBuilder> &http2_frame_builder,
+      const std::shared_ptr<HpackCodec> &hpack_codec,
+      const std::shared_ptr<Router> &router,
+      const std::vector<uint8_t> &read_buf);
+
+  // Client constructor
+  explicit Http2FrameHandler(
+      const std::shared_ptr<TcpTransport> &tcp_transport,
+      const std::shared_ptr<Http2FrameBuilder> &http2_frame_builder,
+      const std::shared_ptr<HpackCodec> &hpack_codec,
+      const std::vector<uint8_t> &read_buf);
+
+  ~Http2FrameHandler();
 
   int ProcessFrame(void *context, uint8_t frame_type, uint32_t frame_stream,
                    uint32_t read_offset, uint32_t payload_size,
@@ -173,7 +140,7 @@ class Http2ServerFrameHandler : IHttp2FrameHandler {
                       uint32_t read_offset, uint32_t payload_size,
                       uint8_t frame_flags, SSL *ssl, std::mutex &mut) override;
 
- private:
+private:
   std::weak_ptr<Router> router_;
 
   std::weak_ptr<TcpTransport> transport_;
@@ -182,112 +149,26 @@ class Http2ServerFrameHandler : IHttp2FrameHandler {
 
   std::weak_ptr<HpackCodec> codec_;
 
-  int HandleDataFrame(void *context, uint32_t frame_stream,
-                      uint32_t read_offset, uint32_t payload_size,
-                      uint8_t frame_flags, SSL *ssl) override;
+  const std::vector<uint8_t> &read_buf;
 
-  int HandleHeadersFrame(void *context, uint32_t frame_stream,
-                         uint32_t read_offset, uint32_t payload_size,
-                         uint8_t frame_flags, SSL *ssl) override;
+  std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
+      tcp_decoded_headers_map_;
 
-  int HandlePriorityFrame(void *context, uint32_t frame_stream,
-                          uint32_t read_offset, uint32_t payload_size,
-                          uint8_t frame_flags, SSL *ssl) override;
+  std::unordered_map<uint32_t, std::vector<uint8_t>> encoded_headers_buf_map_;
 
-  int HandleRstStreamFrame(void *context, uint32_t frame_stream,
-                           uint32_t read_offset, uint32_t payload_size,
-                           uint8_t frame_flags, SSL *ssl) override;
+  std::unordered_map<uint32_t, std::string> tcp_data_map_;
 
-  int HandleSettingsFrame(void *context, uint32_t frame_stream,
-                          uint32_t read_offset, uint32_t payload_size,
-                          uint8_t frame_flags, SSL *ssl) override;
+  struct lshpack_enc enc_;
 
-  int HandlePingFrame(void *context, uint32_t frame_stream,
-                      uint32_t read_offset, uint32_t payload_size,
-                      uint8_t frame_flags, SSL *ssl) override;
+  struct lshpack_dec dec_;
 
-  int HandleGoAwayFrame(void *context, uint32_t frame_stream,
-                        uint32_t read_offset, uint32_t payload_size,
-                        uint8_t frame_flags, SSL *ssl) override;
+  uint32_t conn_win_size_;
 
-  int HandleWindowUpdateFrame(void *context, uint32_t frame_stream,
-                              uint32_t read_offset, uint32_t payload_size,
-                              uint8_t frame_flags, SSL *ssl) override;
+  std::unordered_map<uint32_t, uint32_t> strm_win_size_map_;
 
-  int HandleContinuationFrame(void *context, uint32_t frame_stream,
-                              uint32_t read_offset, uint32_t payload_size,
-                              uint8_t frame_flags, SSL *ssl) override;
+  bool wait_for_cont_frame_;
 
-  int HandleDataFrame_TS(void *context, uint32_t frame_stream,
-                         uint32_t read_offset, uint32_t payload_size,
-                         uint8_t frame_flags, SSL *ssl,
-                         std::mutex &mut) override;
-
-  int HandleHeadersFrame_TS(void *context, uint32_t frame_stream,
-                            uint32_t read_offset, uint32_t payload_size,
-                            uint8_t frame_flags, SSL *ssl,
-                            std::mutex &mut) override;
-
-  int HandlePriorityFrame_TS(void *context, uint32_t frame_stream,
-                             uint32_t read_offset, uint32_t payload_size,
-                             uint8_t frame_flags, SSL *ssl,
-                             std::mutex &mut) override;
-
-  int HandleRstStreamFrame_TS(void *context, uint32_t frame_stream,
-                              uint32_t read_offset, uint32_t payload_size,
-                              uint8_t frame_flags, SSL *ssl,
-                              std::mutex &mut) override;
-
-  int HandleSettingsFrame_TS(void *context, uint32_t frame_stream,
-                             uint32_t read_offset, uint32_t payload_size,
-                             uint8_t frame_flags, SSL *ssl,
-                             std::mutex &mut) override;
-
-  int HandlePingFrame_TS(void *context, uint32_t frame_stream,
-                         uint32_t read_offset, uint32_t payload_size,
-                         uint8_t frame_flags, SSL *ssl,
-                         std::mutex &mut) override;
-
-  int HandleGoAwayFrame_TS(void *context, uint32_t frame_stream,
-                           uint32_t read_offset, uint32_t payload_size,
-                           uint8_t frame_flags, SSL *ssl,
-                           std::mutex &mut) override;
-
-  int HandleWindowUpdateFrame_TS(void *context, uint32_t frame_stream,
-                                 uint32_t read_offset, uint32_t payload_size,
-                                 uint8_t frame_flags, SSL *ssl,
-                                 std::mutex &mut) override;
-
-  int HandleContinuationFrame_TS(void *context, uint32_t frame_stream,
-                                 uint32_t read_offset, uint32_t payload_size,
-                                 uint8_t frame_flags, SSL *ssl,
-                                 std::mutex &mut) override;
-};
-
-class Http2ClientFrameHandler : IHttp2FrameHandler {
- public:
-  explicit Http2ClientFrameHandler(
-      const std::shared_ptr<TcpTransport> &tcpTransport,
-      const std::shared_ptr<Http2FrameBuilder> &http2FrameBuilder,
-      const std::shared_ptr<HpackCodec> &hpackCodec)
-      : transport_(tcpTransport),
-        frame_builder_(http2FrameBuilder),
-        codec_(hpackCodec) {}
-
-  int ProcessFrame(void *context, uint8_t frame_type, uint32_t frame_stream,
-                   uint32_t read_offset, uint32_t payload_size,
-                   uint8_t frame_flags, SSL *ssl) override;
-
-  int ProcessFrame_TS(void *context, uint8_t frame_type, uint32_t frame_stream,
-                      uint32_t read_offset, uint32_t payload_size,
-                      uint8_t frame_flags, SSL *ssl, std::mutex &mut) override;
-
- private:
-  std::weak_ptr<TcpTransport> transport_;
-
-  std::weak_ptr<Http2FrameBuilder> frame_builder_;
-
-  std::weak_ptr<HpackCodec> codec_;
+  bool is_server_;
 
   int HandleDataFrame(void *context, uint32_t frame_stream,
                       uint32_t read_offset, uint32_t payload_size,
@@ -371,4 +252,4 @@ class Http2ClientFrameHandler : IHttp2FrameHandler {
                                  std::mutex &mut) override;
 };
 
-#endif  // FRAMEBUILDER_HPP
+#endif // FRAMEBUILDER_HPP

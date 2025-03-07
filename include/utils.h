@@ -20,11 +20,7 @@
 #define UNREFERENCED_PARAMETER(P) (void)(P)
 #endif
 
-// #define ROUTE_HANDLER                                                          \
-//   std::function<std::string(const std::string &, Protocol, void *,             \
-//                             const std::string)>
-
-#define ROUTE_HANDLER \
+#define ROUTE_HANDLER                                                          \
   std::function<std::pair<std::string, std::string>(const std::string &)>
 
 #define STATUS_CODE std::string
@@ -53,38 +49,38 @@ enum : uint32_t {
 };
 
 enum HTTP2Flags : uint8_t {
-  NONE_FLAG = 0x0,  // No flags set
+  NONE_FLAG = 0x0, // No flags set
 
   // DATA frame flags
-  END_STREAM_FLAG = 0x1,  // Bit 0: END_STREAM flag (0x1)
-  PADDED_FLAG = 0x8,      // Bit 3: PADDED flag (0x8)
+  END_STREAM_FLAG = 0x1, // Bit 0: END_STREAM flag (0x1)
+  PADDED_FLAG = 0x8,     // Bit 3: PADDED flag (0x8)
 
   // HEADERS frame flags
-  END_HEADERS_FLAG = 0x4,  // Bit 2: END_HEADERS flag (0x4)
-  PRIORITY_FLAG = 0x20,    // Bit 4: PRIORITY flag (0x10)
+  END_HEADERS_FLAG = 0x4, // Bit 2: END_HEADERS flag (0x4)
+  PRIORITY_FLAG = 0x20,   // Bit 4: PRIORITY flag (0x10)
 
   // SETTINGS frame flags
-  SETTINGS_ACK_FLAG = 0x1,  // Bit 0: SETTINGS_ACK flag (0x1)
+  SETTINGS_ACK_FLAG = 0x1, // Bit 0: SETTINGS_ACK flag (0x1)
 
   // PING frame flags
-  PING_ACK_FLAG = 0x1,  // Bit 0: PING_ACK flag (0x1)
+  PING_ACK_FLAG = 0x1, // Bit 0: PING_ACK flag (0x1)
 };
 
 enum HTTP2ErrorCode : uint32_t {
-  NO_ERROR = 0x0,             // Graceful shutdown
-  PROTOCOL_ERROR = 0x1,       // Unspecific protocol error
-  INTERNAL_ERROR = 0x2,       // Unexpected internal error
-  FLOW_CONTROL_ERROR = 0x3,   // Flow-control protocol violation
-  SETTINGS_TIMEOUT = 0x4,     // No response to SETTINGS frame
-  STREAM_CLOSED = 0x5,        // Received frame after stream was closed
-  FRAME_SIZE_ERROR = 0x6,     // Frame has invalid size
-  REFUSED_STREAM = 0x7,       // Stream refused before processing
-  CANCEL = 0x8,               // Stream no longer needed
-  COMPRESSION_ERROR = 0x9,    // Compression context issue
-  CONNECT_ERROR = 0xa,        // CONNECT request failed
-  ENHANCE_YOUR_CALM = 0xb,    // Peer is generating excessive load
-  INADEQUATE_SECURITY = 0xc,  // Transport security requirements not met
-  HTTP_1_1_REQUIRED = 0xd     // HTTP/1.1 required instead of HTTP/2
+  NO_ERROR = 0x0,            // Graceful shutdown
+  PROTOCOL_ERROR = 0x1,      // Unspecific protocol error
+  INTERNAL_ERROR = 0x2,      // Unexpected internal error
+  FLOW_CONTROL_ERROR = 0x3,  // Flow-control protocol violation
+  SETTINGS_TIMEOUT = 0x4,    // No response to SETTINGS frame
+  STREAM_CLOSED = 0x5,       // Received frame after stream was closed
+  FRAME_SIZE_ERROR = 0x6,    // Frame has invalid size
+  REFUSED_STREAM = 0x7,      // Stream refused before processing
+  CANCEL = 0x8,              // Stream no longer needed
+  COMPRESSION_ERROR = 0x9,   // Compression context issue
+  CONNECT_ERROR = 0xa,       // CONNECT request failed
+  ENHANCE_YOUR_CALM = 0xb,   // Peer is generating excessive load
+  INADEQUATE_SECURITY = 0xc, // Transport security requirements not met
+  HTTP_1_1_REQUIRED = 0xd    // HTTP/1.1 required instead of HTTP/2
 };
 
 enum Frame : uint8_t {
@@ -101,12 +97,12 @@ enum Frame : uint8_t {
 };
 
 enum HTTP2Settings : uint16_t {
-  HEADER_TABLE_SIZE = 0x1,       // Default: 4096
-  ENABLE_PUSH = 0x2,             // Default: 1
-  MAX_CONCURRENT_STREAMS = 0x3,  // Default: Infinite
-  INITIAL_WINDOW_SIZE = 0x4,     // Default: 65535
-  MAX_FRAME_SIZE = 0x5,          // Default: 16384
-  MAX_HEADER_LIST_SIZE = 0x6     // Default: Infinite
+  HEADER_TABLE_SIZE = 0x1,      // Default: 4096
+  ENABLE_PUSH = 0x2,            // Default: 1
+  MAX_CONCURRENT_STREAMS = 0x3, // Default: Infinite
+  INITIAL_WINDOW_SIZE = 0x4,    // Default: 65535
+  MAX_FRAME_SIZE = 0x5,         // Default: 16384
+  MAX_HEADER_LIST_SIZE = 0x6    // Default: Infinite
 };
 
 struct HTTP2Context {
@@ -119,10 +115,7 @@ struct HTTP2Context {
 
   HTTP2Context(SSL *s, struct lshpack_enc *e, uint32_t id, uint8_t type,
                void *instance)
-      : ssl(s),
-        enc(e),
-        stream_id(id),
-        instance_type(type),
+      : ssl(s), enc(e), stream_id(id), instance_type(type),
         instance_ctx(instance) {}
 };
 
@@ -163,7 +156,7 @@ typedef struct QUIC_CREDENTIAL_CONFIG_HELPER {
   };
 } QUIC_CREDENTIAL_CONFIG_HELPER;
 
-struct ssl_st;  // Forward declaration of ssl_st
+struct ssl_st; // Forward declaration of ssl_st
 
 uint64_t CompressFile(const std::string &inputFile,
                       const std::string &outputFile, CompressionType type);
@@ -181,9 +174,9 @@ GetFlag(_In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[],
         _In_z_ const char *name);
 
 // Expects argument in  format: -arg:<argument>
-_Ret_maybenull_ _Null_terminated_ const char *GetValue(
-    _In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[],
-    _In_z_ const char *name);
+_Ret_maybenull_ _Null_terminated_ const char *
+GetValue(_In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[],
+         _In_z_ const char *name);
 
 std::string GetValue2(int argc, char *argv[], const std::string &name);
 

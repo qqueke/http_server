@@ -96,13 +96,7 @@ TcpServer::~TcpServer() {
   }
 }
 
-void TcpServer::Run() {
-  if (frame_handler_ == nullptr) {
-    frame_handler_ = std::make_unique<Http2ServerFrameHandler>(
-        transport_, frame_builder_, codec_, router_.lock());
-  }
-  AcceptConnections();
-}
+void TcpServer::Run() { AcceptConnections(); }
 
 void TcpServer::AcceptConnections() {
   if (listen(socket_, MAX_PENDING_CONNECTIONS) == ERROR) {
@@ -293,33 +287,13 @@ void TcpServer::HandleHTTP2Request(SSL *ssl) {
   std::vector<uint8_t> buffer;
   buffer.reserve(65535);
 
-  std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
-      decodedHeadersMap;
-
-  std::unordered_map<uint32_t, std::vector<uint8_t>> encoded_headersBufferMap;
-
-  std::unordered_map<uint32_t, std::string> dataMap;
-
-  struct lshpack_enc enc{};
-  lshpack_enc_init(&enc);
-
-  struct lshpack_dec dec{};
-  lshpack_dec_init(&dec);
-
-  // auto startTime = std::chrono::high_resolution_clock::now();
-
-  uint32_t conn_win_size{};
-  std::unordered_map<uint32_t, uint32_t> strm_win_size_map;
-  bool expectingContFrame = false;
-
-  Http2FrameContext context(buffer, decodedHeadersMap, encoded_headersBufferMap,
-                            dataMap, enc, dec, conn_win_size, strm_win_size_map,
-                            expectingContFrame);
+  std::unique_ptr<Http2FrameHandler> frame_handler =
+      std::make_unique<Http2FrameHandler>(transport_, frame_builder_, codec_,
+                                          router_.lock(), buffer);
 
   bool receivedPreface = false;
 
   bool goAway = false;
-  uint32_t nRequests = 0;
 
   int read_offset = 0;
   int write_offset = 0;
@@ -381,17 +355,9 @@ void TcpServer::HandleHTTP2Request(SSL *ssl) {
       uint32_t frame_stream = (framePtr[5] << 24) | (framePtr[6] << 16) |
                               (framePtr[7] << 8) | framePtr[8];
 
-      if (expectingContFrame && frame_type != Frame::CONTINUATION) {
-        goAway = true;
-        transport_->Send(
-            ssl, frame_builder_->BuildFrame(Frame::GOAWAY, 0, 0,
-                                            HTTP2ErrorCode::PROTOCOL_ERROR));
-        break;
-      }
-
-      if (frame_handler_->ProcessFrame(&context, frame_type, frame_stream,
-                                       read_offset, payload_size, frame_flags,
-                                       ssl) == ERROR) {
+      if (frame_handler->ProcessFrame(nullptr, frame_type, frame_stream,
+                                      read_offset, payload_size, frame_flags,
+                                      ssl) == ERROR) {
         goAway = true;
         break;
       }
@@ -408,9 +374,6 @@ void TcpServer::HandleHTTP2Request(SSL *ssl) {
       read_offset = 0;
     }
   }
-
-  lshpack_enc_cleanup(&enc);
-  lshpack_dec_cleanup(&dec);
 
   // Timer should end  here and log it to the file
   // auto endTime = std::chrono::high_resolution_clock::now();

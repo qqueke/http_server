@@ -11,20 +11,20 @@ class ITransportManager {
 public:
   virtual ~ITransportManager() = default;
 
+  virtual int Send(void *connection, const std::vector<uint8_t> &bytes) = 0;
+
   virtual int SendBatch(void *connection,
                         const std::vector<std::vector<uint8_t>> &bytes) = 0;
-
-  virtual int Send(void *connection, const std::vector<uint8_t> &bytes) = 0;
 
   virtual int Read(void *connection, std::vector<uint8_t> &buffer,
                    uint32_t write_offset) = 0;
 
+  virtual int Send_TS(void *connection, const std::vector<uint8_t> &bytes,
+                      std::mutex &mut) = 0;
+
   virtual int SendBatch_TS(void *connection,
                            const std::vector<std::vector<uint8_t>> &bytes,
                            std::mutex &mut) = 0;
-
-  virtual int Send_TS(void *connection, const std::vector<uint8_t> &bytes,
-                      std::mutex &mut) = 0;
 
   virtual int Read_TS(void *connection, std::vector<uint8_t> &buffer,
                       uint32_t write_offset, std::mutex &mut) = 0;
@@ -36,20 +36,20 @@ public:
   TcpTransport(uint32_t retry_count, uint32_t sendDelayMS,
                uint32_t recvDelayMS);
 
+  int Send(void *connection, const std::vector<uint8_t> &bytes) override;
+
   int SendBatch(void *connection,
                 const std::vector<std::vector<uint8_t>> &bytes) override;
-
-  int Send(void *connection, const std::vector<uint8_t> &bytes) override;
 
   int Read(void *connection, std::vector<uint8_t> &buffer,
            uint32_t write_offset) override;
 
+  int Send_TS(void *connection, const std::vector<uint8_t> &bytes,
+              std::mutex &mut) override;
+
   int SendBatch_TS(void *connection,
                    const std::vector<std::vector<uint8_t>> &bytes,
                    std::mutex &mut) override;
-
-  int Send_TS(void *connection, const std::vector<uint8_t> &bytes,
-              std::mutex &mut) override;
 
   int Read_TS(void *connection, std::vector<uint8_t> &buffer,
               uint32_t write_offset, std::mutex &mut) override;
@@ -60,28 +60,28 @@ private:
   uint32_t _recvDelayMS_;
 };
 
-class QuicTransport : public ITransportManager {
+class QuicTransport {
 public:
   QuicTransport() = default;
   explicit QuicTransport(const QUIC_API_TABLE *ms_quic) : ms_quic_(ms_quic) {}
 
+  int Send(void *connection, const std::vector<uint8_t> &bytes);
+
+  int Send(void *connection, const std::vector<uint8_t> &bytes,
+           enum QUIC_SEND_FLAGS flag);
+
   int SendBatch(void *connection,
-                const std::vector<std::vector<uint8_t>> &bytes) override;
+                const std::vector<std::vector<uint8_t>> &bytes);
 
-  int Send(void *connection, const std::vector<uint8_t> &bytes) override;
-
-  int Read(void *connection, std::vector<uint8_t> &buffer,
-           uint32_t write_offset) override;
-
-  int SendBatch_TS(void *connection,
-                   const std::vector<std::vector<uint8_t>> &bytes,
-                   std::mutex &mut) override;
-
-  int Send_TS(void *connection, const std::vector<uint8_t> &bytes,
-              std::mutex &mut) override;
-
-  int Read_TS(void *connection, std::vector<uint8_t> &buffer,
-              uint32_t write_offset, std::mutex &mut) override;
+  // int Send_TS(void *connection, const std::vector<uint8_t> &bytes,
+  //             std::mutex &mut);
+  //
+  // int Send_TS(void *connection, const std::vector<uint8_t> &bytes,
+  //             enum QUIC_SEND_FLAGS flag, std::mutex &mut);
+  //
+  // int SendBatch_TS(void *connection,
+  //                  const std::vector<std::vector<uint8_t>> &bytes,
+  //                  std::mutex &mut);
 
 private:
   const QUIC_API_TABLE *ms_quic_;

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <sstream>
 
+#include "http3_frame_handler.h"
 #include "log.h"
 // #include "server.h"
 #include "common.h"
@@ -365,86 +366,16 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
       break;
     }
 
-    // Here we send the response to the request. (since by now the
-    // request should be fully processed)
-
-    std::string data;
-
-    server->ParseStreamBuffer(Stream, server->quic_buffer_map_[Stream], data);
-
-    // std::unordered_map<std::string, std::string> headers_map;
-#ifdef ECHO
-    std::cout << "HTTP3 Request:\n";
-    for (const auto &header : server->quic_headers_map_[Stream]) {
-      std::cout << header.first << ": " << header.second << "\n";
-    }
-    std::cout << data << std::endl;
-#endif
-    // bool accept_enc;
-
-    // Validate Request
-    ValidatePseudoHeadersTmp(server->quic_headers_map_[Stream]);
-
-    // Route Request
-    auto [headers, body] = server->router_.lock()->RouteRequest(
-        server->quic_headers_map_[Stream][":method"],
-        server->quic_headers_map_[Stream][":path"]);
-
     {
-      std::unordered_map<std::string, std::string> headers_map;
-      headers_map.reserve(2);
+      std::unique_ptr<Http3FrameHandler> frame_handler =
+          std::make_unique<Http3FrameHandler>(
+              server->transport_, server->frame_builder_, server->codec_,
+              server->router_.lock());
 
-      HttpCore::RespHeaderToPseudoHeader(headers, headers_map);
-
-      std::vector<uint8_t> encoded_headers;
-
-      // uint64_t stream_id{};
-      // auto len = (uint32_t)sizeof(stream_id);
-      //
-      // if (QUIC_FAILED(ms_quic_->GetParam(Stream, QUIC_PARAM_STREAM_ID,
-      // &len,
-      //                                  &stream_id))) {
-      //   LogError("Failed to acquire stream id");
-      // }
-
-      server->codec_->Encode(&Stream, headers_map, encoded_headers);
-      // HttpCore::QPACK_EncodeHeaders(stream_id, headers_map,
-      // encoded_headers);
-
-      std::vector<std::vector<uint8_t>> frames;
-      frames.reserve(2);
-
-      frames.emplace_back(server->frame_builder_->BuildFrame(Frame::HEADERS, 0,
-                                                             encoded_headers));
-
-      frames.emplace_back(
-          server->frame_builder_->BuildFrame(Frame::DATA, 0, {}, body));
-
-      server->transport_->SendBatch(Stream, frames);
-      // HttpCore::HTTP3_SendFrames(Stream, frames);
+      frame_handler->ProcessFrames(Stream, server->quic_buffer_map_[Stream]);
     }
 
-    auto endTime = std::chrono::high_resolution_clock::now();
-
-    std::chrono::duration<double> elapsed = endTime - startTime;
-
-    // std::cout << "Request handled in " << elapsed.count() << "
-    // seconds\n";
-    // std::ostringstream logStream;
-    // logStream << "Protocol: HTTP3 "
-    //           << "Method: " <<
-    //           server->QuicDecodedHeadersMap[Stream][":method"]
-    //           << " Path: " <<
-    //           server->QuicDecodedHeadersMap[Stream][":path"]
-    //           << " Status: " << status << " Elapsed time: " <<
-    //           elapsed.count()
-    //           << " s";
-    //
-    // LogRequest(logStream.str());
-
-    server->quic_headers_map_.erase(Stream);
     server->quic_buffer_map_.erase(Stream);
-
   }
 
   break;

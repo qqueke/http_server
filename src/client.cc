@@ -35,7 +35,7 @@ HttpClient::HttpClient(int argc, char *argv[]) {
 HttpClient::~HttpClient() { std::cout << "Deconstructing Client" << std::endl; }
 
 void HttpClient::Run(int argc, char *argv[]) {
-  // quic_client_->Run(argc, argv);
+  quic_client_->Run(argc, argv);
 
   tcp_client_->Run();
 }
