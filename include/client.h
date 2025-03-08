@@ -1,13 +1,9 @@
 #ifndef CLIENT_HPP
 #define CLIENT_HPP
 
-#include <cstddef>
-#include <unordered_map>
-
 #include "common.h"
 #include "quic_client.h"
 #include "tcp_client.h"
-#include "utils.h"
 
 class HttpClient : public HttpCore {
 public:

@@ -27,16 +27,9 @@ Http2FrameHandler::Http2FrameHandler(
     const std::shared_ptr<Http2FrameBuilder> &http2_frame_builder,
     const std::shared_ptr<HpackCodec> &hpack_codec,
     const std::shared_ptr<Router> &router, const std::vector<uint8_t> &read_buf)
-    : transport_(tcp_transport),
-      frame_builder_(http2_frame_builder),
-      codec_(hpack_codec),
-      router_(router),
-      read_buf(read_buf),
-      enc_(),
-      dec_(),
-      conn_win_size_(0),
-      wait_for_cont_frame_(false),
-      is_server_(true) {
+    : transport_(tcp_transport), frame_builder_(http2_frame_builder),
+      codec_(hpack_codec), router_(router), read_buf(read_buf), enc_(), dec_(),
+      conn_win_size_(0), wait_for_cont_frame_(false), is_server_(true) {
   lshpack_enc_init(&enc_);
   lshpack_dec_init(&dec_);
 }
@@ -46,15 +39,9 @@ Http2FrameHandler::Http2FrameHandler(
     const std::shared_ptr<Http2FrameBuilder> &http2_frame_builder,
     const std::shared_ptr<HpackCodec> &hpack_codec,
     const std::vector<uint8_t> &read_buf)
-    : transport_(tcp_transport),
-      frame_builder_(http2_frame_builder),
-      codec_(hpack_codec),
-      read_buf(read_buf),
-      enc_(),
-      dec_(),
-      conn_win_size_(0),
-      wait_for_cont_frame_(false),
-      is_server_(false) {
+    : transport_(tcp_transport), frame_builder_(http2_frame_builder),
+      codec_(hpack_codec), read_buf(read_buf), enc_(), dec_(),
+      conn_win_size_(0), wait_for_cont_frame_(false), is_server_(false) {
   lshpack_enc_init(&enc_);
   lshpack_dec_init(&dec_);
 }
@@ -86,73 +73,73 @@ int Http2FrameHandler::ProcessFrame(void *context, uint8_t frame_type,
   }
 
   switch (frame_type) {
-    case Frame::DATA:
+  case Frame::DATA:
 #ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] DATA frame\n";
+    std::cout << "[strm][" << frame_stream << "] DATA frame\n";
 #endif
 
-      return HandleDataFrame(context, frame_stream, read_offset, payload_size,
-                             frame_flags, ssl);
-    case Frame::HEADERS:
+    return HandleDataFrame(context, frame_stream, read_offset, payload_size,
+                           frame_flags, ssl);
+  case Frame::HEADERS:
 #ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] HEADERS frame\n";
+    std::cout << "[strm][" << frame_stream << "] HEADERS frame\n";
 #endif
 
-      return HandleHeadersFrame(context, frame_stream, read_offset,
-                                payload_size, frame_flags, ssl);
-    case Frame::PRIORITY:
+    return HandleHeadersFrame(context, frame_stream, read_offset, payload_size,
+                              frame_flags, ssl);
+  case Frame::PRIORITY:
 #ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] PRIORITY frame\n";
+    std::cout << "[strm][" << frame_stream << "] PRIORITY frame\n";
 #endif
 
-      return HandlePriorityFrame(context, frame_stream, read_offset,
-                                 payload_size, frame_flags, ssl);
-    case Frame::RST_STREAM:
-#ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] RST_STREAM frame\n";
-#endif
-
-      return HandleRstStreamFrame(context, frame_stream, read_offset,
-                                  payload_size, frame_flags, ssl);
-      break;
-    case Frame::SETTINGS:
-#ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] SETTINGS frame\n";
-#endif
-
-      return HandleSettingsFrame(context, frame_stream, read_offset,
-                                 payload_size, frame_flags, ssl);
-    case Frame::PING:
-#ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] PING frame\n";
-#endif
-
-      return HandlePingFrame(context, frame_stream, read_offset, payload_size,
-                             frame_flags, ssl);
-    case Frame::GOAWAY:
-#ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] GOAWAY frame\n";
-#endif
-
-      return HandleGoAwayFrame(context, frame_stream, read_offset, payload_size,
+    return HandlePriorityFrame(context, frame_stream, read_offset, payload_size,
                                frame_flags, ssl);
-    case Frame::CONTINUATION:
+  case Frame::RST_STREAM:
 #ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] CONTINUATION frame\n";
+    std::cout << "[strm][" << frame_stream << "] RST_STREAM frame\n";
 #endif
 
-      return HandleContinuationFrame(context, frame_stream, read_offset,
-                                     payload_size, frame_flags, ssl);
-    case Frame::WINDOW_UPDATE:
+    return HandleRstStreamFrame(context, frame_stream, read_offset,
+                                payload_size, frame_flags, ssl);
+    break;
+  case Frame::SETTINGS:
 #ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] WINDOW_UPDATE frame\n";
+    std::cout << "[strm][" << frame_stream << "] SETTINGS frame\n";
 #endif
 
-      return HandleWindowUpdateFrame(context, frame_stream, read_offset,
-                                     payload_size, frame_flags, ssl);
-    default:
-      LogError("Unknown frame type");
-      return ERROR;
+    return HandleSettingsFrame(context, frame_stream, read_offset, payload_size,
+                               frame_flags, ssl);
+  case Frame::PING:
+#ifdef HTTP2_DEBUG
+    std::cout << "[strm][" << frame_stream << "] PING frame\n";
+#endif
+
+    return HandlePingFrame(context, frame_stream, read_offset, payload_size,
+                           frame_flags, ssl);
+  case Frame::GOAWAY:
+#ifdef HTTP2_DEBUG
+    std::cout << "[strm][" << frame_stream << "] GOAWAY frame\n";
+#endif
+
+    return HandleGoAwayFrame(context, frame_stream, read_offset, payload_size,
+                             frame_flags, ssl);
+  case Frame::CONTINUATION:
+#ifdef HTTP2_DEBUG
+    std::cout << "[strm][" << frame_stream << "] CONTINUATION frame\n";
+#endif
+
+    return HandleContinuationFrame(context, frame_stream, read_offset,
+                                   payload_size, frame_flags, ssl);
+  case Frame::WINDOW_UPDATE:
+#ifdef HTTP2_DEBUG
+    std::cout << "[strm][" << frame_stream << "] WINDOW_UPDATE frame\n";
+#endif
+
+    return HandleWindowUpdateFrame(context, frame_stream, read_offset,
+                                   payload_size, frame_flags, ssl);
+  default:
+    LogError("Unknown frame type");
+    return ERROR;
   }
 }
 
@@ -189,12 +176,14 @@ int Http2FrameHandler::HandleDataFrame(void *context, uint32_t frame_stream,
 #endif
 
     if (is_server_) {
+      ValidatePseudoHeadersTmp(tcp_decoded_headers_map_[frame_stream]);
+
+      // If path starts with static we use the staticcontenthandler
+
       auto router_ptr = router_.lock();
       if (frame_builder_ptr == nullptr) {
         return ERROR;
       }
-
-      ValidatePseudoHeadersTmp(tcp_decoded_headers_map_[frame_stream]);
 
       auto [headers, body] = router_ptr->RouteRequest(
           tcp_decoded_headers_map_[frame_stream][":method"],
@@ -271,12 +260,12 @@ int Http2FrameHandler::HandleHeadersFrame(void *context, uint32_t frame_stream,
 
   if (isFlagSet(frame_flags, HTTP2Flags::PADDED_FLAG)) {
     padLength = headerBlockStart[0];
-    ++headerBlockStart;  // Jump over pad length
+    ++headerBlockStart; // Jump over pad length
   }
 
   if (isFlagSet(frame_flags, HTTP2Flags::PRIORITY_FLAG)) {
-    headerBlockStart += 4;  // Jump over stream dependency
-    ++headerBlockStart;     // Jump over weight
+    headerBlockStart += 4; // Jump over stream dependency
+    ++headerBlockStart;    // Jump over weight
   }
 
   uint32_t headerBlockLength = payloadEnd - headerBlockStart - padLength;
@@ -693,73 +682,73 @@ int Http2FrameHandler::ProcessFrame_TS(void *context, uint8_t frame_type,
   }
 
   switch (frame_type) {
-    case Frame::DATA:
+  case Frame::DATA:
 #ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] DATA frame\n";
+    std::cout << "[strm][" << frame_stream << "] DATA frame\n";
 #endif
 
-      return HandleDataFrame_TS(context, frame_stream, read_offset,
-                                payload_size, frame_flags, ssl, mut);
-    case Frame::HEADERS:
+    return HandleDataFrame_TS(context, frame_stream, read_offset, payload_size,
+                              frame_flags, ssl, mut);
+  case Frame::HEADERS:
 #ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] HEADERS frame\n";
+    std::cout << "[strm][" << frame_stream << "] HEADERS frame\n";
 #endif
 
-      return HandleHeadersFrame_TS(context, frame_stream, read_offset,
-                                   payload_size, frame_flags, ssl, mut);
-    case Frame::PRIORITY:
+    return HandleHeadersFrame_TS(context, frame_stream, read_offset,
+                                 payload_size, frame_flags, ssl, mut);
+  case Frame::PRIORITY:
 #ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] PRIORITY frame\n";
+    std::cout << "[strm][" << frame_stream << "] PRIORITY frame\n";
 #endif
 
-      return HandlePriorityFrame_TS(context, frame_stream, read_offset,
-                                    payload_size, frame_flags, ssl, mut);
-    case Frame::RST_STREAM:
-#ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] RST_STREAM frame\n";
-#endif
-
-      return HandleRstStreamFrame_TS(context, frame_stream, read_offset,
-                                     payload_size, frame_flags, ssl, mut);
-      break;
-    case Frame::SETTINGS:
-#ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] SETTINGS frame\n";
-#endif
-
-      return HandleSettingsFrame_TS(context, frame_stream, read_offset,
-                                    payload_size, frame_flags, ssl, mut);
-    case Frame::PING:
-#ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] PING frame\n";
-#endif
-
-      return HandlePingFrame_TS(context, frame_stream, read_offset,
-                                payload_size, frame_flags, ssl, mut);
-    case Frame::GOAWAY:
-#ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] GOAWAY frame\n";
-#endif
-
-      return HandleGoAwayFrame_TS(context, frame_stream, read_offset,
+    return HandlePriorityFrame_TS(context, frame_stream, read_offset,
                                   payload_size, frame_flags, ssl, mut);
-    case Frame::CONTINUATION:
+  case Frame::RST_STREAM:
 #ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] CONTINUATION frame\n";
+    std::cout << "[strm][" << frame_stream << "] RST_STREAM frame\n";
 #endif
 
-      return HandleContinuationFrame_TS(context, frame_stream, read_offset,
-                                        payload_size, frame_flags, ssl, mut);
-    case Frame::WINDOW_UPDATE:
+    return HandleRstStreamFrame_TS(context, frame_stream, read_offset,
+                                   payload_size, frame_flags, ssl, mut);
+    break;
+  case Frame::SETTINGS:
 #ifdef HTTP2_DEBUG
-      std::cout << "[strm][" << frame_stream << "] WINDOW_UPDATE frame\n";
+    std::cout << "[strm][" << frame_stream << "] SETTINGS frame\n";
 #endif
 
-      return HandleWindowUpdateFrame_TS(context, frame_stream, read_offset,
-                                        payload_size, frame_flags, ssl, mut);
-    default:
-      LogError("Unknown frame type");
-      return ERROR;
+    return HandleSettingsFrame_TS(context, frame_stream, read_offset,
+                                  payload_size, frame_flags, ssl, mut);
+  case Frame::PING:
+#ifdef HTTP2_DEBUG
+    std::cout << "[strm][" << frame_stream << "] PING frame\n";
+#endif
+
+    return HandlePingFrame_TS(context, frame_stream, read_offset, payload_size,
+                              frame_flags, ssl, mut);
+  case Frame::GOAWAY:
+#ifdef HTTP2_DEBUG
+    std::cout << "[strm][" << frame_stream << "] GOAWAY frame\n";
+#endif
+
+    return HandleGoAwayFrame_TS(context, frame_stream, read_offset,
+                                payload_size, frame_flags, ssl, mut);
+  case Frame::CONTINUATION:
+#ifdef HTTP2_DEBUG
+    std::cout << "[strm][" << frame_stream << "] CONTINUATION frame\n";
+#endif
+
+    return HandleContinuationFrame_TS(context, frame_stream, read_offset,
+                                      payload_size, frame_flags, ssl, mut);
+  case Frame::WINDOW_UPDATE:
+#ifdef HTTP2_DEBUG
+    std::cout << "[strm][" << frame_stream << "] WINDOW_UPDATE frame\n";
+#endif
+
+    return HandleWindowUpdateFrame_TS(context, frame_stream, read_offset,
+                                      payload_size, frame_flags, ssl, mut);
+  default:
+    LogError("Unknown frame type");
+    return ERROR;
   }
 }
 
@@ -886,12 +875,12 @@ int Http2FrameHandler::HandleHeadersFrame_TS(void *context,
 
   if (isFlagSet(frame_flags, HTTP2Flags::PADDED_FLAG)) {
     padLength = headerBlockStart[0];
-    ++headerBlockStart;  // Jump over pad length
+    ++headerBlockStart; // Jump over pad length
   }
 
   if (isFlagSet(frame_flags, HTTP2Flags::PRIORITY_FLAG)) {
-    headerBlockStart += 4;  // Jump over stream dependency
-    ++headerBlockStart;     // Jump over weight
+    headerBlockStart += 4; // Jump over stream dependency
+    ++headerBlockStart;    // Jump over weight
   }
 
   uint32_t headerBlockLength = payloadEnd - headerBlockStart - padLength;

@@ -18,13 +18,12 @@
 #include <string>
 
 #include "common.h"
-#include "http2_frame_handler.h"
 #include "quic_server.h"
 #include "router.h"
 #include "tcp_server.h"
 
 class HttpServer : public HttpCore {
- public:
+public:
   HttpServer(int argc, char *argv[]);
 
   ~HttpServer();
@@ -50,7 +49,7 @@ class HttpServer : public HttpCore {
   void ValidatePseudoHeaders(
       std::unordered_map<std::string, std::string> &headers_map);
 
- private:
+private:
   std::unique_ptr<TcpServer> tcp_server_;
   std::unique_ptr<QuicServer> quic_server_;
 
@@ -62,4 +61,4 @@ class HttpServer : public HttpCore {
   std::unordered_map<HQUIC, std::vector<uint8_t>> conn_settings_;
 };
 
-#endif  // HTTPSERVER_HPP
+#endif // HTTPSERVER_HPP

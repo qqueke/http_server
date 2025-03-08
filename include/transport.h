@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <mutex>
+#include <string>
 #include <vector>
 
 #include "msquic.h"
@@ -41,6 +42,8 @@ public:
   int SendBatch(void *connection,
                 const std::vector<std::vector<uint8_t>> &bytes) override;
 
+  int SendFile(void *connection, int fd);
+
   int Read(void *connection, std::vector<uint8_t> &buffer,
            uint32_t write_offset) override;
 
@@ -72,6 +75,8 @@ public:
 
   int SendBatch(void *connection,
                 const std::vector<std::vector<uint8_t>> &bytes);
+
+  int SendFile(void *connection, int fd);
 
   // int Send_TS(void *connection, const std::vector<uint8_t> &bytes,
   //             std::mutex &mut);

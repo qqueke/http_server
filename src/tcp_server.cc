@@ -2,6 +2,7 @@
 
 #include <netdb.h>
 #include <netinet/in.h>
+#include <sys/poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -12,8 +13,8 @@
 #include <sstream>
 #include <thread>
 
+#include "http2_frame_handler.h"
 #include "log.h"
-#include "server.h"
 #include "tls_manager.h"
 #include "utils.h"
 

@@ -3,21 +3,14 @@
 #include <poll.h>
 #include <sys/poll.h>
 
-#include <array>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <memory>
-#include <sstream>
-#include <thread>
-#include <unordered_map>
-#include <utility>
 
-#include "log.h"
 #include "quic_client.h"
-#include "ssl.h"
 #include "utils.h"
 
 HttpClient::HttpClient(int argc, char *argv[]) {
