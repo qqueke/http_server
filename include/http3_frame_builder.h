@@ -18,6 +18,11 @@ public:
 
   std::vector<uint8_t> BuildDataFrame(const std::string &data);
 
+  std::vector<uint8_t> BuildDataFrame(std::vector<uint8_t> bytes,
+                                      uint32_t payload_size);
+
+  std::vector<std::vector<uint8_t>> BuildDataFramesFromFile(int fd,
+                                                            uint64_t file_size);
   std::vector<uint8_t>
   BuildHeaderFrame(const std::vector<uint8_t> &encoded_headers);
 

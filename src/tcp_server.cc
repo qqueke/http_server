@@ -25,8 +25,13 @@ static std::string threadSafeStrerror(int errnum) {
   return {strerror(errnum)};
 }
 
-TcpServer::TcpServer(const std::shared_ptr<Router> &router)
-    : router_(router), socket_(-1), socket_addr_(nullptr) {
+TcpServer::TcpServer(
+    const std::shared_ptr<Router> &router,
+    const std::shared_ptr<StaticContentHandler> &content_handler)
+    : router_(router),
+      static_content_handler_(content_handler),
+      socket_(-1),
+      socket_addr_(nullptr) {
   struct addrinfo hints{};
   memset(&hints, 0, sizeof(hints));
 
@@ -108,7 +113,7 @@ void TcpServer::AcceptConnections() {
   struct timeval timeout{};
   timeout.tv_usec = 100 * 1000;
 
-  int buffSize = 256 * 1024; // 256 KB
+  int buffSize = 256 * 1024;  // 256 KB
 
   struct pollfd pollFds(socket_, POLLIN, 0);
 
@@ -133,22 +138,22 @@ void TcpServer::AcceptConnections() {
       continue;
     }
 
-    if (peerAddr.ss_family == AF_INET) { // IPv4
-      sockaddr_in *ipv4 = (struct sockaddr_in *)&peerAddr;
-      char ip[INET_ADDRSTRLEN];
-      inet_ntop(AF_INET, &ipv4->sin_addr, ip, sizeof(ip));
-      std::cout << "Connection established with IPv4 address: " << ip
-                << std::endl;
-    } else if (peerAddr.ss_family == AF_INET6) { // IPv6
-      sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)&peerAddr;
-      char ip[INET6_ADDRSTRLEN];
-      inet_ntop(AF_INET6, &ipv6->sin6_addr, ip, sizeof(ip));
-      std::cout << "Connection established with IPv6 address: " << ip
-                << std::endl;
-    } else {
-      std::cout << "Unknown address family: " << peerAddr.ss_family
-                << std::endl;
-    }
+    // if (peerAddr.ss_family == AF_INET) { // IPv4
+    //   sockaddr_in *ipv4 = (struct sockaddr_in *)&peerAddr;
+    //   char ip[INET_ADDRSTRLEN];
+    //   inet_ntop(AF_INET, &ipv4->sin_addr, ip, sizeof(ip));
+    //   std::cout << "Connection established with IPv4 address: " << ip
+    //             << std::endl;
+    // } else if (peerAddr.ss_family == AF_INET6) { // IPv6
+    //   sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)&peerAddr;
+    //   char ip[INET6_ADDRSTRLEN];
+    //   inet_ntop(AF_INET6, &ipv6->sin6_addr, ip, sizeof(ip));
+    //   std::cout << "Connection established with IPv6 address: " << ip
+    //             << std::endl;
+    // } else {
+    //   std::cout << "Unknown address family: " << peerAddr.ss_family
+    //             << std::endl;
+    // }
 
     if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout,
                    sizeof timeout) == ERROR) {
@@ -289,8 +294,9 @@ void TcpServer::HandleHTTP2Request(SSL *ssl) {
   buffer.reserve(65535);
 
   std::unique_ptr<Http2FrameHandler> frame_handler =
-      std::make_unique<Http2FrameHandler>(transport_, frame_builder_, codec_,
-                                          router_.lock(), buffer);
+      std::make_unique<Http2FrameHandler>(buffer, transport_, frame_builder_,
+                                          codec_, router_.lock(),
+                                          static_content_handler_.lock());
 
   bool receivedPreface = false;
 

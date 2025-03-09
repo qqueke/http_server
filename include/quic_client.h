@@ -13,7 +13,7 @@
 // #include "http2_frame_handler.h"
 
 class QuicClient {
-public:
+ public:
   explicit QuicClient(
       int argc, char *argv[],
       const std::vector<std::pair<std::string, std::string>> &requests);
@@ -36,7 +36,7 @@ public:
 
   std::shared_ptr<QpackCodec> codec_;
 
-private:
+ private:
   static const QUIC_API_TABLE *ms_quic_;
 
   HQUIC registration_;
@@ -66,4 +66,4 @@ private:
                                 _Inout_ QUIC_CONNECTION_EVENT *Event);
 };
 
-#endif // QUICCLIENT_HPP
+#endif  // QUICCLIENT_HPP

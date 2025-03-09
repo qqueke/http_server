@@ -32,9 +32,9 @@ std::pair<std::string, std::string> Router::handleBadRequest(
     const std::string &data) {
   std::string headers =
       "HTTP/1.1 200 Bad Request\r\n"
-      "Content-Type: text/plain\r\n"
-      "Content-Length: 12\r\n"
-      "Connection: close\r\n"
+      // "Content-Type: text/plain\r\n"
+      // "Content-Length: 12\r\n"
+      // "Connection: close\r\n"
       "\r\n";
 
   std::string body = "Bad Request\n";

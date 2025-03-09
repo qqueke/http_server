@@ -1,12 +1,17 @@
 #include "http2_frame_handler.h"
 
+#include <fcntl.h>
+
+#include <cstdint>
+#include <cstdlib>
 #include <iostream>
+#include <string_view>
 
 #include "http2_frame_builder.h"
 #include "log.h"
 #include "server.h"
 
-#define HTTP2_DEBUG
+// #define HTTP2_DEBUG
 static void ValidatePseudoHeadersTmp(
     std::unordered_map<std::string, std::string> &headers_map) {
   static constexpr std::array<std::string_view, 3> requiredHeaders = {
@@ -22,28 +27,49 @@ static void ValidatePseudoHeadersTmp(
   }
 }
 
+bool Http2FrameHandler::static_init_;
+std::weak_ptr<TcpTransport> Http2FrameHandler::transport_;
+std::weak_ptr<Http2FrameBuilder> Http2FrameHandler::frame_builder_;
+std::weak_ptr<HpackCodec> Http2FrameHandler::codec_;
+std::weak_ptr<Router> Http2FrameHandler::router_;
+std::weak_ptr<StaticContentHandler> Http2FrameHandler::static_content_handler_;
+
 Http2FrameHandler::Http2FrameHandler(
-    const std::shared_ptr<TcpTransport> &tcp_transport,
-    const std::shared_ptr<Http2FrameBuilder> &http2_frame_builder,
+    const std::vector<uint8_t> &read_buf,
+    const std::shared_ptr<TcpTransport> &transport,
+    const std::shared_ptr<Http2FrameBuilder> &frame_builder,
     const std::shared_ptr<HpackCodec> &hpack_codec,
-    const std::shared_ptr<Router> &router, const std::vector<uint8_t> &read_buf)
-    : transport_(tcp_transport), frame_builder_(http2_frame_builder),
-      codec_(hpack_codec), router_(router), read_buf(read_buf), enc_(), dec_(),
-      conn_win_size_(0), wait_for_cont_frame_(false), is_server_(true) {
+    const std::shared_ptr<Router> &router,
+    const std::shared_ptr<StaticContentHandler> &content_handler)
+    : read_buf(read_buf), enc_(), dec_(), conn_win_size_(0),
+      wait_for_cont_frame_(false) {
+  if (!static_init_) {
+    InitializeSharedResources(transport, frame_builder, hpack_codec, router,
+                              content_handler);
+  }
+
+  if (router != nullptr && content_handler != nullptr) {
+    is_server_ = true;
+  } else {
+    is_server_ = false;
+  }
+
   lshpack_enc_init(&enc_);
   lshpack_dec_init(&dec_);
 }
 
-Http2FrameHandler::Http2FrameHandler(
-    const std::shared_ptr<TcpTransport> &tcp_transport,
-    const std::shared_ptr<Http2FrameBuilder> &http2_frame_builder,
+void Http2FrameHandler::InitializeSharedResources(
+    const std::shared_ptr<TcpTransport> &transport,
+    const std::shared_ptr<Http2FrameBuilder> &frame_builder,
     const std::shared_ptr<HpackCodec> &hpack_codec,
-    const std::vector<uint8_t> &read_buf)
-    : transport_(tcp_transport), frame_builder_(http2_frame_builder),
-      codec_(hpack_codec), read_buf(read_buf), enc_(), dec_(),
-      conn_win_size_(0), wait_for_cont_frame_(false), is_server_(false) {
-  lshpack_enc_init(&enc_);
-  lshpack_dec_init(&dec_);
+    const std::shared_ptr<Router> &router,
+    const std::shared_ptr<StaticContentHandler> &content_handler) {
+  transport_ = transport;
+  frame_builder_ = frame_builder;
+  codec_ = hpack_codec;
+  router_ = router;
+  static_content_handler_ = content_handler;
+  static_init_ = true;
 }
 
 Http2FrameHandler::~Http2FrameHandler() {
@@ -143,6 +169,139 @@ int Http2FrameHandler::ProcessFrame(void *context, uint8_t frame_type,
   }
 }
 
+std::vector<uint8_t> Http2FrameHandler::EncodeHeaders(
+    const std::unordered_map<std::string, std::string> &headers_map) {
+  std::vector<uint8_t> encoded_headers(256);
+
+  auto codec_ptr = codec_.lock();
+  if (codec_ptr == nullptr) {
+    return {};
+  }
+
+  codec_ptr->Encode(static_cast<void *>(&enc_), headers_map, encoded_headers);
+  return encoded_headers;
+}
+
+int Http2FrameHandler::HandleStaticContent(
+    uint32_t frame_stream, SSL *ssl,
+    const std::shared_ptr<Http2FrameBuilder> &frame_builder_ptr,
+    const std::shared_ptr<TcpTransport> &transport_ptr, std::string &method,
+    std::string &path) {
+  auto content_handler_ptr = static_content_handler_.lock();
+  if (content_handler_ptr == nullptr) {
+    return ERROR;
+  }
+
+  const auto &headers = tcp_decoded_headers_map_[frame_stream];
+  uint64_t file_size = content_handler_ptr->FileHandler(
+      path,
+      headers.count("accept-encoding") ? headers.at("accept-encoding") : "");
+
+  if (file_size == 0) {
+    // File not found, use router as fallback
+    return HandleRouterRequest(frame_stream, ssl, frame_builder_ptr,
+                               transport_ptr, method, path,
+                               tcp_data_map_[frame_stream]);
+  }
+
+  // Prepare headers for file transfer
+  std::unordered_map<std::string, std::string> headers_map;
+  headers_map.reserve(2);
+
+  std::string header_str =
+      content_handler_ptr->BuildHeadersForFileTransfer(path, file_size);
+  HttpCore::RespHeaderToPseudoHeader(header_str, headers_map);
+  headers_map["alt-svc"] = "h3=\":4567\"; ma=86400";
+
+  auto encoded_headers = EncodeHeaders(headers_map);
+  if (encoded_headers.empty()) {
+    return ERROR;
+  }
+
+  (void)transport_ptr->Send(
+      ssl, frame_builder_ptr->BuildFrame(Frame::HEADERS, 0, frame_stream, 0, 0,
+                                         encoded_headers));
+
+  int fd = open(path.c_str(), O_RDONLY);
+  if (fd == -1) {
+    LogError("Opening file: " + path);
+    return ERROR;
+  }
+
+  (void)transport_ptr->SendBatch(
+      ssl,
+      frame_builder_ptr->BuildDataFramesFromFile(fd, file_size, frame_stream));
+
+  close(fd);
+  return 0;
+}
+
+int Http2FrameHandler::HandleRouterRequest(
+    uint32_t frame_stream, SSL *ssl,
+    const std::shared_ptr<Http2FrameBuilder> &frame_builder_ptr,
+    const std::shared_ptr<TcpTransport> &transport_ptr, std::string &method,
+    std::string &path, const std::string &data) {
+  auto router_ptr = router_.lock();
+  if (router_ptr == nullptr) {
+    return ERROR;
+  }
+
+  auto [headers, body] = router_ptr->RouteRequest(method, path, data);
+
+  std::unordered_map<std::string, std::string> headers_map;
+  headers_map.reserve(2);
+
+  HttpCore::RespHeaderToPseudoHeader(headers, headers_map);
+  headers_map["alt-svc"] = "h3=\":4567\"; ma=86400";
+
+  auto encoded_headers = EncodeHeaders(headers_map);
+  if (encoded_headers.empty()) {
+    return ERROR;
+  }
+
+  // Send response
+  if (body.empty()) {
+    (void)transport_ptr->Send(
+        ssl, frame_builder_ptr->BuildFrame(Frame::HEADERS, 0, frame_stream, 0,
+                                           0, encoded_headers));
+  } else {
+    std::vector<std::vector<uint8_t>> frames;
+    frames.reserve(2);
+    frames.emplace_back(frame_builder_ptr->BuildFrame(
+        Frame::HEADERS, 0, frame_stream, 0, 0, encoded_headers));
+    frames.emplace_back(frame_builder_ptr->BuildFrame(
+        Frame::DATA, 0, frame_stream, 0, 0, {}, body));
+
+    (void)transport_ptr->SendBatch(ssl, frames);
+  }
+
+  return 0;
+}
+
+int Http2FrameHandler::AnswerRequest(
+    uint32_t frame_stream, SSL *ssl,
+    const std::shared_ptr<Http2FrameBuilder> &frame_builder_ptr,
+    const std::shared_ptr<TcpTransport> &transport_ptr) {
+  static constexpr std::string_view static_path = "/static/";
+  static constexpr uint8_t static_path_size = static_path.size();
+
+  ValidatePseudoHeadersTmp(tcp_decoded_headers_map_[frame_stream]);
+
+  std::string &path = tcp_decoded_headers_map_[frame_stream][":path"];
+  std::string &method = tcp_decoded_headers_map_[frame_stream][":method"];
+  std::string &data = tcp_data_map_[frame_stream];
+
+  // Handle static content
+  if (path.size() > static_path_size && path.starts_with(static_path)) {
+    return HandleStaticContent(frame_stream, ssl, frame_builder_ptr,
+                               transport_ptr, method, path);
+  }
+
+  // Handle dynamic content via router
+  return HandleRouterRequest(frame_stream, ssl, frame_builder_ptr,
+                             transport_ptr, method, path, data);
+}
+
 int Http2FrameHandler::HandleDataFrame(void *context, uint32_t frame_stream,
                                        uint32_t read_offset,
                                        uint32_t payload_size,
@@ -153,10 +312,6 @@ int Http2FrameHandler::HandleDataFrame(void *context, uint32_t frame_stream,
   }
   auto frame_builder_ptr = frame_builder_.lock();
   if (frame_builder_ptr == nullptr) {
-    return ERROR;
-  }
-  auto codec_ptr = codec_.lock();
-  if (codec_ptr == nullptr) {
     return ERROR;
   }
 
@@ -176,44 +331,7 @@ int Http2FrameHandler::HandleDataFrame(void *context, uint32_t frame_stream,
 #endif
 
     if (is_server_) {
-      ValidatePseudoHeadersTmp(tcp_decoded_headers_map_[frame_stream]);
-
-      // If path starts with static we use the staticcontenthandler
-
-      auto router_ptr = router_.lock();
-      if (frame_builder_ptr == nullptr) {
-        return ERROR;
-      }
-
-      auto [headers, body] = router_ptr->RouteRequest(
-          tcp_decoded_headers_map_[frame_stream][":method"],
-          tcp_decoded_headers_map_[frame_stream][":path"],
-          tcp_data_map_[frame_stream]);
-
-      std::unordered_map<std::string, std::string> headers_map;
-      headers_map.reserve(2);
-
-      HttpCore::RespHeaderToPseudoHeader(headers, headers_map);
-      headers_map["alt-svc"] = "h3=\":4567\"; ma=86400";
-
-      std::vector<uint8_t> encoded_headers(256);
-      codec_ptr->Encode(static_cast<void *>(&enc_), headers_map,
-                        encoded_headers);
-
-      if (body.empty()) {
-        (void)transport_ptr->Send(
-            ssl, frame_builder_ptr->BuildFrame(Frame::HEADERS, 0, frame_stream,
-                                               0, 0, encoded_headers));
-      } else {
-        std::vector<std::vector<uint8_t>> frames;
-        frames.reserve(2);
-        frames.emplace_back(frame_builder_ptr->BuildFrame(
-            Frame::HEADERS, 0, frame_stream, 0, 0, encoded_headers));
-        frames.emplace_back(frame_builder_ptr->BuildFrame(
-            Frame::DATA, 0, frame_stream, 0, 0, {}, body));
-
-        (void)transport_ptr->SendBatch(ssl, frames);
-      }
+      AnswerRequest(frame_stream, ssl, frame_builder_ptr, transport_ptr);
     }
 
     (void)transport_ptr->Send(ssl, frame_builder_ptr->BuildFrame(
@@ -297,43 +415,7 @@ int Http2FrameHandler::HandleHeadersFrame(void *context, uint32_t frame_stream,
 #endif
 
     if (is_server_) {
-      auto router_ptr = router_.lock();
-      if (frame_builder_ptr == nullptr) {
-        return ERROR;
-      }
-
-      ValidatePseudoHeadersTmp(tcp_decoded_headers_map_[frame_stream]);
-
-      auto [headers, body] = router_ptr->RouteRequest(
-          tcp_decoded_headers_map_[frame_stream][":method"],
-          tcp_decoded_headers_map_[frame_stream][":path"]);
-
-      std::unordered_map<std::string, std::string> headers_map;
-      headers_map.reserve(2);
-
-      HttpCore::RespHeaderToPseudoHeader(headers, headers_map);
-      headers_map["alt-svc"] = "h3=\":4567\"; ma=86400";
-
-      std::vector<uint8_t> encoded_headers(256);
-
-      codec_ptr->Encode(static_cast<void *>(&enc_), headers_map,
-                        encoded_headers);
-
-      if (body == "") {
-        (void)transport_ptr->Send(
-            ssl, frame_builder_ptr->BuildFrame(Frame::HEADERS, 0, frame_stream,
-                                               0, 0, encoded_headers));
-      } else {
-        std::vector<std::vector<uint8_t>> frames;
-        frames.reserve(2);
-        frames.emplace_back(frame_builder_ptr->BuildFrame(
-            Frame::HEADERS, 0, frame_stream, 0, 0, encoded_headers));
-
-        frames.emplace_back(frame_builder_ptr->BuildFrame(
-            Frame::DATA, 0, frame_stream, 0, 0, {}, body));
-
-        (void)transport_ptr->SendBatch(ssl, frames);
-      }
+      AnswerRequest(frame_stream, ssl, frame_builder_ptr, transport_ptr);
     }
 
     (void)transport_ptr->Send(ssl, frame_builder_ptr->BuildFrame(
@@ -544,43 +626,7 @@ int Http2FrameHandler::HandleContinuationFrame(void *context,
 #endif
 
     if (is_server_) {
-      auto router_ptr = router_.lock();
-      if (frame_builder_ptr == nullptr) {
-        return ERROR;
-      }
-      ValidatePseudoHeadersTmp(tcp_decoded_headers_map_[frame_stream]);
-
-      auto [headers, body] = router_ptr->RouteRequest(
-          tcp_decoded_headers_map_[frame_stream][":method"],
-          tcp_decoded_headers_map_[frame_stream][":path"]);
-
-      std::unordered_map<std::string, std::string> headers_map;
-      headers_map.reserve(2);
-
-      HttpCore::RespHeaderToPseudoHeader(headers, headers_map);
-      headers_map["alt-svc"] = "h3=\":4567\"; ma=86400";
-
-      std::vector<uint8_t> encoded_headers(256);
-
-      codec_ptr->Encode(static_cast<void *>(&enc_), headers_map,
-                        encoded_headers);
-
-      if (body == "") {
-        (void)transport_ptr->Send(
-            ssl, frame_builder_ptr->BuildFrame(Frame::HEADERS, 0, frame_stream,
-                                               0, 0, encoded_headers));
-
-      } else {
-        std::vector<std::vector<uint8_t>> frames;
-        frames.reserve(2);
-        frames.emplace_back(frame_builder_ptr->BuildFrame(
-            Frame::HEADERS, 0, frame_stream, 0, 0, encoded_headers));
-
-        frames.emplace_back(frame_builder_ptr->BuildFrame(
-            Frame::DATA, 0, frame_stream, 0, 0, {}, body));
-
-        (void)transport_ptr->SendBatch(ssl, frames);
-      }
+      AnswerRequest(frame_stream, ssl, frame_builder_ptr, transport_ptr);
     }
     (void)transport_ptr->Send(ssl, frame_builder_ptr->BuildFrame(
                                        Frame::WINDOW_UPDATE, 0, 0, 0, 65536));

@@ -43,6 +43,8 @@ TlsManager::TlsManager(TlsMode mode)
 
   if (mode == TlsMode::SERVER) {
     SSL_CTX_set_alpn_select_cb(_ctx_, AlpnCallback, NULL);
+    // LoadCertificates
+
   } else {
     if (SSL_CTX_set_alpn_protos(_ctx_, AlpnProtos.data(), AlpnProtos.size()) !=
         0) {

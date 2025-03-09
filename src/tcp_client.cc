@@ -120,8 +120,8 @@ void TcpClient::RecvHttp2Response(SSL *ssl, std::mutex &conn_mutex) {
   buffer.reserve(65535);
 
   std::unique_ptr<Http2FrameHandler> frame_handler =
-      std::make_unique<Http2FrameHandler>(transport_, frame_builder_, codec_,
-                                          buffer);
+      std::make_unique<Http2FrameHandler>(buffer, transport_, frame_builder_,
+                                          codec_);
 
   bool goAway = false;
   int read_offset = 0;

@@ -1,5 +1,5 @@
-#ifndef HTTP2_FRAME_BUILDER_HPP
-#define HTTP2_FRAME_BUILDER_HPP
+#ifndef HTTP2_FRAME_HANDLER
+#define HTTP2_FRAME_HANDLER
 
 #include <cstdint>
 #include <memory>
@@ -10,6 +10,7 @@
 #include "common.h"
 #include "crypto.h"
 #include "router.h"
+#include "static_content_handler.h"
 
 class IHttp2FrameHandler {
 public:
@@ -116,19 +117,16 @@ private:
 class Http2FrameHandler : IHttp2FrameHandler {
 public:
   // Server constructor
-  explicit Http2FrameHandler(
-      const std::shared_ptr<TcpTransport> &tcp_transport,
-      const std::shared_ptr<Http2FrameBuilder> &http2_frame_builder,
-      const std::shared_ptr<HpackCodec> &hpack_codec,
-      const std::shared_ptr<Router> &router,
-      const std::vector<uint8_t> &read_buf);
+  explicit Http2FrameHandler(const std::vector<uint8_t> &read_buf,
+                             bool is_server);
 
-  // Client constructor
   explicit Http2FrameHandler(
-      const std::shared_ptr<TcpTransport> &tcp_transport,
-      const std::shared_ptr<Http2FrameBuilder> &http2_frame_builder,
+      const std::vector<uint8_t> &read_buf,
+      const std::shared_ptr<TcpTransport> &transport,
+      const std::shared_ptr<Http2FrameBuilder> &frame_builder,
       const std::shared_ptr<HpackCodec> &hpack_codec,
-      const std::vector<uint8_t> &read_buf);
+      const std::shared_ptr<Router> &router = nullptr,
+      const std::shared_ptr<StaticContentHandler> &content_handler = nullptr);
 
   ~Http2FrameHandler();
 
@@ -141,13 +139,24 @@ public:
                       uint8_t frame_flags, SSL *ssl, std::mutex &mut) override;
 
 private:
-  std::weak_ptr<Router> router_;
+  void InitializeSharedResources(
+      const std::shared_ptr<TcpTransport> &transport,
+      const std::shared_ptr<Http2FrameBuilder> &frame_builder,
+      const std::shared_ptr<HpackCodec> &hpack_codec,
+      const std::shared_ptr<Router> &router = nullptr,
+      const std::shared_ptr<StaticContentHandler> &content_handler = nullptr);
 
-  std::weak_ptr<TcpTransport> transport_;
+  static bool static_init_;
 
-  std::weak_ptr<Http2FrameBuilder> frame_builder_;
+  static std::weak_ptr<Router> router_;
 
-  std::weak_ptr<HpackCodec> codec_;
+  static std::weak_ptr<StaticContentHandler> static_content_handler_;
+
+  static std::weak_ptr<TcpTransport> transport_;
+
+  static std::weak_ptr<Http2FrameBuilder> frame_builder_;
+
+  static std::weak_ptr<HpackCodec> codec_;
 
   const std::vector<uint8_t> &read_buf;
 
@@ -169,6 +178,25 @@ private:
   bool wait_for_cont_frame_;
 
   bool is_server_;
+
+  std::vector<uint8_t> EncodeHeaders(
+      const std::unordered_map<std::string, std::string> &headers_map);
+
+  int HandleStaticContent(
+      uint32_t frame_stream, SSL *ssl,
+      const std::shared_ptr<Http2FrameBuilder> &frame_builder_ptr,
+      const std::shared_ptr<TcpTransport> &transport_ptr, std::string &method,
+      std::string &path);
+
+  int HandleRouterRequest(
+      uint32_t frame_stream, SSL *ssl,
+      const std::shared_ptr<Http2FrameBuilder> &frame_builder_ptr,
+      const std::shared_ptr<TcpTransport> &transport_ptr, std::string &method,
+      std::string &path, const std::string &data);
+
+  int AnswerRequest(uint32_t frame_stream, SSL *ssl,
+                    const std::shared_ptr<Http2FrameBuilder> &frame_builder_ptr,
+                    const std::shared_ptr<TcpTransport> &transport_ptr);
 
   int HandleDataFrame(void *context, uint32_t frame_stream,
                       uint32_t read_offset, uint32_t payload_size,

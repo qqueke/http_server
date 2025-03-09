@@ -6,8 +6,8 @@
 #include <string>
 class StaticContentHandler {
 public:
-  StaticContentHandler();
-  ~StaticContentHandler();
+  StaticContentHandler() = default;
+  ~StaticContentHandler() = default;
 
   uint64_t FileHandler(std::string &file_path,
                        const std::string_view enc_types);
@@ -20,7 +20,7 @@ private:
 
   void AppendContentType(const std::string &file_path, std::string &headers);
   // O(n) but I think we can do better
-  static constexpr std::array<std::pair<std::string_view, std::string_view>, 23>
+  static constexpr std::array<std::pair<std::string_view, std::string_view>, 24>
       content_types_ = {{{".html", "Content-Type: text/html\r\n"},
                          {".css", "Content-Type: text/css\r\n"},
                          {".js", "Content-Type: text/javascript\r\n"},
@@ -43,7 +43,8 @@ private:
                          {".otf", "Content-Type: font/otf\r\n"},
                          {".pdf", "Content-Type: application/pdf\r\n"},
                          {".zip", "Content-Type: application/zip\r\n"},
-                         {".gz", "Content-Type: application/gzip\r\n"}}};
+                         {".gz", "Content-Type: application/gzip\r\n"},
+                         {".gzip", "Content-Type: application/gzip\r\n"}}};
 };
 
 #endif

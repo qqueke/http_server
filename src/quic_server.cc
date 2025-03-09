@@ -124,9 +124,12 @@ static void ValidatePseudoHeadersTmp(
 const QUIC_API_TABLE *QuicServer::ms_quic_ = nullptr;
 HQUIC QuicServer::config_ = nullptr;
 
-QuicServer::QuicServer(const std::shared_ptr<Router> &router, int argc,
-                       char *argv[])
-    : router_(router), status_(0), listener_(nullptr) {
+QuicServer::QuicServer(
+    const std::shared_ptr<Router> &router,
+    const std::shared_ptr<StaticContentHandler> &content_handler, int argc,
+    char *argv[])
+    : router_(router), static_content_handler_(content_handler), status_(0),
+      listener_(nullptr) {
   // Open a handle to the library and get the API function table.
   if (QUIC_FAILED(status_ = MsQuicOpen2(&ms_quic_))) {
     printf("MsQuicOpen2 failed, 0x%x!\n", status_);
@@ -370,7 +373,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
       std::unique_ptr<Http3FrameHandler> frame_handler =
           std::make_unique<Http3FrameHandler>(
               server->transport_, server->frame_builder_, server->codec_,
-              server->router_.lock());
+              server->router_.lock(), server->static_content_handler_.lock());
 
       frame_handler->ProcessFrames(Stream, server->quic_buffer_map_[Stream]);
     }

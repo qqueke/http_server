@@ -19,20 +19,20 @@
 #include "utils.h"
 
 class HttpCore {
-protected:
+ protected:
   // Codec resources
   std::unique_ptr<HpackCodec> hpack_codec;
   std::unique_ptr<QpackCodec> qpackCodec;
 
   // Frame builder resources
-  std::unique_ptr<Http2FrameBuilder> http2_frame_builder;
+  std::unique_ptr<Http2FrameBuilder> frame_builder;
   std::unique_ptr<Http3FrameBuilder> http3FrameBuilder;
 
   // Transport manager resources
-  std::unique_ptr<TcpTransport> tcp_transport;
+  std::unique_ptr<TcpTransport> transport;
   std::unique_ptr<QuicTransport> quicTransport;
 
-public:
+ public:
   /*----------------------------------------------------------*/
   HttpCore();
 
@@ -54,16 +54,16 @@ public:
       HQUIC *stream, std::vector<uint8_t> &encoded_headers,
       std::unordered_map<std::string, std::string> &decodedHeaders);
 
-  std::vector<uint8_t>
-  BuildHttp2Frame(Frame type, uint8_t frame_flags = 0, uint32_t stream_id = 0,
-                  uint32_t errorCode = 0, uint32_t increment = 0,
-                  const std::vector<uint8_t> &encoded_headers = {},
-                  const std::string &data = "");
+  std::vector<uint8_t> BuildHttp2Frame(
+      Frame type, uint8_t frame_flags = 0, uint32_t stream_id = 0,
+      uint32_t errorCode = 0, uint32_t increment = 0,
+      const std::vector<uint8_t> &encoded_headers = {},
+      const std::string &data = "");
 
-  std::vector<uint8_t>
-  BuildHttp3Frame(Frame type, uint32_t streamOrPushId = 0,
-                  const std::vector<uint8_t> &encoded_headers = {},
-                  const std::string &data = "");
+  std::vector<uint8_t> BuildHttp3Frame(
+      Frame type, uint32_t streamOrPushId = 0,
+      const std::vector<uint8_t> &encoded_headers = {},
+      const std::string &data = "");
 
   int Send(void *connection, const std::vector<uint8_t> &bytes,
            bool useQuic = false);
@@ -120,4 +120,4 @@ public:
                              const std::vector<uint8_t>::iterator &end);
 };
 
-#endif // HTTPBASE_HPP
+#endif  // HTTPBASE_HPP

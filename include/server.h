@@ -54,6 +54,9 @@ private:
   std::unique_ptr<QuicServer> quic_server_;
 
   std::shared_ptr<Router> router_;
+
+  std::shared_ptr<StaticContentHandler> static_content_handler_;
+
   std::mutex strerrorMutex;
 
   std::string threadSafeStrerror(int errnum);

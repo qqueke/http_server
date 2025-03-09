@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 
 #include <cstdint>
+#include <iostream>
 #include <sstream>
 #include <thread>
 
@@ -33,12 +34,6 @@ int TcpTransport::SendBatch(void *connection,
 }
 
 int TcpTransport::SendFile(void *connection, int fd) {
-  // int fd = open(file_path.c_str(), O_RDONLY);
-  // if (fd == -1) {
-  //   LogError("Opening file: " + file_path);
-  //   return ERROR;
-  // }
-
   struct stat file_stats{};
   if (fstat(fd, &file_stats) == -1) {
     LogError("Could not read file stats");

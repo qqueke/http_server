@@ -118,8 +118,9 @@ uint64_t StaticContentHandler::FileHandler(std::string &file_path,
                                            const std::string_view enc_types) {
   uint64_t file_size = 0;
 
+  file_path.insert(0, 1, '.');
   // The regular file might not exist but compressed verion might exist!
-
+  // file_path = "./static/gdb.pdf";
   // No encoding accepted
   if (enc_types.empty()) {
     struct stat buf{};
@@ -147,8 +148,6 @@ uint64_t StaticContentHandler::FileHandler(std::string &file_path,
     while (!encoding.empty() && encoding.back() == ' ') {
       encoding.remove_suffix(1);
     }
-
-    std::cout << "Processing encoding: " << encoding << std::endl;
 
     struct stat buf{};
 
@@ -184,8 +183,6 @@ uint64_t StaticContentHandler::FileHandler(std::string &file_path,
   std::string_view encoding = enc_types.substr(start);
 
   if (!encoding.empty()) {
-    std::cout << "Processing last encoding: " << encoding << std::endl;
-
     struct stat buf{};
     // std::array<char, 128> compressed_path;
 
@@ -211,7 +208,6 @@ uint64_t StaticContentHandler::FileHandler(std::string &file_path,
       return file_size;
     }
   }
-
   // By here we could not compress the file nor find a compressed version
   struct stat buf{};
   int error = stat(file_path.c_str(), &buf);
@@ -232,6 +228,10 @@ StaticContentHandler::BuildHeadersForFileTransfer(std::string &file_path,
   headers.append("HTTP/1.1 200 OK\r\nContent-Length: ")
       .append(std::to_string(file_size))
       .append("\r\n");
+
+  headers.append("Content-Disposition: attachment; filename=\"")
+      .append(file_path.substr(9))
+      .append("\"\r\n");
 
   AppendContentType(file_path, headers);
   headers.append("\r\n");
@@ -254,6 +254,7 @@ void StaticContentHandler::AppendContentType(const std::string &file_path,
   for (int pos = (int)file_path.size() - 1; pos >= 0; --pos) {
     if (file_path[pos] == '.') {
       file_ext = file_path.substr(pos, file_path.size() - pos);
+      break;
     }
   }
 

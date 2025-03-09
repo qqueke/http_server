@@ -19,10 +19,10 @@ HttpCore::HttpCore() {
   // hpack_codec = std::make_unique<HpackCodec>();
   qpackCodec = std::make_unique<QpackCodec>();
 
-  // http2_frame_builder = std::make_unique<Http2FrameBuilder>();
+  // frame_builder = std::make_unique<Http2FrameBuilder>();
   http3FrameBuilder = std::make_unique<Http3FrameBuilder>();
 
-  // tcp_transport = std::make_unique<TcpTransport>();
+  // transport = std::make_unique<TcpTransport>();
   quicTransport = std::make_unique<QuicTransport>();
 }
 
@@ -53,20 +53,17 @@ void HttpCore::DecodeQPACKHeaders(
                      decodedHeaders);
 }
 
-std::vector<uint8_t>
-HttpCore::BuildHttp2Frame(Frame type, uint8_t frame_flags, uint32_t stream_id,
-                          uint32_t errorCode, uint32_t increment,
-                          const std::vector<uint8_t> &encoded_headers,
-                          const std::string &data) {
-  return http2_frame_builder->BuildFrame(type, frame_flags, stream_id,
-                                         errorCode, increment, encoded_headers,
-                                         data);
+std::vector<uint8_t> HttpCore::BuildHttp2Frame(
+    Frame type, uint8_t frame_flags, uint32_t stream_id, uint32_t errorCode,
+    uint32_t increment, const std::vector<uint8_t> &encoded_headers,
+    const std::string &data) {
+  return frame_builder->BuildFrame(type, frame_flags, stream_id, errorCode,
+                                   increment, encoded_headers, data);
 }
 
-std::vector<uint8_t>
-HttpCore::BuildHttp3Frame(Frame type, uint32_t stream_id,
-                          const std::vector<uint8_t> &encoded_headers,
-                          const std::string &data) {
+std::vector<uint8_t> HttpCore::BuildHttp3Frame(
+    Frame type, uint32_t stream_id, const std::vector<uint8_t> &encoded_headers,
+    const std::string &data) {
   return http3FrameBuilder->BuildFrame(type, stream_id, encoded_headers, data);
 }
 
@@ -75,7 +72,7 @@ int HttpCore::Send(void *connection, const std::vector<uint8_t> &bytes,
   if (useQuic) {
     return quicTransport->Send(connection, bytes);
   } else {
-    return tcp_transport->Send(connection, bytes);
+    return transport->Send(connection, bytes);
   }
 }
 
@@ -85,13 +82,13 @@ int HttpCore::SendBatch(void *connection,
   if (useQuic) {
     return quicTransport->SendBatch(connection, bytes);
   } else {
-    return tcp_transport->SendBatch(connection, bytes);
+    return transport->SendBatch(connection, bytes);
   }
 }
 
 int HttpCore::Receive(void *connection, std::vector<uint8_t> &buffer,
                       uint32_t write_offset, bool useQuic) {
-  return tcp_transport->Read(connection, buffer, write_offset);
+  return transport->Read(connection, buffer, write_offset);
 }
 
 int HttpCore::Send_TS(void *connection, const std::vector<uint8_t> &bytes,
@@ -99,7 +96,7 @@ int HttpCore::Send_TS(void *connection, const std::vector<uint8_t> &bytes,
   // if (useQuic) {
   //   return quicTransport->Send_TS(connection, bytes, mut);
   // } else {
-  //   return tcp_transport->Send_TS(connection, bytes, mut);
+  //   return transport->Send_TS(connection, bytes, mut);
   // }
   //
   return ERROR;
@@ -111,14 +108,14 @@ int HttpCore::SendBatch_TS(void *connection,
   // if (useQuic) {
   //   return quicTransport->SendBatch_TS(connection, bytes, mut);
   // } else {
-  //   return tcp_transport->SendBatch_TS(connection, bytes, mut);
+  //   return transport->SendBatch_TS(connection, bytes, mut);
   // }
   return ERROR;
 }
 
 int HttpCore::Receive_TS(void *connection, std::vector<uint8_t> &buffer,
                          uint32_t write_offset, std::mutex &mut, bool useQuic) {
-  return tcp_transport->Read_TS(connection, buffer, write_offset, mut);
+  return transport->Read_TS(connection, buffer, write_offset, mut);
 }
 
 // HTTP1 Request Formatted String to HTTP3 Headers Map
@@ -166,8 +163,7 @@ void HttpCore::ReqHeaderToPseudoHeader(
                        [](unsigned char c) { return std::tolower(c); });
 
         // Remove "Connection" header
-        if (key != "connection")
-          headers_map[key] = value;
+        if (key != "connection") headers_map[key] = value;
       }
     }
   }
@@ -180,43 +176,46 @@ void HttpCore::RespHeaderToPseudoHeader(
     std::unordered_map<std::string, std::string> &headers_map) {
   std::istringstream stream(http1Headers);
   std::string line;
-  // std::string key{};
-  // std::string value{};
 
-  // Read the first line (status line in HTTP/1.1)
-  while (std::getline(stream, line, '\n')) {
+  bool status_line_parsed = false;
+  while (std::getline(stream, line)) {
     if (!line.empty() && line.back() == '\r') {
       line.pop_back();
     }
 
-    size_t firstSpace = line.find(' ');
-    if (firstSpace != std::string::npos) {
-      // If we find a second space it is the status header
-      size_t secondSpace = line.find(' ', firstSpace + 1);
-      if (secondSpace != std::string::npos &&
-          headers_map.find(":status") == headers_map.end()) {
-        headers_map[":status"] =
-            line.substr(firstSpace + 1, secondSpace - firstSpace - 1);
-        break;
+    if (!status_line_parsed) {
+      size_t first_space = line.find(' ');
+      if (first_space != std::string::npos) {
+        size_t second_space = line.find(' ', first_space + 1);
+        if (second_space != std::string::npos &&
+            headers_map.find(":status") == headers_map.end()) {
+          headers_map[":status"] =
+              line.substr(first_space + 1, second_space - first_space - 1);
+          status_line_parsed = true;
+        }
+      }
+      continue;
+    }
+
+    size_t colon_pos = line.find(':');
+    if (colon_pos != std::string::npos) {
+      std::string key = line.substr(0, colon_pos);
+      std::string value = line.substr(colon_pos + 1);
+
+      value.erase(0, value.find_first_not_of(' '));
+      value.erase(value.find_last_not_of(' ') + 1);
+
+      // Convert key to lowercase (HTTP/2 standard)
+      std::transform(key.begin(), key.end(), key.begin(),
+                     [](unsigned char c) { return std::tolower(c); });
+
+      if (key == "connection") {
+        continue;
       }
 
-      // else {
-      //   key = line.substr(0, firstSpace - 1);
-      //   value = line.substr(firstSpace + 1);
-      //
-      //   std::transform(key.begin(), key.end(), key.begin(),
-      //                  [](unsigned char c) { return std::tolower(c); });
-      //
-      //   // Remove "Connection" header
-      //   if (key != "connection")
-      //     headers_map[key] = value;
-      //   // headers.emplace_back(key, value);
-      // }
+      headers_map[key] = value;
     }
   }
-  //
-  // std::cout << "Headers size: " << http1Headers.size()
-  //           << " HeadersMap size: " << headers_map.size() << std::endl;
 }
 
 // int HttpCore::HTTP1_SendFile(SSL *ssl, const std::string &file_path) {
@@ -264,10 +263,10 @@ uint64_t HttpCore::ReadVarint(std::vector<uint8_t>::iterator &iter,
   // Read the first byte
   uint64_t value = *iter++;
   uint8_t prefix =
-      value >> 6; // Get the prefix to determine the length of the varint
-  size_t length = 1 << prefix; // 1, 2, 4, or 8 bytes
+      value >> 6;  // Get the prefix to determine the length of the varint
+  size_t length = 1 << prefix;  // 1, 2, 4, or 8 bytes
 
-  value &= 0x3F; // Mask out the 2 most significant bits
+  value &= 0x3F;  // Mask out the 2 most significant bits
 
   // Check if we have enough data for the full varint
   if (iter + length - 1 >= end) {
@@ -308,32 +307,32 @@ void HttpCore::ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &strm_buf,
 
     // Handle the frame based on the type
     switch (frame_type) {
-    case Frame::DATA: // DATA frame
-      // std::cout << "[strm][" << Stream << "] Received DATA frame\n";
-      // Data might have been transmitted over multiple frames
-      data += std::string(iter, iter + frameLength);
-      break;
+      case Frame::DATA:  // DATA frame
+        // std::cout << "[strm][" << Stream << "] Received DATA frame\n";
+        // Data might have been transmitted over multiple frames
+        data += std::string(iter, iter + frameLength);
+        break;
 
-    case Frame::HEADERS:
-      // std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
+      case Frame::HEADERS:
+        // std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
 
-      {
-        std::vector<uint8_t> encoded_headers(iter, iter + frameLength);
+        {
+          std::vector<uint8_t> encoded_headers(iter, iter + frameLength);
 
-        // HttpClient::QPACK_DecodeHeaders(Stream, encoded_headers);
+          // HttpClient::QPACK_DecodeHeaders(Stream, encoded_headers);
 
-        DecodeQPACKHeaders(&Stream, encoded_headers,
-                           QuicDecodedHeadersMap[Stream]);
+          DecodeQPACKHeaders(&Stream, encoded_headers,
+                             QuicDecodedHeadersMap[Stream]);
 
-        // headers = std::string(iter, iter + frameLength);
-      }
+          // headers = std::string(iter, iter + frameLength);
+        }
 
-      break;
+        break;
 
-    default: // Unknown frame type
-      std::cout << "[strm][" << Stream << "] Unknown frame type: 0x" << std::hex
-                << frame_type << std::dec << "\n";
-      break;
+      default:  // Unknown frame type
+        std::cout << "[strm][" << Stream << "] Unknown frame type: 0x"
+                  << std::hex << frame_type << std::dec << "\n";
+        break;
     }
 
     iter += frameLength;

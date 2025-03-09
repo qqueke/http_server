@@ -8,14 +8,17 @@
 #include "codec.h"
 #include "http3_frame_builder.h"
 #include "router.h"
+#include "static_content_handler.h"
 #include "transport.h"
 
 // #include "http2_frame_handler.h"
 
 class QuicServer {
 public:
-  explicit QuicServer(const std::shared_ptr<Router> &router, int argc,
-                      char *argv[]);
+  explicit QuicServer(
+      const std::shared_ptr<Router> &router,
+      const std::shared_ptr<StaticContentHandler> &content_handler, int argc,
+      char *argv[]);
   ~QuicServer();
 
   void ParseStreamBuffer(HQUIC Stream, std::vector<uint8_t> &strm_buf,
@@ -30,6 +33,8 @@ public:
   std::shared_ptr<Http3FrameBuilder> frame_builder_;
 
   std::shared_ptr<QpackCodec> codec_;
+
+  std::weak_ptr<StaticContentHandler> static_content_handler_;
 
 private:
   static const QUIC_API_TABLE *ms_quic_;

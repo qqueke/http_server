@@ -33,6 +33,7 @@
 #include "log.h"
 #include "quic_server.h"
 #include "router.h"
+#include "static_content_handler.h"
 #include "tcp_server.h"
 #include "utils.h"
 
@@ -224,6 +225,8 @@ void HttpServer::PrintFromServer() { std::cout << "Hello from server\n"; }
 
 HttpServer::HttpServer(int argc, char *argv[]) {
   router_ = std::make_shared<Router>();
-  tcp_server_ = std::make_unique<TcpServer>(router_);
-  quic_server_ = std::make_unique<QuicServer>(router_, argc, argv);
+  static_content_handler_ = std::make_shared<StaticContentHandler>();
+  tcp_server_ = std::make_unique<TcpServer>(router_, static_content_handler_);
+  quic_server_ = std::make_unique<QuicServer>(router_, static_content_handler_,
+                                              argc, argv);
 };

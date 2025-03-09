@@ -22,6 +22,16 @@ public:
   std::vector<uint8_t> BuildDataFrame(const std::string &data,
                                       uint32_t stream_id = 0);
 
+  std::vector<uint8_t> BuildDataFrame(std::vector<uint8_t> &bytes,
+                                      uint32_t payload_size, uint32_t stream_id,
+                                      uint8_t frame_flags);
+
+  std::vector<uint8_t> BuildDataFrameFromFile(int fd, uint64_t file_size,
+                                              uint32_t stream_id);
+
+  std::vector<std::vector<uint8_t>>
+  BuildDataFramesFromFile(int fd, uint64_t file_size, uint32_t stream_id);
+
   std::vector<uint8_t>
   BuildHeaderFrame(const std::vector<uint8_t> &encoded_headers,
                    uint32_t stream_id);

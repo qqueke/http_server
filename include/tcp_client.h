@@ -12,7 +12,7 @@
 #include "transport.h"
 
 class TcpClient {
-public:
+ public:
   explicit TcpClient(
       int argc, char *argv[],
       const std::vector<std::pair<std::string, std::string>> &requests);
@@ -20,7 +20,7 @@ public:
 
   void Run();
 
-private:
+ private:
   std::unique_ptr<TlsManager> tls_manager_;
 
   std::shared_ptr<TcpTransport> transport_;
@@ -39,4 +39,4 @@ private:
   void RecvHttp2Response(SSL *client_ssl, std::mutex &conn_mutex);
 };
 
-#endif // TCPCLIENT_HPP
+#endif  // TCPCLIENT_HPP

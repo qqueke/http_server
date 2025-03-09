@@ -13,7 +13,7 @@
 #include <vector>
 
 #include "crypto.h"
-#define ECHO
+// #define ECHO
 #define _CRT_SECURE_NO_WARNINGS 1
 #define UDP_PORT 4567
 #ifndef UNREFERENCED_PARAMETER
