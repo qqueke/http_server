@@ -27,9 +27,9 @@
 #include <memory>
 #include <string>
 
-#include "quic_server.h"
-#include "router.h"
-#include "tcp_server.h"
+#include "../include/quic_server.h"
+#include "../include/router.h"
+#include "../include/tcp_server.h"
 
 /**
  * @class HttpServer

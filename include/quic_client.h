@@ -17,11 +17,14 @@
 #include <netinet/in.h>
 
 #include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
-#include "codec.h"
-#include "http3_frame_builder.h"
-#include "router.h"
-#include "transport.h"
+#include "../include/codec.h"
+#include "../include/http3_frame_builder.h"
+#include "../include/router.h"
+#include "../include/transport.h"
 
 /**
  * @class QuicClient

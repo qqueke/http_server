@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -224,9 +225,8 @@ uint64_t StaticContentHandler::FileHandler(std::string &file_path,
   return file_size;
 }
 
-std::string
-StaticContentHandler::BuildHeadersForFileTransfer(std::string &file_path,
-                                                  uint64_t file_size) {
+std::string StaticContentHandler::BuildHeadersForFileTransfer(
+    std::string &file_path, uint64_t file_size) {
   std::string headers{};
 
   headers.append("HTTP/1.1 200 OK\r\nContent-Length: ")
@@ -242,8 +242,8 @@ StaticContentHandler::BuildHeadersForFileTransfer(std::string &file_path,
   return headers;
 }
 
-std::string_view
-StaticContentHandler::GetContentType(const std::string &file_ext) {
+std::string_view StaticContentHandler::GetContentType(
+    const std::string &file_ext) {
   for (const auto &pair : content_types_) {
     if (file_ext == pair.first) {
       return pair.second;

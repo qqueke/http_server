@@ -14,9 +14,12 @@
 
 #ifndef INCLUDE_CLIENT_H_
 #define INCLUDE_CLIENT_H_
+#include <memory>
+#include <string>
+#include <vector>
 
-#include "quic_client.h"
-#include "tcp_client.h"
+#include "../include/quic_client.h"
+#include "../include/tcp_client.h"
 
 /**
  * @class HttpClient

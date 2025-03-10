@@ -52,7 +52,7 @@ class TlsManager {
    *
    * @param mode The TLS mode (either SERVER or CLIENT).
    */
-  TlsManager(TlsMode mode);
+  explicit TlsManager(TlsMode mode);
 
   /**
    * @brief Constructs a `TlsManager` with a specified retry count for TLS

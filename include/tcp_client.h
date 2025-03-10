@@ -16,12 +16,13 @@
 #include <netinet/in.h>
 
 #include <memory>
+#include <string>
 #include <vector>
 
-#include "codec.h"
-#include "http2_frame_builder.h"
-#include "tls_manager.h"
-#include "transport.h"
+#include "../include/codec.h"
+#include "../include/http2_frame_builder.h"
+#include "../include/tls_manager.h"
+#include "../include/transport.h"
 
 /**
  * @class TcpClient

@@ -12,8 +12,7 @@
 
 #ifndef INCLUDE_LOG_H_
 #define INCLUDE_LOG_H_
-
-#include <fstream> /**< For file output operations. */
+#include <string>
 
 /**
  * @brief Macro for logging an error.

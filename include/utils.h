@@ -17,14 +17,13 @@
 #include <lsqpack.h>
 #include <lsxpack_header.h>
 #include <msquic.h>
+#include <openssl/ssl.h>
 
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <unordered_map>
-
-#include "crypto.h"
 
 // Define macros for program constants and flags
 #define _CRT_SECURE_NO_WARNINGS \

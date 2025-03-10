@@ -14,11 +14,11 @@
 #ifndef INCLUDE_TRANSPORT_H_
 #define INCLUDE_TRANSPORT_H_
 
+#include <msquic.h>
+
 #include <cstdint>
 #include <mutex>
 #include <vector>
-
-#include "msquic.h"
 
 /**
  * @interface ITransportManager

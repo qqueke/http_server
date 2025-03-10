@@ -12,9 +12,10 @@
 #ifndef INCLUDE_HTTP3_FRAME_BUILDER_H_
 #define INCLUDE_HTTP3_FRAME_BUILDER_H_
 
+#include <string>
 #include <vector>
 
-#include "utils.h"
+#include "../include/utils.h"
 
 /**
  * @class Http3FrameBuilder
@@ -119,4 +120,4 @@ class Http3FrameBuilder {
   std::vector<uint8_t> BuildSettingsFrame();
 };
 
-#endif  // HTTP3_FRAME_BUILDER_H
+#endif  // INCLUDE_HTTP3_FRAME_BUILDER_H_

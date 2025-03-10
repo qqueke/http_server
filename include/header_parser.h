@@ -13,11 +13,10 @@
 #ifndef INCLUDE_HEADER_PARSER_H_
 #define INCLUDE_HEADER_PARSER_H_
 
-#include <memory>
 #include <string>
 #include <unordered_map>
 
-#include "header_validator.h"
+#include "../include/header_validator.h"
 
 /**
  * @interface IHeaderParser
