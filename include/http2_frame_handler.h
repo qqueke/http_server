@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file http2_frame_handler.h
  * @brief Defines the `IHttp2FrameHandler` interface and `Http2FrameHandler`
@@ -10,8 +13,8 @@
  * handle different frame types.
  */
 
-#ifndef HTTP2_FRAME_HANDLER_H
-#define HTTP2_FRAME_HANDLER_H
+#ifndef INCLUDE_HTTP2_FRAME_HANDLER_H_
+#define INCLUDE_HTTP2_FRAME_HANDLER_H_
 
 #include <cstdint>
 #include <memory>
@@ -19,14 +22,13 @@
 #include <unordered_map>
 #include <vector>
 
-#include "codec.h"
-#include "crypto.h"
-#include "header_parser.h"
-#include "http2_frame_builder.h"
-#include "lshpack.h"
-#include "router.h"
-#include "static_content_handler.h"
-#include "transport.h"
+#include "../include/codec.h"
+#include "../include/header_parser.h"
+#include "../include/http2_frame_builder.h"
+#include "../include/router.h"
+#include "../include/static_content_handler.h"
+#include "../include/transport.h"
+#include "../lib/ls-hpack/lshpack.h"
 
 /**
  * @brief Interface for HTTP/2 frame handlers.
@@ -35,7 +37,7 @@
  * frames and handle their corresponding actions.
  */
 class IHttp2FrameHandler {
-public:
+ public:
   virtual ~IHttp2FrameHandler() = default;
 
   /**
@@ -58,7 +60,7 @@ public:
                            uint32_t payload_size, uint8_t frame_flags,
                            SSL *ssl) = 0;
 
-private:
+ private:
   /**
    * @brief Handles a DATA frame.
    *
@@ -205,7 +207,7 @@ private:
  * control frames.
  */
 class Http2FrameHandler : IHttp2FrameHandler {
-public:
+ public:
   /**
    * @brief Constructs an HTTP/2 frame handler for a server.
    *
@@ -276,7 +278,7 @@ public:
                       uint32_t read_offset, uint32_t payload_size,
                       uint8_t frame_flags, SSL *ssl, std::mutex &mut);
 
-private:
+ private:
   /**
    * @brief Initializes shared resources for handling frames.
    *
@@ -502,4 +504,4 @@ private:
                               uint8_t frame_flags, SSL *ssl, std::mutex &mut);
 };
 
-#endif // HTTP2_FRAME_HANDLER_H
+#endif  // INCLUDE_HTTP2_FRAME_HANDLER_H_

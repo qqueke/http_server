@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file http2_frame_builder.h
  * @brief Provides the functionality to build HTTP/2 frames.
@@ -6,8 +9,8 @@
  * constructing different types of HTTP/2 frames, such as data frames, header
  * frames, and control frames.
  */
-#ifndef HTTP2_FRAME_BUILDER_H
-#define HTTP2_FRAME_BUILDER_H
+#ifndef INCLUDE_HTTP2_FRAME_BUILDER_H_
+#define INCLUDE_HTTP2_FRAME_BUILDER_H_
 
 #include <cstdint>
 #include <string>
@@ -25,7 +28,7 @@
  * specified flags, stream IDs, and payloads.
  */
 class Http2FrameBuilder {
-public:
+ public:
   /**
    * @brief Builds a generic HTTP/2 frame.
    *
@@ -46,11 +49,11 @@ public:
    * @param data The payload data for the frame (optional, default is empty).
    * @return A vector of bytes representing the built HTTP/2 frame.
    */
-  std::vector<uint8_t>
-  BuildFrame(Frame type, uint8_t frame_flags = 0, uint32_t stream_id = 0,
-             uint32_t error_code = 0, uint32_t increment = 0,
-             const std::vector<uint8_t> &encoded_headers = {},
-             const std::string &data = "");
+  std::vector<uint8_t> BuildFrame(
+      Frame type, uint8_t frame_flags = 0, uint32_t stream_id = 0,
+      uint32_t error_code = 0, uint32_t increment = 0,
+      const std::vector<uint8_t> &encoded_headers = {},
+      const std::string &data = "");
 
   /**
    * @brief Builds a DATA frame.
@@ -108,8 +111,9 @@ public:
    * @param stream_id The stream ID associated with the DATA frames.
    * @return A vector of vectors of bytes, each representing a built DATA frame.
    */
-  std::vector<std::vector<uint8_t>>
-  BuildDataFramesFromFile(int fd, uint64_t file_size, uint32_t stream_id);
+  std::vector<std::vector<uint8_t>> BuildDataFramesFromFile(int fd,
+                                                            uint64_t file_size,
+                                                            uint32_t stream_id);
 
   /**
    * @brief Builds a HEADER frame.
@@ -122,9 +126,8 @@ public:
    * @param stream_id The stream ID associated with the HEADER frame.
    * @return A vector of bytes representing the built HEADER frame.
    */
-  std::vector<uint8_t>
-  BuildHeaderFrame(const std::vector<uint8_t> &encoded_headers,
-                   uint32_t stream_id);
+  std::vector<uint8_t> BuildHeaderFrame(
+      const std::vector<uint8_t> &encoded_headers, uint32_t stream_id);
 
   /**
    * @brief Builds a GOAWAY frame.
@@ -176,4 +179,4 @@ public:
                                               uint32_t increment);
 };
 
-#endif // HTTP2_FRAME_BUILDER_H
+#endif  // INCLUDE_HTTP2_FRAME_BUILDER_H_

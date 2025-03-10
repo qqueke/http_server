@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file codec.h
  * @brief Interface and implementations for HTTP header encoding/decoding.
@@ -6,8 +9,8 @@
  * `HpackCodec` and `QpackCodec`. These classes are responsible for encoding and
  * decoding HTTP headers using the HPACK and QPACK algorithms, respectively.
  */
-#ifndef CODEC_H
-#define CODEC_H
+#ifndef INCLUDE_CODEC_H_
+#define INCLUDE_CODEC_H_
 
 #include <cstdint>
 #include <string>
@@ -25,7 +28,7 @@
  * such as HPACK and QPACK.
  */
 class ICodec {
-public:
+ public:
   virtual ~ICodec() = default;
 
   /**
@@ -34,10 +37,10 @@ public:
    * @param headers_map A map of HTTP headers to encode.
    * @param encoded_headers A vector that will hold the encoded headers.
    */
-  virtual void
-  Encode(void *context,
-         const std::unordered_map<std::string, std::string> &headers_map,
-         std::vector<uint8_t> &encoded_headers) = 0;
+  virtual void Encode(
+      void *context,
+      const std::unordered_map<std::string, std::string> &headers_map,
+      std::vector<uint8_t> &encoded_headers) = 0;
 
   /**
    * @brief Decodes a byte stream into HTTP headers.
@@ -45,9 +48,9 @@ public:
    * @param encoded_headers A vector containing the encoded headers.
    * @param decoded_headers_map A map to store the decoded HTTP headers.
    */
-  virtual void
-  Decode(void *context, std::vector<uint8_t> &encoded_headers,
-         std::unordered_map<std::string, std::string> &decoded_headers_map) = 0;
+  virtual void Decode(
+      void *context, std::vector<uint8_t> &encoded_headers,
+      std::unordered_map<std::string, std::string> &decoded_headers_map) = 0;
 };
 
 /**
@@ -58,7 +61,7 @@ public:
  * compression. It provides methods to encode and decode HTTP headers.
  */
 class HpackCodec : public ICodec {
-public:
+ public:
   HpackCodec() = default;
   ~HpackCodec() override = default;
 
@@ -97,7 +100,7 @@ public:
  * compression. It provides methods to encode and decode HTTP headers.
  */
 class QpackCodec : public ICodec {
-public:
+ public:
   QpackCodec() = default;
 
   /**
@@ -136,9 +139,9 @@ public:
       void *context, std::vector<uint8_t> &encoded_headers,
       std::unordered_map<std::string, std::string> &decoded_headers) override;
 
-private:
+ private:
   /** Pointer to the QUIC API table used for QUIC stream operations. */
   const QUIC_API_TABLE *ms_quic_;
 };
 
-#endif // CODEC_H
+#endif  // INCLUDE_CODEC_H_

@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file quic_client.h
  * @brief Defines the QuicClient class for managing client-side QUIC
@@ -8,8 +11,8 @@
  * managing streams, and working with HTTP/3 frames.
  */
 
-#ifndef QUIC_CLIENT_H
-#define QUIC_CLIENT_H
+#ifndef INCLUDE_QUIC_CLIENT_H_
+#define INCLUDE_QUIC_CLIENT_H_
 
 #include <netinet/in.h>
 
@@ -27,7 +30,7 @@
  *        working with HTTP/3 frames.
  */
 class QuicClient {
-public:
+ public:
   /**
    * @brief Constructs a QuicClient instance and initializes internal resources.
    * @param argc Argument count passed to the program.
@@ -89,7 +92,7 @@ public:
    */
   std::shared_ptr<QpackCodec> codec_;
 
-private:
+ private:
   // Private member variables and constants
 
   /**
@@ -164,4 +167,4 @@ private:
                                 _Inout_ QUIC_CONNECTION_EVENT *Event);
 };
 
-#endif // QUIC_CLIENT_H
+#endif  // INCLUDE_QUIC_CLIENT_H_

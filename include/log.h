@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file Log.h
  * @brief Provides logging utilities for errors and requests.
@@ -7,8 +10,8 @@
  * flushing.
  */
 
-#ifndef LOG_H
-#define LOG_H
+#ifndef INCLUDE_LOG_H_
+#define INCLUDE_LOG_H_
 
 #include <fstream> /**< For file output operations. */
 
@@ -64,4 +67,4 @@ void shutdownFlush();
  */
 void periodicFlush();
 
-#endif // LOG_H
+#endif  // INCLUDE_LOG_H_

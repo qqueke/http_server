@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file server.h
  * @brief Defines the HttpServer class, which handles both TCP and QUIC
@@ -8,8 +11,8 @@
  * provides dynamic routing of requests based on HTTP methods and paths.
  */
 
-#ifndef SERVER_H
-#define SERVER_H
+#ifndef INCLUDE_SERVER_H_
+#define INCLUDE_SERVER_H_
 
 #include <msquic.h>
 #include <netinet/in.h>
@@ -38,7 +41,7 @@
  * HTTP methods and paths.
  */
 class HttpServer {
-public:
+ public:
   /**
    * @brief Constructs an HttpServer object.
    *
@@ -81,7 +84,7 @@ public:
    */
   void Run();
 
-private:
+ private:
   /** A unique pointer to the TcpServer instance. */
   std::unique_ptr<TcpServer> tcp_server_;
 
@@ -96,4 +99,4 @@ private:
   std::shared_ptr<StaticContentHandler> static_content_handler_;
 };
 
-#endif // SERVER_H
+#endif  // INCLUDE_SERVER_H_

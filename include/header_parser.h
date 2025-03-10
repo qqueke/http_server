@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file header_parser.h
  * @brief Header parsing and validation interface and implementations.
@@ -7,8 +10,8 @@
  * for converting headers to pseudo-headers, validating headers, and managing
  * pseudo-header integrity.
  */
-#ifndef HEADER_PARSER_H
-#define HEADER_PARSER_H
+#ifndef INCLUDE_HEADER_PARSER_H_
+#define INCLUDE_HEADER_PARSER_H_
 
 #include <memory>
 #include <string>
@@ -25,7 +28,7 @@
  * implemented by classes that handle HTTP request and response headers.
  */
 class IHeaderParser {
-public:
+ public:
   /**
    * @brief Converts headers to pseudo-headers.
    *
@@ -35,8 +38,8 @@ public:
    * @return A map of pseudo-headers, where the keys are header names and values
    * are header values.
    */
-  virtual std::unordered_map<std::string, std::string>
-  ConvertToPseudoHeaders(const std::string_view headers) = 0;
+  virtual std::unordered_map<std::string, std::string> ConvertToPseudoHeaders(
+      const std::string_view headers) = 0;
 
   /**
    * @brief Validates HTTP headers.
@@ -67,10 +70,10 @@ public:
  * request headers, and validates the associated pseudo-headers.
  */
 class RequestHeaderParser : public IHeaderParser {
-private:
+ private:
   RequestHeaderValidator validator_; /**< Validator for request headers. */
 
-public:
+ public:
   /**
    * @brief Converts request headers to pseudo-headers.
    *
@@ -79,8 +82,8 @@ public:
    * @param headers A string view representing the request headers to convert.
    * @return A map of pseudo-headers.
    */
-  std::unordered_map<std::string, std::string>
-  ConvertToPseudoHeaders(const std::string_view headers) override;
+  std::unordered_map<std::string, std::string> ConvertToPseudoHeaders(
+      const std::string_view headers) override;
 
   /**
    * @brief Validates request headers.
@@ -111,10 +114,10 @@ public:
  * response headers, and validates the associated pseudo-headers.
  */
 class ResponseHeaderParser : public IHeaderParser {
-private:
+ private:
   ResponseHeaderValidator validator_; /**< Validator for response headers. */
 
-public:
+ public:
   /**
    * @brief Converts response headers to pseudo-headers.
    *
@@ -123,8 +126,8 @@ public:
    * @param headers A string view representing the response headers to convert.
    * @return A map of pseudo-headers.
    */
-  std::unordered_map<std::string, std::string>
-  ConvertToPseudoHeaders(const std::string_view headers) override;
+  std::unordered_map<std::string, std::string> ConvertToPseudoHeaders(
+      const std::string_view headers) override;
 
   /**
    * @brief Validates response headers.
@@ -156,11 +159,11 @@ public:
  * parsing and validation logic for each type of header.
  */
 class HeaderParser {
-private:
+ private:
   ResponseHeaderParser res_parser_; /**< The response header parser. */
   RequestHeaderParser req_parser_;  /**< The request header parser. */
 
-public:
+ public:
   /**
    * @brief Validates HTTP request headers.
    *
@@ -207,8 +210,8 @@ public:
    * @param headers A string view representing the request headers.
    * @return A map of pseudo-headers.
    */
-  std::unordered_map<std::string, std::string>
-  ConvertRequestToPseudoHeaders(std::string_view headers);
+  std::unordered_map<std::string, std::string> ConvertRequestToPseudoHeaders(
+      std::string_view headers);
 
   /**
    * @brief Converts response headers to pseudo-headers.
@@ -218,8 +221,8 @@ public:
    * @param headers A string view representing the response headers.
    * @return A map of pseudo-headers.
    */
-  std::unordered_map<std::string, std::string>
-  ConvertResponseToPseudoHeaders(std::string_view headers);
+  std::unordered_map<std::string, std::string> ConvertResponseToPseudoHeaders(
+      std::string_view headers);
 };
 
-#endif // HEADER_PARSER_H
+#endif  // INCLUDE_HEADER_PARSER_H_

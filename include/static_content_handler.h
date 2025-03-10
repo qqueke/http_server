@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file static_content_handler.h
  * @brief Defines the `StaticContentHandler` class for serving static content
@@ -9,8 +12,8 @@
  * the necessary headers for file transfers.
  */
 
-#ifndef STATIC_CONTENT_HANDLER_H
-#define STATIC_CONTENT_HANDLER_H
+#ifndef INCLUDE_STATIC_CONTENT_HANDLER_H_
+#define INCLUDE_STATIC_CONTENT_HANDLER_H_
 
 #include <array>
 #include <cstdint>
@@ -26,7 +29,7 @@
  * providing methods to serve static files over HTTP.
  */
 class StaticContentHandler {
-public:
+ public:
   /**
    * @brief Default constructor for the `StaticContentHandler` class.
    */
@@ -66,7 +69,7 @@ public:
   std::string BuildHeadersForFileTransfer(std::string &file_path,
                                           uint64_t file_size);
 
-private:
+ private:
   /**
    * @brief Retrieves the content type for a given file extension.
    *
@@ -125,4 +128,4 @@ private:
                          {".gzip", "Content-Type: application/gzip\r\n"}}};
 };
 
-#endif // STATIC_CONTENT_HANDLER_H
+#endif  // INCLUDE_STATIC_CONTENT_HANDLER_H_

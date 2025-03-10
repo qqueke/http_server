@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file router.h
  * @brief Defines the `Router` class and supporting structures for HTTP request
@@ -8,8 +11,8 @@
  * HTTP method and path.
  */
 
-#ifndef ROUTER_H
-#define ROUTER_H
+#ifndef INCLUDE_ROUTER_H_
+#define INCLUDE_ROUTER_H_
 
 #include <functional>
 
@@ -52,7 +55,7 @@ struct pair_hash {
  * dispatching requests based on the method and path.
  */
 class Router {
-public:
+ public:
   /**
    * @brief Default constructor for the `Router` class.
    */
@@ -88,11 +91,11 @@ public:
    * @param data The optional request data (e.g., POST body, query parameters).
    * @return A pair consisting of the response status and data.
    */
-  std::pair<std::string, std::string>
-  RouteRequest(const std::string &method, const std::string &path,
-               const std::string &data = "");
+  std::pair<std::string, std::string> RouteRequest(
+      const std::string &method, const std::string &path,
+      const std::string &data = "");
 
-private:
+ private:
   /**
    * @brief A map of routes, where each key is a pair of method and path, and
    * the value is the corresponding route handler.
@@ -114,8 +117,8 @@ private:
    * @return A pair consisting of a status message ("400 Bad Request") and the
    * optional data.
    */
-  static std::pair<std::string, std::string>
-  handleBadRequest(const std::string &data = "");
+  static std::pair<std::string, std::string> handleBadRequest(
+      const std::string &data = "");
 };
 
-#endif // ROUTER_H
+#endif  // INCLUDE_ROUTER_H_

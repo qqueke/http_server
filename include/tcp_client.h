@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file tcp_client.h
  * @brief Defines the TcpClient class for managing TCP connections and sending
@@ -7,8 +10,8 @@
  * for managing the TCP connection to a server, sending HTTP/1 and HTTP/2
  * requests, and handling secure communication using TLS.
  */
-#ifndef TCP_CLIENT_H
-#define TCP_CLIENT_H
+#ifndef INCLUDE_TCP_CLIENT_H_
+#define INCLUDE_TCP_CLIENT_H_
 
 #include <netinet/in.h>
 
@@ -29,7 +32,7 @@
  * communication.
  */
 class TcpClient {
-public:
+ public:
   /**
    * @brief Constructs a new TcpClient object.
    *
@@ -62,7 +65,7 @@ public:
    */
   void Run();
 
-private:
+ private:
   /** A unique pointer to the TlsManager that manages SSL/TLS encryption for the
    * client. */
   std::unique_ptr<TlsManager> tls_manager_;
@@ -121,4 +124,4 @@ private:
   void RecvHttp2Response(SSL *client_ssl, std::mutex &conn_mutex);
 };
 
-#endif // TCP_CLIENT_H
+#endif  // INCLUDE_TCP_CLIENT_H_

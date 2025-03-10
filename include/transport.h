@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file transport.h
  * @brief Defines transport management classes for TCP and QUIC protocols.
@@ -8,8 +11,8 @@
  * sending and receiving individual packets, batches of packets, and files.
  */
 
-#ifndef TRANSPORT_H
-#define TRANSPORT_H
+#ifndef INCLUDE_TRANSPORT_H_
+#define INCLUDE_TRANSPORT_H_
 
 #include <cstdint>
 #include <mutex>
@@ -26,7 +29,7 @@
  * transport protocol's logic.
  */
 class ITransportManager {
-public:
+ public:
   /**
    * @brief Destructor for the ITransportManager interface.
    *
@@ -72,7 +75,7 @@ public:
  * receiving.
  */
 class TcpTransport : public ITransportManager {
-public:
+ public:
   /**
    * @brief Constructs a TCP transport manager with default settings.
    */
@@ -186,7 +189,7 @@ public:
    */
   int SendFile(void *connection, int fd);
 
-private:
+ private:
   /**
    * @brief The number of retry attempts for sending data.
    */
@@ -213,7 +216,7 @@ private:
  * both individual and batched packets.
  */
 class QuicTransport : public ITransportManager {
-public:
+ public:
   /**
    * @brief Constructs a QUIC transport manager with default settings.
    */
@@ -264,11 +267,11 @@ public:
   int SendBatch(void *connection,
                 const std::vector<std::vector<uint8_t>> &bytes) override;
 
-private:
+ private:
   /**
    * @brief The QUIC API table used for QUIC operations.
    */
   const QUIC_API_TABLE *ms_quic_;
 };
 
-#endif // TRANSPORT_H
+#endif  // INCLUDE_TRANSPORT_H_

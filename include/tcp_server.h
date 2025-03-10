@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file tcp_server.h
  * @brief Defines the TcpServer class for managing TCP server connections,
@@ -9,8 +12,8 @@
  * and a content handler to serve static content.
  */
 
-#ifndef TCP_SERVER_H
-#define TCP_SERVER_H
+#ifndef INCLUDE_TCP_SERVER_H_
+#define INCLUDE_TCP_SERVER_H_
 
 #include <netinet/in.h>
 
@@ -33,7 +36,7 @@
  * provided router and content handler to serve appropriate responses.
  */
 class TcpServer {
-public:
+ public:
   /**
    * @brief Constructs a new TcpServer object.
    *
@@ -67,7 +70,7 @@ public:
    */
   void Run();
 
-private:
+ private:
   /** A unique pointer to the TlsManager that manages SSL/TLS encryption for the
    * server. */
   std::unique_ptr<TlsManager> tls_manager_;
@@ -137,4 +140,4 @@ private:
   void HandleHTTP2Request(SSL *client_ssl);
 };
 
-#endif // TCP_SERVER_H
+#endif  // INCLUDE_TCP_SERVER_H_

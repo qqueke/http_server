@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file utils.h
  * @brief Contains utility functions and definitions for handling HTTP2, QUIC,
@@ -8,8 +11,8 @@
  * encoding/decoding, SSL key logging, and command-line argument parsing.
  */
 
-#ifndef UTILS_H
-#define UTILS_H
+#ifndef INCLUDE_UTILS_H_
+#define INCLUDE_UTILS_H_
 
 #include <lsqpack.h>
 #include <lsxpack_header.h>
@@ -24,17 +27,17 @@
 #include "crypto.h"
 
 // Define macros for program constants and flags
-#define _CRT_SECURE_NO_WARNINGS                                                \
+#define _CRT_SECURE_NO_WARNINGS \
   1                   /**< Disable certain secure warnings in MSVC. */
 #define UDP_PORT 4567 /**< The port used for UDP connections. */
 
 #ifndef UNREFERENCED_PARAMETER
-#define UNREFERENCED_PARAMETER(P)                                              \
+#define UNREFERENCED_PARAMETER(P) \
   (void)(P) /**< Macro to mark unused parameters. */
 #endif
 
-#define ROUTE_HANDLER                                                          \
-  std::function<std::pair<std::string, std::string>(                           \
+#define ROUTE_HANDLER                                \
+  std::function<std::pair<std::string, std::string>( \
       const std::string &)> /**< Defines a route handler function type. */
 
 #define STATUS_CODE std::string /**< Type alias for HTTP status codes. */
@@ -176,7 +179,10 @@ struct HTTP2Context {
    */
   HTTP2Context(SSL *s, struct lshpack_enc *e, uint32_t id, uint8_t type,
                void *instance)
-      : ssl(s), enc(e), stream_id(id), instance_type(type),
+      : ssl(s),
+        enc(e),
+        stream_id(id),
+        instance_type(type),
         instance_ctx(instance) {}
 };
 
@@ -253,9 +259,9 @@ GetFlag(_In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[],
  * @param name The name of the argument to retrieve.
  * @return The value of the argument, or nullptr if not found.
  */
-_Ret_maybenull_ _Null_terminated_ const char *
-GetValue(_In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[],
-         _In_z_ const char *name);
+_Ret_maybenull_ _Null_terminated_ const char *GetValue(
+    _In_ int argc, _In_reads_(argc) _Null_terminated_ char *argv[],
+    _In_z_ const char *name);
 
 /**
  * @brief Retrieves the value of a command-line argument as a string.
@@ -308,4 +314,4 @@ void EncodeHexBuffer(_In_reads_(BufferLen) uint8_t *Buffer,
 void WriteSslKeyLogFile(_In_z_ const char *FileName,
                         _In_ QUIC_TLS_SECRETS *TlsSecrets);
 
-#endif // UTILS_H
+#endif  // INCLUDE_UTILS_H_

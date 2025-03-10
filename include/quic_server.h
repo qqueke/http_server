@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file quic_server.h
  * @brief Defines the QuicServer class for handling QUIC protocol client
@@ -9,8 +12,8 @@
  * content handler and router.
  */
 
-#ifndef QUIC_SERVER_H
-#define QUIC_SERVER_H
+#ifndef INCLUDE_QUIC_SERVER_H_
+#define INCLUDE_QUIC_SERVER_H_
 
 #include <netinet/in.h>
 
@@ -31,7 +34,7 @@
  * the provided static content handler and router.
  */
 class QuicServer {
-public:
+ public:
   /**
    * @brief Construct a new QuicServer object.
    *
@@ -99,7 +102,7 @@ public:
    */
   std::weak_ptr<StaticContentHandler> static_content_handler_;
 
-private:
+ private:
   /** The QUIC API table used for interacting with the MsQuic API. */
   static const QUIC_API_TABLE *ms_quic_;
 
@@ -187,4 +190,4 @@ private:
                               _Inout_ QUIC_LISTENER_EVENT *Event);
 };
 
-#endif // QUIC_SERVER_H
+#endif  // INCLUDE_QUIC_SERVER_H_

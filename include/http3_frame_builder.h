@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file http3_frame_builder.h
  * @brief Provides functionality to build HTTP/3 frames.
@@ -6,8 +9,8 @@
  * construct various HTTP/3 frames, including data frames, header frames, and
  * control frames such as GOAWAY and SETTINGS frames.
  */
-#ifndef HTTP3_FRAME_BUILDER_H
-#define HTTP3_FRAME_BUILDER_H
+#ifndef INCLUDE_HTTP3_FRAME_BUILDER_H_
+#define INCLUDE_HTTP3_FRAME_BUILDER_H_
 
 #include <vector>
 
@@ -23,7 +26,7 @@
  * IDs, payloads, and other frame-specific details.
  */
 class Http3FrameBuilder {
-public:
+ public:
   /**
    * @brief Builds a generic HTTP/3 frame.
    *
@@ -39,10 +42,10 @@ public:
    * @param data The payload data for the frame (optional, default is empty).
    * @return A vector of bytes representing the constructed HTTP/3 frame.
    */
-  std::vector<uint8_t>
-  BuildFrame(Frame type, uint32_t stream_id = 0,
-             const std::vector<uint8_t> &encoded_headers = {},
-             const std::string &data = "");
+  std::vector<uint8_t> BuildFrame(
+      Frame type, uint32_t stream_id = 0,
+      const std::vector<uint8_t> &encoded_headers = {},
+      const std::string &data = "");
 
   /**
    * @brief Builds a DATA frame.
@@ -93,8 +96,8 @@ public:
    * frame.
    * @return A vector of bytes representing the constructed HEADER frame.
    */
-  std::vector<uint8_t>
-  BuildHeaderFrame(const std::vector<uint8_t> &encoded_headers);
+  std::vector<uint8_t> BuildHeaderFrame(
+      const std::vector<uint8_t> &encoded_headers);
 
   /**
    * @brief Builds a GOAWAY frame.
@@ -116,4 +119,4 @@ public:
   std::vector<uint8_t> BuildSettingsFrame();
 };
 
-#endif // HTTP3_FRAME_BUILDER_H
+#endif  // HTTP3_FRAME_BUILDER_H

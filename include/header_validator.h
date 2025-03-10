@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file header_validator.h
  * @brief Interface and implementations for HTTP header validation.
@@ -6,8 +9,8 @@
  * for validating HTTP request and response headers. It includes methods for
  * validating headers and pseudo-headers.
  */
-#ifndef HEADER_VALIDATOR_H
-#define HEADER_VALIDATOR_H
+#ifndef INCLUDE_HEADER_VALIDATOR_H_
+#define INCLUDE_HEADER_VALIDATOR_H_
 
 #include <string>
 #include <unordered_map>
@@ -21,7 +24,7 @@
  * response header validation.
  */
 class IHeaderValidator {
-public:
+ public:
   /**
    * @brief Validates HTTP headers.
    *
@@ -52,7 +55,7 @@ public:
  * correctness and format of request headers.
  */
 class RequestHeaderValidator : public IHeaderValidator {
-public:
+ public:
   /**
    * @brief Validates HTTP request headers.
    *
@@ -83,7 +86,7 @@ public:
  * correctness and format of response headers.
  */
 class ResponseHeaderValidator : public IHeaderValidator {
-public:
+ public:
   /**
    * @brief Validates HTTP response headers.
    *
@@ -105,4 +108,4 @@ public:
       std::unordered_map<std::string, std::string> &pseudo_headers) override;
 };
 
-#endif // HEADER_VALIDATOR_H
+#endif  // INCLUDE_HEADER_VALIDATOR_H_

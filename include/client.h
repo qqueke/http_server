@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file client.h
  * @brief Defines the HttpClient class that supports both TCP and QUIC protocols
@@ -9,8 +12,8 @@
  * a server.
  */
 
-#ifndef CLIENT_H
-#define CLIENT_H
+#ifndef INCLUDE_CLIENT_H_
+#define INCLUDE_CLIENT_H_
 
 #include "quic_client.h"
 #include "tcp_client.h"
@@ -25,7 +28,7 @@
  * the server.
  */
 class HttpClient {
-public:
+ public:
   /**
    * @brief Constructs an HttpClient object.
    *
@@ -65,7 +68,7 @@ public:
    */
   void Run(int argc, char *argv[]);
 
-private:
+ private:
   /** A unique pointer to the QuicClient instance used for QUIC-based requests.
    */
   std::unique_ptr<QuicClient> quic_client_;
@@ -84,4 +87,4 @@ private:
   void ParseRequestsFromFile(const std::string &file_path);
 };
 
-#endif // CLIENT_H
+#endif  // INCLUDE_CLIENT_H_

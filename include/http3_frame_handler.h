@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file http3_frame_handler.h
  * @brief Defines the `IHttp3FrameHandler` interface and `Http3FrameHandler`
@@ -10,8 +13,8 @@
  * handle different frame types.
  */
 
-#ifndef HTTP3_FRAME_HANDLER_H
-#define HTTP3_FRAME_HANDLER_H
+#ifndef INCLUDE_HTTP3_FRAME_HANDLER_H_
+#define INCLUDE_HTTP3_FRAME_HANDLER_H_
 
 #include <memory>
 
@@ -34,7 +37,7 @@
  * settings, etc.) and managing QUIC stream interactions.
  */
 class Http3FrameHandler {
-public:
+ public:
   /**
    * @brief Constructs a new Http3FrameHandler instance.
    *
@@ -92,7 +95,7 @@ public:
                    std::unordered_map<std::string, std::string> &headers_map,
                    std::string &data);
 
-private:
+ private:
   /**
    * @brief Initializes shared resources for the handler.
    *
@@ -343,4 +346,4 @@ private:
                               uint8_t frame_flags, SSL *ssl);
 };
 
-#endif // HTTP3_FRAME_HANDLER_H
+#endif  // INCLUDE_HTTP3_FRAME_HANDLER_H_

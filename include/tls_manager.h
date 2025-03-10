@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 /**
  * @file tls_manager.h
  * @brief Defines the `TlsManager` class responsible for managing TLS (Transport
@@ -9,8 +12,8 @@
  * handshake, and handling ALPN (Application-Layer Protocol Negotiation).
  */
 
-#ifndef TLS_MANAGER_H
-#define TLS_MANAGER_H
+#ifndef INCLUDE_TLS_MANAGER_H_
+#define INCLUDE_TLS_MANAGER_H_
 
 #include <openssl/err.h>
 #include <openssl/ssl.h>
@@ -40,7 +43,7 @@ enum TlsMode : uint8_t { SERVER, CLIENT };
  * supports both client and server modes of operation.
  */
 class TlsManager {
-public:
+ public:
   /**
    * @brief Constructs a `TlsManager` for a specified mode (SERVER or CLIENT).
    *
@@ -142,7 +145,7 @@ public:
    */
   SSL_CTX *GetContext() const { return _ctx_; }
 
-private:
+ private:
   /**
    * @brief The SSL context used for managing SSL objects.
    */
@@ -187,4 +190,4 @@ private:
                           unsigned int inlen, void *arg);
 };
 
-#endif // TLS_MANAGER_H
+#endif  // INCLUDE_TLS_MANAGER_H_
