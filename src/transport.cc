@@ -176,11 +176,11 @@ int TcpTransport::Read(void *connection, std::vector<uint8_t> &buffer,
   return ERROR;
 }
 
-int TcpTransport::SendBatch_TS(void *connection,
-                               const std::vector<std::vector<uint8_t>> &bytes,
-                               std::mutex &mut) {
+int TcpTransport::SendBatch(void *connection,
+                            const std::vector<std::vector<uint8_t>> &bytes,
+                            std::mutex &mut) {
   for (const auto &chunk : bytes) {
-    if (Send_TS(connection, chunk, mut) == ERROR) {
+    if (Send(connection, chunk, mut) == ERROR) {
       return ERROR;
     }
   }
@@ -188,8 +188,8 @@ int TcpTransport::SendBatch_TS(void *connection,
   return 0;
 }
 
-int TcpTransport::Send_TS(void *connection, const std::vector<uint8_t> &bytes,
-                          std::mutex &mut) {
+int TcpTransport::Send(void *connection, const std::vector<uint8_t> &bytes,
+                       std::mutex &mut) {
   SSL *ssl = static_cast<SSL *>(connection);
 
   uint32_t retry_count = 0;
@@ -227,8 +227,8 @@ int TcpTransport::Send_TS(void *connection, const std::vector<uint8_t> &bytes,
   return 0;
 }
 
-int TcpTransport::Read_TS(void *connection, std::vector<uint8_t> &buffer,
-                          uint32_t write_offset, std::mutex &mut) {
+int TcpTransport::Read(void *connection, std::vector<uint8_t> &buffer,
+                       uint32_t write_offset, std::mutex &mut) {
   SSL *ssl = static_cast<SSL *>(connection);
 
   uint32_t retry_count = 0;

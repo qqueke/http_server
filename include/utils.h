@@ -10,7 +10,6 @@
 #include <cstdlib>
 #include <string>
 #include <unordered_map>
-#include <vector>
 
 #include "crypto.h"
 // #define ECHO
@@ -119,23 +118,11 @@ struct HTTP2Context {
         instance_ctx(instance) {}
 };
 
-extern const QUIC_API_TABLE *MsQuic;
+// extern const QUIC_API_TABLE *MsQuic;
 
-extern const QUIC_REGISTRATION_CONFIG RegConfig;
+// extern const QUIC_REGISTRATION_CONFIG RegConfig;
 
 extern const QUIC_BUFFER Alpn;
-
-extern const uint16_t UdpPort;
-
-extern const uint64_t IdleTimeoutMs;
-
-extern const uint32_t SendBufferLength;
-
-extern HQUIC Registration;
-
-extern HQUIC Configuration;
-
-extern QUIC_TLS_SECRETS ClientSecrets;
 
 extern const char *SslKeyLogEnvVar;
 
@@ -155,11 +142,6 @@ typedef struct QUIC_CREDENTIAL_CONFIG_HELPER {
     QUIC_CERTIFICATE_FILE_PROTECTED CertFileProtected;
   };
 } QUIC_CREDENTIAL_CONFIG_HELPER;
-
-struct ssl_st; // Forward declaration of ssl_st
-
-uint64_t CompressFile(const std::string &inputFile,
-                      const std::string &outputFile, CompressionType type);
 
 bool isFlagSet(uint8_t flags, HTTP2Flags flag);
 

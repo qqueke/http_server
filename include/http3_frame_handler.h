@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "codec.h"
+#include "header_parser.h"
 #include "http3_frame_builder.h"
 #include "router.h"
 #include "static_content_handler.h"
@@ -46,6 +47,8 @@ private:
   static std::weak_ptr<QpackCodec> codec_;
 
   static std::weak_ptr<StaticContentHandler> static_content_handler_;
+
+  static HeaderParser header_parser_;
 
   // std::unordered_map<uint32_t, std::unordered_map<std::string, std::string>>
   //     quic_decoded_headers_map_;
@@ -111,45 +114,6 @@ private:
   int HandleContinuationFrame(void *context, uint32_t frame_stream,
                               uint32_t read_offset, uint32_t payload_size,
                               uint8_t frame_flags, SSL *ssl);
-
-  // int HandleDataFrame_TS(void *context, uint32_t frame_stream,
-  //                        uint32_t read_offset, uint32_t payload_size,
-  //                        uint8_t frame_flags, SSL *ssl, std::mutex &mut);
-  //
-  // int HandleHeadersFrame_TS(void *context, uint32_t frame_stream,
-  //                           uint32_t read_offset, uint32_t payload_size,
-  //                           uint8_t frame_flags, SSL *ssl, std::mutex &mut);
-  //
-  // int HandlePriorityFrame_TS(void *context, uint32_t frame_stream,
-  //                            uint32_t read_offset, uint32_t payload_size,
-  //                            uint8_t frame_flags, SSL *ssl, std::mutex &mut);
-  //
-  // int HandleRstStreamFrame_TS(void *context, uint32_t frame_stream,
-  //                             uint32_t read_offset, uint32_t payload_size,
-  //                             uint8_t frame_flags, SSL *ssl, std::mutex
-  //                             &mut);
-  //
-  // int HandleSettingsFrame_TS(void *context, uint32_t frame_stream,
-  //                            uint32_t read_offset, uint32_t payload_size,
-  //                            uint8_t frame_flags, SSL *ssl, std::mutex &mut);
-  //
-  // int HandlePingFrame_TS(void *context, uint32_t frame_stream,
-  //                        uint32_t read_offset, uint32_t payload_size,
-  //                        uint8_t frame_flags, SSL *ssl, std::mutex &mut);
-  //
-  // int HandleGoAwayFrame_TS(void *context, uint32_t frame_stream,
-  //                          uint32_t read_offset, uint32_t payload_size,
-  //                          uint8_t frame_flags, SSL *ssl, std::mutex &mut);
-  //
-  // int HandleWindowUpdateFrame_TS(void *context, uint32_t frame_stream,
-  //                                uint32_t read_offset, uint32_t payload_size,
-  //                                uint8_t frame_flags, SSL *ssl,
-  //                                std::mutex &mut);
-  //
-  // int HandleContinuationFrame_TS(void *context, uint32_t frame_stream,
-  //                                uint32_t read_offset, uint32_t payload_size,
-  //                                uint8_t frame_flags, SSL *ssl,
-  //                                std::mutex &mut);
 };
 
 #endif

@@ -13,7 +13,7 @@
 // #include "http2_frame_handler.h"
 
 class QuicClient {
- public:
+public:
   explicit QuicClient(
       int argc, char *argv[],
       const std::vector<std::pair<std::string, std::string>> &requests);
@@ -36,12 +36,20 @@ class QuicClient {
 
   std::shared_ptr<QpackCodec> codec_;
 
- private:
+private:
+  // The QUIC API/function table returned from MsQuicOpen2. It contains all the
+  // functions called by the app to interact with MsQuic.
   static const QUIC_API_TABLE *ms_quic_;
-
+  // The QUIC handle to the registration object. This is the top level API
+  // object that represents the execution context for all work done by MsQuic on
+  // behalf of the app.
   HQUIC registration_;
-
+  // The QUIC handle to the configuration object. This object abstracts the
+  // connection configuration. This includes TLS configuration and any other
+  // QUIC layer settings.
   static HQUIC config_;
+
+  QUIC_TLS_SECRETS secrets_;
 
   static constexpr QUIC_REGISTRATION_CONFIG kRegConfig = {
       "quicsample", QUIC_EXECUTION_PROFILE_LOW_LATENCY};
@@ -66,4 +74,4 @@ class QuicClient {
                                 _Inout_ QUIC_CONNECTION_EVENT *Event);
 };
 
-#endif  // QUICCLIENT_HPP
+#endif // QUICCLIENT_HPP

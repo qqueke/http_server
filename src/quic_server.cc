@@ -8,7 +8,6 @@
 #include "http3_frame_handler.h"
 #include "log.h"
 // #include "server.h"
-#include "common.h"
 
 static uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
                            const std::vector<uint8_t>::iterator &end) {
@@ -222,7 +221,7 @@ int QuicServer::LoadConfiguration(_In_ int argc,
   QUIC_SETTINGS Settings = {0};
 
   // Configures the server's idle timeout.
-  Settings.IdleTimeoutMs = IdleTimeoutMs;
+  Settings.IdleTimeoutMs = 1000;
   Settings.IsSet.IdleTimeoutMs = TRUE;
 
   // Configures the server's resumption level to allow for resumption and

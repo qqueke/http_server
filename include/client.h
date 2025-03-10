@@ -1,12 +1,11 @@
 #ifndef CLIENT_HPP
 #define CLIENT_HPP
 
-#include "common.h"
 #include "quic_client.h"
 #include "tcp_client.h"
 
-class HttpClient : public HttpCore {
-public:
+class HttpClient {
+ public:
   HttpClient(int argc, char *argv[]);
   ~HttpClient();
 
@@ -15,7 +14,7 @@ public:
 
   void Run(int argc, char *argv[]);
 
-private:
+ private:
   std::unique_ptr<QuicClient> quic_client_;
   std::unique_ptr<TcpClient> tcp_client_;
 

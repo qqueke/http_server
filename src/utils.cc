@@ -4,18 +4,14 @@
 #include <zconf.h>
 #include <zlib.h>
 
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <functional>
 #include <iostream>
-#include <memory>
 #include <sstream>
 #include <string>
-#include <unordered_map>
-#include <utility>
-#include <vector>
 
 #include "err.h"
 #include "log.h"
@@ -24,38 +20,11 @@
 // The (optional) registration configuration for the app. This sets a name for
 // the app (used for persistent storage and for debugging). It also configures
 // the execution profile, using the default "low latency" profile.
-const QUIC_REGISTRATION_CONFIG RegConfig = {"quicsample",
-                                            QUIC_EXECUTION_PROFILE_LOW_LATENCY};
+// const QUIC_REGISTRATION_CONFIG RegConfig = {"quicsample",
+//                                             QUIC_EXECUTION_PROFILE_LOW_LATENCY};
 
 // The protocol name used in the Application Layer Protocol Negotiation (ALPN).
 const QUIC_BUFFER Alpn = {sizeof("h3") - 1, (uint8_t *)"h3"};
-
-// The UDP port used by the server side of the protocol.
-const uint16_t UdpPort = 4567;
-
-// The default idle timeout period (1 second) used for the protocol.
-const uint64_t IdleTimeoutMs = 1000;
-
-// The length of buffer sent over the streams in the protocol.
-const uint32_t SendBufferLength = 100;
-
-// The QUIC API/function table returned from MsQuicOpen2. It contains all the
-// functions called by the app to interact with MsQuic.
-const QUIC_API_TABLE *MsQuic;
-
-// The QUIC handle to the registration object. This is the top level API object
-// that represents the execution context for all work done by MsQuic on behalf
-// of the app.
-HQUIC Registration;
-
-// The QUIC handle to the configuration object. This object abstracts the
-// connection configuration. This includes TLS configuration and any other
-// QUIC layer settings.
-HQUIC Configuration;
-
-// The struct to be filled with TLS secrets
-// for debugging packet captured with e.g. Wireshark.
-QUIC_TLS_SECRETS ClientSecrets = {0};
 
 // The name of the environment variable being
 // used to get the path to the ssl key log file.
@@ -64,10 +33,10 @@ const char *SslKeyLogEnvVar = "SSLKEYLOGFILE";
 // Function to check if a specific flag is set
 bool isFlagSet(uint8_t flags, HTTP2Flags flag) { return (flags & flag) != 0; }
 
+// Handling specific SSL errors
 std::string GetSSLErrorMessage(int error) {
   std::string errorMessage;
 
-  // Handling specific SSL errors
   switch (error) {
   case SSL_ERROR_ZERO_RETURN:
     errorMessage = "SSL connection was closed cleanly.";
@@ -139,63 +108,6 @@ void PrintBytes(void *buf, size_t len) {
     printf("%x%x", u, l);
   }
   printf("\n");
-}
-
-uint64_t CompressFile(const std::string &inputFile,
-                      const std::string &outputFile, CompressionType type) {
-  std::ifstream inFileStream(inputFile, std::ios::binary);
-  if (!inFileStream) {
-    LogError("Failed to open input file\n");
-    return 0;
-  }
-
-  // Create output file
-  std::ofstream file(outputFile, std::ios::binary | std::ios::out);
-  file.close();
-
-  std::ofstream outFileStream(outputFile, std::ios::binary);
-  if (!outFileStream) {
-    LogError("Failed to open output file\n");
-    return 0;
-  }
-
-  // Will read file stream as chars until end of file ({}), to the vector
-  std::vector<char> buffer(std::istreambuf_iterator<char>(inFileStream), {});
-
-  uLongf compressedSize = compressBound(buffer.size());
-  std::vector<Bytef> compressedData(compressedSize);
-
-  z_stream zStream = {};
-  zStream.next_in = reinterpret_cast<Bytef *>(buffer.data());
-  zStream.avail_in = buffer.size();
-  zStream.next_out = compressedData.data();
-  zStream.avail_out = compressedSize;
-
-  int windowBits =
-      (type == GZIP) ? 15 + 16 : 15; // 15 for Deflate, +16 for Gzip
-
-  if (deflateInit2(&zStream, Z_BEST_COMPRESSION, Z_DEFLATED, windowBits, 8,
-                   Z_DEFAULT_STRATEGY) != Z_OK) {
-    LogError("Compression initialization failed\n");
-    return 0;
-  }
-
-  if (deflate(&zStream, Z_FINISH) != Z_STREAM_END) {
-    LogError("Compression failed\n");
-    deflateEnd(&zStream);
-    return 0;
-  }
-
-  outFileStream.write(reinterpret_cast<const char *>(compressedData.data()),
-                      (long)zStream.total_out);
-
-  deflateEnd(&zStream);
-
-  std::cout << ((type == GZIP) ? "Gzip" : "Deflate")
-            << " compression successful: " << outputFile << "\n";
-
-  // ASsuming small files
-  return zStream.total_out;
 }
 
 void PrintUsage() {

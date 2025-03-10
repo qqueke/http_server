@@ -63,6 +63,10 @@ HTTP3_FRAME_BUILDER_SRC = $(SRCDIR)/http3_frame_builder.cc
 HTTP2_FRAME_HANDLER_SRC = $(SRCDIR)/http2_frame_handler.cc
 
 
+HEADER_PARSER_SRC = $(SRCDIR)/header_parser.cc
+HEADER_VALIDATOR_SRC = $(SRCDIR)/header_validator.cc
+
+
 STATIC_CONTENT_HANDLER_SRC = $(SRCDIR)/static_content_handler.cc
 
 HTTP3_FRAME_HANDLER_SRC = $(SRCDIR)/http3_frame_handler.cc
@@ -71,11 +75,8 @@ TRANSPORT_SRC = $(SRCDIR)/transport.cc
 
 TLS_MANAGER_SRC = $(SRCDIR)/tls_manager.cc
 
-# Source files for client
 CLIENT_SRC = $(SRCDIR)/client.cc
 
-# Common source files
-COMMON_SRC = $(SRCDIR)/common.cc
 UTILS_SRC = $(SRCDIR)/utils.cc
 
 TCP_SERVER_SRC = $(SRCDIR)/tcp_server.cc
@@ -103,7 +104,8 @@ TRANSPORT_OBJ = $(BUILDDIR)/transport.o
 TLS_MANAGER_OBJ = $(BUILDDIR)/tls_manager.o
 
 HTTP2_FRAME_HANDLER_OBJ = $(BUILDDIR)/http2_frame_handler.o
-
+HEADER_PARSER_OBJ = $(BUILDDIR)/header_parser.o
+HEADER_VALIDATOR_OBJ = $(BUILDDIR)/header_validator.o
 
 STATIC_CONTENT_HANDLER_OBJ = $(BUILDDIR)/static_content_handler.o
 
@@ -121,8 +123,6 @@ QUIC_CLIENT_OBJ = $(BUILDDIR)/quicclient.o
 # Object files for client
 CLIENT_OBJ = $(BUILDDIR)/client.o
 
-# Common object files
-COMMON_OBJ = $(BUILDDIR)/common.o
 UTILS_OBJ = $(BUILDDIR)/utils.o
 
 # Targets
@@ -176,7 +176,7 @@ dependencies:
 	fi
 
 # Build the main executable
-server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(COMMON_OBJ) $(CLIENT_OBJ) $(CODEC_OBJ) $(HTTP2_FRAME_BUILDER_OBJ) $(HTTP2_FRAME_HANDLER_OBJ) $(TRANSPORT_OBJ) $(HTTP3_FRAME_BUILDER_OBJ) $(HTTP3_FRAME_HANDLER_OBJ) $(TLS_MANAGER_OBJ) $(TCP_SERVER_OBJ) $(TCP_CLIENT_OBJ) $(QUIC_SERVER_OBJ) $(QUIC_CLIENT_OBJ) $(STATIC_CONTENT_HANDLER_OBJ)
+server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(CLIENT_OBJ) $(CODEC_OBJ) $(HTTP2_FRAME_BUILDER_OBJ) $(HTTP2_FRAME_HANDLER_OBJ) $(TRANSPORT_OBJ) $(HEADER_PARSER_OBJ) $(HEADER_VALIDATOR_OBJ) $(HTTP3_FRAME_BUILDER_OBJ) $(HTTP3_FRAME_HANDLER_OBJ) $(TLS_MANAGER_OBJ) $(TCP_SERVER_OBJ) $(TCP_CLIENT_OBJ) $(QUIC_SERVER_OBJ) $(QUIC_CLIENT_OBJ) $(STATIC_CONTENT_HANDLER_OBJ)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Rules for building object files
@@ -198,9 +198,6 @@ $(BUILDDIR)/log.o: $(LOG_SRC) $(INCDIR)/log.h
 $(CLIENT_OBJ): $(CLIENT_SRC) $(INCDIR)/utils.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(COMMON_OBJ): $(COMMON_SRC) $(INCDIR)/common.h
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
 $(UTILS_OBJ): $(UTILS_SRC) $(INCDIR)/utils.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
@@ -214,6 +211,12 @@ $(HTTP3_FRAME_BUILDER_OBJ): $(HTTP3_FRAME_BUILDER_SRC) $(INCDIR)/http3_frame_bui
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(HTTP2_FRAME_HANDLER_OBJ): $(HTTP2_FRAME_HANDLER_SRC) $(INCDIR)/http2_frame_handler.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(HEADER_PARSER_OBJ): $(HEADER_PARSER_SRC) $(INCDIR)/header_parser.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(HEADER_VALIDATOR_OBJ): $(HEADER_VALIDATOR_SRC) $(INCDIR)/header_validator.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(STATIC_CONTENT_HANDLER_OBJ): $(STATIC_CONTENT_HANDLER_SRC) $(INCDIR)/static_content_handler.h

@@ -10,10 +10,9 @@
 #include "http3_frame_handler.h"
 #include "log.h"
 // #include "server.h"
-#include "common.h"
 
 static std::vector<uint8_t> ReadResumptionTicketFromFile() {
-  const std::string filename = "ticket";  // Hardcoded filename
+  const std::string filename = "ticket"; // Hardcoded filename
   uint32_t ticketLength = 0;
 
   // Open the file in binary mode
@@ -58,7 +57,7 @@ HQUIC QuicClient::config_ = nullptr;
 QuicClient::QuicClient(
     int argc, char *argv[],
     const std::vector<std::pair<std::string, std::string>> &requests)
-    : requests_(requests), status_(0) {
+    : requests_(requests), status_(0), secrets_(0) {
   // Open a handle to the library and get the API function table.
   if (QUIC_FAILED(status_ = MsQuicOpen2(&ms_quic_))) {
     printf("MsQuicOpen2 failed, 0x%x!\n", status_);
@@ -113,7 +112,7 @@ int QuicClient::LoadConfiguration(int argc, char *argv[]) {
 
   QUIC_SETTINGS settings = {0};
   // Configures the client's idle timeout.
-  settings.IdleTimeoutMs = IdleTimeoutMs;
+  settings.IdleTimeoutMs = 1000;
   settings.IsSet.IdleTimeoutMs = TRUE;
   // Settings.StreamMultiReceiveEnabled = TRUE;
 
@@ -212,9 +211,9 @@ void QuicClient::Run(int argc, char *argv[]) {
 
   const char *SslKeyLogFile = getenv(SslKeyLogEnvVar);
   if (SslKeyLogFile != NULL) {
-    if (QUIC_FAILED(Status = ms_quic_->SetParam(
-                        Connection, QUIC_PARAM_CONN_TLS_SECRETS,
-                        sizeof(ClientSecrets), &ClientSecrets))) {
+    if (QUIC_FAILED(Status = ms_quic_->SetParam(Connection,
+                                                QUIC_PARAM_CONN_TLS_SECRETS,
+                                                sizeof(secrets_), &secrets_))) {
       printf("SetParam(QUIC_PARAM_CONN_TLS_SECRETS) failed, 0x%x!\n", Status);
       if (QUIC_FAILED(Status) && Connection != NULL) {
         ms_quic_->ConnectionClose(Connection);
@@ -292,10 +291,9 @@ void QuicClient::QuicSend(_In_ HQUIC Connection, void *Context) {
     }
 
     {
-      std::unordered_map<std::string, std::string> headers_map;
-
-      // Change this function to work for response and request
-      HttpCore::ReqHeaderToPseudoHeader(headers, headers_map);
+      HeaderParser parser;
+      std::unordered_map<std::string, std::string> headers_map =
+          parser.ConvertRequestToPseudoHeaders(headers);
 
       std::vector<uint8_t> encoded_headers;
 
@@ -331,86 +329,86 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
   QuicClient *client = (QuicClient *)Context;
 
   switch (Event->Type) {
-    case QUIC_STREAM_EVENT_SEND_COMPLETE:
-      // A previous StreamSend call has completed, and the context is being
-      // returned back to the app.
+  case QUIC_STREAM_EVENT_SEND_COMPLETE:
+    // A previous StreamSend call has completed, and the context is being
+    // returned back to the app.
 
-      // We set the send context to be the pointer that we can latter free
-      free(Event->SEND_COMPLETE.ClientContext);
-
-#ifdef QUIC_DEBUG
-      printf("[strm][%p] Data sent\n", Stream);
-#endif
-      break;
-    case QUIC_STREAM_EVENT_RECEIVE:
-      // Data was received from the peer on the stream.
-#ifdef QUIC_DEBUG
-
-      printf("[strm][%p] Data received\n", Stream);
-#endif
-      if (client->quic_buffer_map_.find(Stream) ==
-          client->quic_buffer_map_.end()) {
-        client->quic_buffer_map_[Stream].reserve(256);
-      }
-
-      for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++) {
-        const QUIC_BUFFER *buffer = &Event->RECEIVE.Buffers[i];
-
-        uint8_t *buf_ptr = buffer->Buffer;
-        uint8_t *buf_end = buffer->Buffer + buffer->Length;
-
-        if (buffer->Length > 0) {
-          std::vector<uint8_t> &strm_buf = client->quic_buffer_map_[Stream];
-          strm_buf.insert(strm_buf.end(), buf_ptr, buf_end);
-        }
-      }
-
-      break;
-    case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
-
-      // The peer gracefully shut down its send direction of the stream.
-#ifdef QUIC_DEBUG
-
-      printf("[strm][%p] Peer aborted\n", Stream);
-#endif
-      break;
-    case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
-      // The peer aborted its send direction of the stream.
-#ifdef QUIC_DEBUG
-
-      printf("[strm][%p] Peer shut down\n", Stream);
-#endif
-      if (client->quic_buffer_map_.find(Stream) ==
-          client->quic_buffer_map_.end()) {
-        LogError("No buffer found for Stream");
-        break;
-      }
-
-      {
-        std::unique_ptr<Http3FrameHandler> frame_handler =
-            std::make_unique<Http3FrameHandler>(
-                client->transport_, client->frame_builder_, client->codec_);
-
-        frame_handler->ProcessFrames(Stream, client->quic_buffer_map_[Stream]);
-      }
-
-      client->quic_buffer_map_.erase(Stream);
-
-      break;
-    case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
-      // Both directions of the stream have been shut down and MsQuic is done
-      // with the stream. It can now be safely cleaned up.
+    // We set the send context to be the pointer that we can latter free
+    free(Event->SEND_COMPLETE.ClientContext);
 
 #ifdef QUIC_DEBUG
-
-      printf("[strm][%p] Stream is officially closed\n", Stream);
+    printf("[strm][%p] Data sent\n", Stream);
 #endif
-      if (!Event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
-        ms_quic_->StreamClose(Stream);
+    break;
+  case QUIC_STREAM_EVENT_RECEIVE:
+    // Data was received from the peer on the stream.
+#ifdef QUIC_DEBUG
+
+    printf("[strm][%p] Data received\n", Stream);
+#endif
+    if (client->quic_buffer_map_.find(Stream) ==
+        client->quic_buffer_map_.end()) {
+      client->quic_buffer_map_[Stream].reserve(256);
+    }
+
+    for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++) {
+      const QUIC_BUFFER *buffer = &Event->RECEIVE.Buffers[i];
+
+      uint8_t *buf_ptr = buffer->Buffer;
+      uint8_t *buf_end = buffer->Buffer + buffer->Length;
+
+      if (buffer->Length > 0) {
+        std::vector<uint8_t> &strm_buf = client->quic_buffer_map_[Stream];
+        strm_buf.insert(strm_buf.end(), buf_ptr, buf_end);
       }
+    }
+
+    break;
+  case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
+
+    // The peer gracefully shut down its send direction of the stream.
+#ifdef QUIC_DEBUG
+
+    printf("[strm][%p] Peer aborted\n", Stream);
+#endif
+    break;
+  case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
+    // The peer aborted its send direction of the stream.
+#ifdef QUIC_DEBUG
+
+    printf("[strm][%p] Peer shut down\n", Stream);
+#endif
+    if (client->quic_buffer_map_.find(Stream) ==
+        client->quic_buffer_map_.end()) {
+      LogError("No buffer found for Stream");
       break;
-    default:
-      break;
+    }
+
+    {
+      std::unique_ptr<Http3FrameHandler> frame_handler =
+          std::make_unique<Http3FrameHandler>(
+              client->transport_, client->frame_builder_, client->codec_);
+
+      frame_handler->ProcessFrames(Stream, client->quic_buffer_map_[Stream]);
+    }
+
+    client->quic_buffer_map_.erase(Stream);
+
+    break;
+  case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
+    // Both directions of the stream have been shut down and MsQuic is done
+    // with the stream. It can now be safely cleaned up.
+
+#ifdef QUIC_DEBUG
+
+    printf("[strm][%p] Stream is officially closed\n", Stream);
+#endif
+    if (!Event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
+      ms_quic_->StreamClose(Stream);
+    }
+    break;
+  default:
+    break;
   }
   return QUIC_STATUS_SUCCESS;
 }
@@ -443,81 +441,82 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
                                    _Inout_ QUIC_CONNECTION_EVENT *Event) {
   // UNREFERENCED_PARAMETER(Context);
 
+  QuicClient *client = (QuicClient *)Context;
   if (Event->Type == QUIC_CONNECTION_EVENT_CONNECTED) {
     const char *SslKeyLogFile = getenv(SslKeyLogEnvVar);
     if (SslKeyLogFile != NULL) {
-      WriteSslKeyLogFile(SslKeyLogFile, &ClientSecrets);
+      WriteSslKeyLogFile(SslKeyLogFile, &client->secrets_);
     }
   }
 
   switch (Event->Type) {
-    case QUIC_CONNECTION_EVENT_CONNECTED:
+  case QUIC_CONNECTION_EVENT_CONNECTED:
 //
 // The handshake has completed for the connection.
 #ifdef QUIC_DEBUG
 
-      printf("[conn][%p] Connected\n", Connection);
+    printf("[conn][%p] Connected\n", Connection);
 #endif
 
-      QuicSend(Connection, Context);
-      break;
-    case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT:
-      // The connection has been shut down by the transport. Generally, this
-      // is the expected way for the connection to shut down with this
-      // protocol, since we let idle timeout kill the connection.
-      if (Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status ==
-          QUIC_STATUS_CONNECTION_IDLE) {
-        printf("[conn][%p] Successfully shut down on idle.\n", Connection);
-      } else {
-        printf("[conn][%p] Shut down by transport, 0x%x\n", Connection,
-               Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status);
-      }
-      break;
-    case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
+    QuicSend(Connection, Context);
+    break;
+  case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT:
+    // The connection has been shut down by the transport. Generally, this
+    // is the expected way for the connection to shut down with this
+    // protocol, since we let idle timeout kill the connection.
+    if (Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status ==
+        QUIC_STATUS_CONNECTION_IDLE) {
+      printf("[conn][%p] Successfully shut down on idle.\n", Connection);
+    } else {
+      printf("[conn][%p] Shut down by transport, 0x%x\n", Connection,
+             Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status);
+    }
+    break;
+  case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
 #ifdef QUIC_DEBUG
 
-      printf("[conn][%p] Shut down by peer, 0x%llu\n", Connection,
-             (unsigned long long)Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
+    printf("[conn][%p] Shut down by peer, 0x%llu\n", Connection,
+           (unsigned long long)Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
 #endif
-      // The connection was explicitly shut down by the peer.
-      break;
-    case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
-      // The connection has completed the shutdown process and is ready to
-      // be safely cleaned up.
+    // The connection was explicitly shut down by the peer.
+    break;
+  case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
+    // The connection has completed the shutdown process and is ready to
+    // be safely cleaned up.
 
 #ifdef QUIC_DEBUG
 
-      printf("[conn][%p] Connection officially closed\n", Connection);
+    printf("[conn][%p] Connection officially closed\n", Connection);
 #endif
-      if (!Event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
-        ms_quic_->ConnectionClose(Connection);
-      }
-      break;
-    case QUIC_CONNECTION_EVENT_RESUMPTION_TICKET_RECEIVED:
+    if (!Event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
+      ms_quic_->ConnectionClose(Connection);
+    }
+    break;
+  case QUIC_CONNECTION_EVENT_RESUMPTION_TICKET_RECEIVED:
 // A resumption ticket (also called New Session Ticket or NST) was
 // received from the server.
 #ifdef QUIC_DEBUG
-      printf("[conn][%p] Resumption ticket received (%u bytes):\n", Connection,
-             Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength);
+    printf("[conn][%p] Resumption ticket received (%u bytes):\n", Connection,
+           Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength);
 #endif
-      {
-        SaveResumptionTicketToFile(
-            Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket,
-            Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength);
+    {
+      SaveResumptionTicketToFile(
+          Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket,
+          Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength);
 
-        // for (uint32_t i = 0;
-        //      i < Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength;
-        //      i++) {
-        //   printf("%.2X",
-        //          (uint8_t)Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket[i]);
-        // }
-        // printf("\n");
+      // for (uint32_t i = 0;
+      //      i < Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength;
+      //      i++) {
+      //   printf("%.2X",
+      //          (uint8_t)Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket[i]);
+      // }
+      // printf("\n");
 
-        break;
-      }
-
-    default:
       break;
+    }
+
+  default:
+    break;
   }
   return QUIC_STATUS_SUCCESS;
 }

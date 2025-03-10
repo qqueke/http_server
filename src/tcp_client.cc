@@ -7,7 +7,6 @@
 #include <thread>
 #include <vector>
 
-#include "common.h"
 #include "http2_frame_handler.h"
 #include "log.h"
 #include "lshpack.h"
@@ -58,7 +57,7 @@ TcpClient::~TcpClient() {}
 void TcpClient::Run() {
   struct timeval timeout{};
   timeout.tv_usec = 100 * 1000;
-  static constexpr int buffSize = 256 * 1024; // 256 KB
+  static constexpr int buffSize = 256 * 1024;  // 256 KB
 
   struct addrinfo *addr = nullptr;
   for (addr = socket_addr_; addr != nullptr; addr = addr->ai_next) {
@@ -129,8 +128,7 @@ void TcpClient::RecvHttp2Response(SSL *ssl, std::mutex &conn_mutex) {
   size_t n_readable_bytes = 0;
 
   while (!goAway) {
-    int n_bytes_recv =
-        transport_->Read_TS(ssl, buffer, write_offset, conn_mutex);
+    int n_bytes_recv = transport_->Read(ssl, buffer, write_offset, conn_mutex);
     if (n_bytes_recv == ERROR) {
       break;
     }
@@ -199,19 +197,20 @@ void TcpClient::SendHttp2Request(SSL *ssl) {
                                     std::ref(conn_mutex)));
   // std::thread recvThread(&HttpClient::HTTP2_RecvFrames_TS, this, ssl);
 
-  transport_->Send_TS(ssl, HTTP2_PrefaceBytes, conn_mutex);
+  transport_->Send(ssl, HTTP2_PrefaceBytes, conn_mutex);
 
   uint32_t numRequests = 0;
   uint32_t stream_id = 1;
+
+  HeaderParser parser;
 
   for (const auto &request : requests_) {
     // const auto &request = requests[0];
     const std::string &headers = request.first;
     const std::string &body = request.second;
 
-    std::unordered_map<std::string, std::string> headers_map;
-
-    HttpCore::ReqHeaderToPseudoHeader(headers, headers_map);
+    std::unordered_map<std::string, std::string> headers_map =
+        parser.ConvertRequestToPseudoHeaders(headers);
 
     // Loop around here
     std::vector<uint8_t> encoded_headers(1024);
@@ -229,11 +228,11 @@ void TcpClient::SendHttp2Request(SSL *ssl) {
 
     frames.emplace_back(frame);
 
-    transport_->SendBatch_TS(ssl, frames, conn_mutex);
+    transport_->SendBatch(ssl, frames, conn_mutex);
     stream_id += 2;
   }
 
-  transport_->Send_TS(
+  transport_->Send(
       ssl,
       frame_builder_->BuildFrame(Frame::GOAWAY, 0, 0, HTTP2ErrorCode::NO_ERROR),
       conn_mutex);

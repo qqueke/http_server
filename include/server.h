@@ -17,13 +17,12 @@
 #include <mutex>
 #include <string>
 
-#include "common.h"
 #include "quic_server.h"
 #include "router.h"
 #include "tcp_server.h"
 
-class HttpServer : public HttpCore {
-public:
+class HttpServer {
+ public:
   HttpServer(int argc, char *argv[]);
 
   ~HttpServer();
@@ -32,7 +31,7 @@ public:
                 const ROUTE_HANDLER &handler);
   void Run();
 
-  std::unique_ptr<HttpCore> http;
+  // std::unique_ptr<HttpCore> http;
 
   void staticFileHandler(SSL *client_ssl, const std::string &file_path,
                          bool accept_enc);
@@ -49,7 +48,7 @@ public:
   void ValidatePseudoHeaders(
       std::unordered_map<std::string, std::string> &headers_map);
 
-private:
+ private:
   std::unique_ptr<TcpServer> tcp_server_;
   std::unique_ptr<QuicServer> quic_server_;
 
@@ -64,4 +63,4 @@ private:
   std::unordered_map<HQUIC, std::vector<uint8_t>> conn_settings_;
 };
 
-#endif // HTTPSERVER_HPP
+#endif  // HTTPSERVER_HPP
