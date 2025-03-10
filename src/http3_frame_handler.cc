@@ -1,10 +1,14 @@
-#include "http3_frame_handler.h"
+#include "../include/http3_frame_handler.h"
 
 #include <fcntl.h>
 
 #include <iostream>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
-#include "log.h"
+#include "../include/log.h"
 
 static uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
                            const std::vector<uint8_t>::iterator &end) {
@@ -16,11 +20,10 @@ static uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
 
   // Read the first byte
   uint64_t value = *iter++;
-  uint8_t prefix =
-      value >> 6;  // Get the prefix to determine the length of the varint
-  size_t length = 1 << prefix;  // 1, 2, 4, or 8 bytes
+  uint8_t prefix = value >> 6;
+  size_t length = 1 << prefix;
 
-  value &= 0x3F;  // Mask out the 2 most significant bits
+  value &= 0x3F;
 
   // Check if we have enough data for the full varint
   if (iter + length - 1 >= end) {
@@ -281,11 +284,13 @@ int Http3FrameHandler::ProcessFrames(HQUIC &stream,
     std::cout << std::endl;
   }
 
+#ifdef ECHO
   std::cout << "HTTP3 Request: \n";
   for (auto &[key, value] : headers_map) {
     std::cout << key << ": " << value << "\n";
   }
   std::cout << data << std::endl;
+#endif
 
   if (is_server_) {
     AnswerRequest(stream, headers_map, data);
@@ -299,40 +304,38 @@ int Http3FrameHandler::ProcessFrame(
     uint64_t payload_size,
     std::unordered_map<std::string, std::string> &headers_map,
     std::string &data) {
-  switch (frame_type)
+  switch (frame_type) {
+  case Frame::DATA:
+    // std::cout << "[strm][" << Stream << "] Received DATA frame\n";
+    // Data might have been transmitted over multiple frames
+    data += std::string(iter, iter + payload_size);
+    break;
 
-  {
-    case Frame::DATA:  // DATA frame
-      // std::cout << "[strm][" << Stream << "] Received DATA frame\n";
-      // Data might have been transmitted over multiple frames
-      data += std::string(iter, iter + payload_size);
-      break;
+  case Frame::HEADERS:
+    // std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
 
-    case Frame::HEADERS:
-      // std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
+    {
+      std::vector<uint8_t> encoded_headers(iter, iter + payload_size);
 
-      {
-        std::vector<uint8_t> encoded_headers(iter, iter + payload_size);
+      // QuicClient::QPACK_DecodeHeaders(Stream, encoded_headers);
 
-        // QuicClient::QPACK_DecodeHeaders(Stream, encoded_headers);
-
-        auto codec_ptr = codec_.lock();
-        if (codec_ptr == nullptr) {
-          return ERROR;
-        }
-
-        // Kinda inefficient could change to get start and end ptr of the
-        // encoded headers in the stream_buffer
-        codec_ptr->Decode(static_cast<void *>(&stream), encoded_headers,
-                          headers_map);
+      auto codec_ptr = codec_.lock();
+      if (codec_ptr == nullptr) {
+        return ERROR;
       }
 
-      break;
+      // Kinda inefficient could change to get start and end ptr of the
+      // encoded headers in the stream_buffer
+      codec_ptr->Decode(static_cast<void *>(&stream), encoded_headers,
+                        headers_map);
+    }
 
-    default:  // Unknown frame type
-      std::cout << "[strm][" << stream << "] Unknown frame type: 0x" << std::hex
-                << frame_type << std::dec << "\n";
-      break;
+    break;
+
+  default:
+    std::cout << "[strm][" << stream << "] Unknown frame type: 0x" << std::hex
+              << frame_type << std::dec << "\n";
+    break;
   }
 
   return 0;

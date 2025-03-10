@@ -1,17 +1,19 @@
-#include "transport.h"
+#include "../include/transport.h"
 
 #include <fcntl.h>
+#include <openssl/ssl.h>
 #include <sys/stat.h>
 
 #include <cstdint>
 #include <iostream>
 #include <sstream>
 #include <thread>
+#include <vector>
 
-#include "crypto.h"
-#include "log.h"
-#include "ssl.h"
-#include "utils.h"
+#include "../include/log.h"
+#include "../include/utils.h"
+// #include "crypto.h"
+// #include "ssl.h"
 
 TcpTransport::TcpTransport()
     : _retry_count_(MAX_RETRIES), _sendDelayMS_(SEND_DELAY_MS),
@@ -49,8 +51,9 @@ int TcpTransport::SendFile(void *connection, int fd) {
 
   if (BIO_get_ktls_send(SSL_get_wbio(ssl))) {
     while (totalBytesSent < file_size) {
-      int sentBytes = SSL_sendfile(ssl, fd, totalBytesSent,
-                                   (int)file_size - totalBytesSent, 0);
+      int sentBytes =
+          SSL_sendfile(ssl, fd, totalBytesSent,
+                       static_cast<int>(file_size - totalBytesSent), 0);
 
       if (sentBytes > 0) {
         totalBytesSent += sentBytes;
@@ -81,7 +84,7 @@ int TcpTransport::SendFile(void *connection, int fd) {
     totalBytesSent = 0;
     while (totalBytesSent < read_bytes) {
       int sentBytes = SSL_write(ssl, bytes.data() + totalBytesSent,
-                                (int)(read_bytes - totalBytesSent));
+                                static_cast<int>(read_bytes - totalBytesSent));
 
       if (sentBytes > 0) {
         totalBytesSent += sentBytes;
@@ -116,7 +119,7 @@ int TcpTransport::Send(void *connection, const std::vector<uint8_t> &bytes) {
 
   while (totalBytesSent < arraySize) {
     int sentBytes = SSL_write(ssl, bytes.data() + totalBytesSent,
-                              (int)(arraySize - totalBytesSent));
+                              static_cast<int>(arraySize - totalBytesSent));
 
     if (sentBytes > 0) {
       totalBytesSent += sentBytes;
@@ -148,8 +151,9 @@ int TcpTransport::Read(void *connection, std::vector<uint8_t> &buffer,
   uint32_t retry_count = 0;
   // Implement upper bound for loop
   while (true) {
-    int n_bytes_recv = SSL_read(ssl, buffer.data() + write_offset,
-                                (int)buffer.capacity() - write_offset);
+    int n_bytes_recv =
+        SSL_read(ssl, buffer.data() + write_offset,
+                 static_cast<int>(buffer.capacity() - write_offset));
 
     if (n_bytes_recv == 0) {
       // LogError("Client closed the connection");
@@ -201,7 +205,7 @@ int TcpTransport::Send(void *connection, const std::vector<uint8_t> &bytes,
     {
       std::lock_guard<std::mutex> lock(mut);
       sentBytes = SSL_write(ssl, bytes.data() + totalBytesSent,
-                            (int)(arraySize - totalBytesSent));
+                            static_cast<int>(arraySize - totalBytesSent));
     }
 
     if (sentBytes > 0) {
@@ -237,8 +241,9 @@ int TcpTransport::Read(void *connection, std::vector<uint8_t> &buffer,
     int n_bytes_recv = 0;
     {
       std::lock_guard<std::mutex> lock(mut);
-      n_bytes_recv = SSL_read(ssl, buffer.data() + write_offset,
-                              (int)buffer.capacity() - write_offset);
+      n_bytes_recv =
+          SSL_read(ssl, buffer.data() + write_offset,
+                   static_cast<int>(buffer.capacity() - write_offset));
     }
     if (n_bytes_recv == 0) {
       // LogError("Client closed the connection");
@@ -296,7 +301,8 @@ int QuicTransport::Send(void *connection, const std::vector<uint8_t> &bytes) {
   uint8_t *sendBufferRaw;
   QUIC_BUFFER *sendBuffer;
 
-  sendBufferRaw = (uint8_t *)malloc(sizeof(QUIC_BUFFER) + bytes.size());
+  sendBufferRaw =
+      reinterpret_cast<uint8_t *>(malloc(sizeof(QUIC_BUFFER) + bytes.size()));
 
   if (sendBufferRaw == NULL) {
     LogError("SendBuffer allocation failed");
@@ -307,7 +313,7 @@ int QuicTransport::Send(void *connection, const std::vector<uint8_t> &bytes) {
     }
   }
 
-  sendBuffer = (QUIC_BUFFER *)sendBufferRaw;
+  sendBuffer = reinterpret_cast<QUIC_BUFFER *>(sendBufferRaw);
   sendBuffer->Buffer = sendBufferRaw + sizeof(QUIC_BUFFER);
   sendBuffer->Length = bytes.size();
 
@@ -338,7 +344,8 @@ int QuicTransport::Send(void *connection, const std::vector<uint8_t> &bytes,
   uint8_t *sendBufferRaw;
   QUIC_BUFFER *sendBuffer;
 
-  sendBufferRaw = (uint8_t *)malloc(sizeof(QUIC_BUFFER) + bytes.size());
+  sendBufferRaw =
+      reinterpret_cast<uint8_t *>(malloc(sizeof(QUIC_BUFFER) + bytes.size()));
 
   if (sendBufferRaw == NULL) {
     LogError("SendBuffer allocation failed");
@@ -349,7 +356,7 @@ int QuicTransport::Send(void *connection, const std::vector<uint8_t> &bytes,
     }
   }
 
-  sendBuffer = (QUIC_BUFFER *)sendBufferRaw;
+  sendBuffer = reinterpret_cast<QUIC_BUFFER *>(sendBufferRaw);
   sendBuffer->Buffer = sendBufferRaw + sizeof(QUIC_BUFFER);
   sendBuffer->Length = bytes.size();
 

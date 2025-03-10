@@ -1,13 +1,15 @@
-#include "quic_server.h"
+#include "../include/quic_server.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <format>
 #include <iostream>
+#include <memory>
 #include <sstream>
+#include <vector>
 
-#include "http3_frame_handler.h"
-#include "log.h"
-// #include "server.h"
+#include "../include/http3_frame_handler.h"
+#include "../include/log.h"
 
 static uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
                            const std::vector<uint8_t>::iterator &end) {
@@ -19,11 +21,10 @@ static uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
 
   // Read the first byte
   uint64_t value = *iter++;
-  uint8_t prefix =
-      value >> 6; // Get the prefix to determine the length of the varint
-  size_t length = 1 << prefix; // 1, 2, 4, or 8 bytes
+  uint8_t prefix = value >> 6;
+  size_t length = 1 << prefix;
 
-  value &= 0x3F; // Mask out the 2 most significant bits
+  value &= 0x3F;
 
   // Check if we have enough data for the full varint
   if (iter + length - 1 >= end) {
@@ -104,9 +105,9 @@ QuicServer::QuicServer(
   }
 
   // Create/allocate a new listener object.
-  if (QUIC_FAILED(status_ =
-                      ms_quic_->ListenerOpen(registration_, ListenerCallback,
-                                             (void *)this, &listener_))) {
+  if (QUIC_FAILED(status_ = ms_quic_->ListenerOpen(
+                      registration_, ListenerCallback,
+                      reinterpret_cast<void *>(this), &listener_))) {
     LogError(std::format("ListenerStart failed, 0x{:x}!", status_));
     LogError("Server failed to load configuration.");
     if (listener_ != nullptr) {
@@ -181,14 +182,15 @@ int QuicServer::LoadConfiguration(_In_ int argc,
     // Loads the server's certificate from the file.
     const char *Password = GetValue(argc, argv, "password");
     if (Password != nullptr) {
-      Config.CertFileProtected.CertificateFile = (char *)Cert;
-      Config.CertFileProtected.PrivateKeyFile = (char *)KeyFile;
-      Config.CertFileProtected.PrivateKeyPassword = (char *)Password;
+      Config.CertFileProtected.CertificateFile = const_cast<char *>(Cert);
+      Config.CertFileProtected.PrivateKeyFile = const_cast<char *>(KeyFile);
+      Config.CertFileProtected.PrivateKeyPassword =
+          const_cast<char *>(Password);
       Config.CredConfig.Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_FILE_PROTECTED;
       Config.CredConfig.CertificateFileProtected = &Config.CertFileProtected;
     } else {
-      Config.CertFile.CertificateFile = (char *)Cert;
-      Config.CertFile.PrivateKeyFile = (char *)KeyFile;
+      Config.CertFile.CertificateFile = const_cast<char *>(Cert);
+      Config.CertFile.PrivateKeyFile = const_cast<char *>(KeyFile);
       Config.CredConfig.Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_FILE;
       Config.CredConfig.CertificateFile = &Config.CertFile;
     }
@@ -230,7 +232,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
     QuicServer::StreamCallback(_In_ HQUIC Stream, _In_opt_ void *Context,
                                _Inout_ QUIC_STREAM_EVENT *Event) {
   // UNREFERENCED_PARAMETER(Context);
-  QuicServer *server = (QuicServer *)Context;
+  QuicServer *server = reinterpret_cast<QuicServer *>(Context);
 
   switch (Event->Type) {
   case QUIC_STREAM_EVENT_SEND_COMPLETE:
@@ -367,8 +369,9 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 
     // The connection was explicitly shut down by the peer.
 #ifdef QUIC_DEBUG
-    printf("[conn][%p] Shut down by peer, 0x%llu\n", Connection,
-           (unsigned long long)Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
+    printf(
+        "[conn][%p] Shut down by peer, 0x%llu\n", Connection,
+        reinterpret_cast<int64_t>(Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode));
 #endif
 
     break;
@@ -390,8 +393,9 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 
     printf("[strm][%p] Peer started\n", Event->PEER_STREAM_STARTED.Stream);
 #endif
-    ms_quic_->SetCallbackHandler(Event->PEER_STREAM_STARTED.Stream,
-                                 (void *)QuicServer::StreamCallback, Context);
+    ms_quic_->SetCallbackHandler(
+        Event->PEER_STREAM_STARTED.Stream,
+        reinterpret_cast<void *>(QuicServer::StreamCallback), Context);
 
     break;
   case QUIC_CONNECTION_EVENT_RESUMED:
@@ -425,9 +429,9 @@ _IRQL_requires_max_(PASSIVE_LEVEL)
     // proceed, the server must provide a configuration for QUIC to use. The
     // app MUST set the callback handler before returning.
 
-    ms_quic_->SetCallbackHandler(Event->NEW_CONNECTION.Connection,
-                                 (void *)QuicServer::ConnectionCallback,
-                                 Context);
+    ms_quic_->SetCallbackHandler(
+        Event->NEW_CONNECTION.Connection,
+        reinterpret_cast<void *>(QuicServer::ConnectionCallback), Context);
     Status = ms_quic_->ConnectionSetConfiguration(
         Event->NEW_CONNECTION.Connection, config_);
     break;

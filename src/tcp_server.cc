@@ -1,4 +1,4 @@
-#include "tcp_server.h"
+#include "../include/tcp_server.h"
 
 #include <netdb.h>
 #include <netinet/in.h>
@@ -10,13 +10,16 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <sstream>
+#include <string>
 #include <thread>
+#include <vector>
 
-#include "http2_frame_handler.h"
-#include "log.h"
-#include "tls_manager.h"
-#include "utils.h"
+#include "../include/http2_frame_handler.h"
+#include "../include/log.h"
+#include "../include/tls_manager.h"
+#include "../include/utils.h"
 
 extern bool shouldShutdown;
 
@@ -28,9 +31,7 @@ static std::string threadSafeStrerror(int errnum) {
 TcpServer::TcpServer(
     const std::shared_ptr<Router> &router,
     const std::shared_ptr<StaticContentHandler> &content_handler)
-    : router_(router),
-      static_content_handler_(content_handler),
-      socket_(-1),
+    : router_(router), static_content_handler_(content_handler), socket_(-1),
       socket_addr_(nullptr) {
   struct addrinfo hints{};
   memset(&hints, 0, sizeof(hints));
@@ -113,7 +114,7 @@ void TcpServer::AcceptConnections() {
   struct timeval timeout{};
   timeout.tv_usec = 100 * 1000;
 
-  int buffSize = 256 * 1024;  // 256 KB
+  int buffSize = 256 * 1024;
 
   struct pollfd pollFds(socket_, POLLIN, 0);
 
@@ -132,7 +133,8 @@ void TcpServer::AcceptConnections() {
     struct sockaddr_storage peerAddr;
     socklen_t peerAddrLen = sizeof(peerAddr);
 
-    int client_socket = accept(socket_, (sockaddr *)&peerAddr, &peerAddrLen);
+    int client_socket =
+        accept(socket_, reinterpret_cast<sockaddr *>(&peerAddr), &peerAddrLen);
     if (client_socket == ERROR) {
       LogError(threadSafeStrerror(errno));
       continue;
@@ -306,7 +308,7 @@ void TcpServer::HandleHTTP2Request(SSL *ssl) {
   int write_offset = 0;
   size_t n_readable_bytes = 0;
 
-  // TODO: implement circular buffer
+  // TODO(QQueke): Implement circular buffer
 
   while (!shouldShutdown && !goAway) {
     int n_bytes_recv = transport_->Read(ssl, buffer, write_offset);
@@ -315,7 +317,7 @@ void TcpServer::HandleHTTP2Request(SSL *ssl) {
     }
 
     write_offset += n_bytes_recv;
-    n_readable_bytes += (size_t)n_bytes_recv;
+    n_readable_bytes += static_cast<size_t>(n_bytes_recv);
 
     if (!receivedPreface) {
       if (n_readable_bytes < PREFACE_LENGTH) {
@@ -370,10 +372,11 @@ void TcpServer::HandleHTTP2Request(SSL *ssl) {
       }
 
       // Move the offset to the next frame
-      read_offset += (int)FRAME_HEADER_LENGTH + payload_size;
+      read_offset += static_cast<int>(FRAME_HEADER_LENGTH + payload_size);
 
       // Decrement readably bytes by the current frame size
-      n_readable_bytes -= (size_t)FRAME_HEADER_LENGTH + payload_size;
+      n_readable_bytes -=
+          static_cast<size_t>(FRAME_HEADER_LENGTH + payload_size);
     }
 
     if (n_readable_bytes == 0) {

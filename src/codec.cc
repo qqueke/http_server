@@ -1,17 +1,20 @@
-#include "codec.h"
+#include "../include/codec.h"
 
 #include <iostream>
 #include <ostream>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
-#include "log.h"
-#include "lshpack.h"
-#include "utils.h"
+#include "../include/log.h"
+#include "../include/utils.h"
+#include "../lib/ls-hpack/lshpack.h"
 
 void HpackCodec::Encode(
     void *context,
     const std::unordered_map<std::string, std::string> &headers_map,
     std::vector<uint8_t> &encoded_headers) {
-  lshpack_enc *encoder = (lshpack_enc *)context;
+  lshpack_enc *encoder = reinterpret_cast<lshpack_enc *>(context);
 
   unsigned char *dst = encoded_headers.data();
   unsigned char *end = dst + encoded_headers.size();
@@ -73,7 +76,7 @@ void HpackCodec::Encode(
 void HpackCodec::Decode(
     void *context, std::vector<uint8_t> &encoded_headers,
     std::unordered_map<std::string, std::string> &decoded_headers_map) {
-  lshpack_dec *decoder = (lshpack_dec *)context;
+  lshpack_dec *decoder = reinterpret_cast<lshpack_dec *>(context);
 
   const unsigned char *src =
       const_cast<unsigned char *>(encoded_headers.data());
@@ -110,7 +113,7 @@ void QpackCodec::Encode(
     void *context,
     const std::unordered_map<std::string, std::string> &headers_map,
     std::vector<uint8_t> &encoded_headers) {
-  HQUIC *stream = (HQUIC *)context;
+  HQUIC *stream = reinterpret_cast<HQUIC *>(context);
 
   struct lsqpack_enc enc;
 
@@ -121,16 +124,16 @@ void QpackCodec::Encode(
   lsqpack_enc_opts encOpts{};
 
   int ret =
-      lsqpack_enc_init(&enc, NULL, 0x1000, 0x1000, 0, LSQPACK_ENC_OPT_SERVER,
+      lsqpack_enc_init(&enc, nullptr, 0x1000, 0x1000, 0, LSQPACK_ENC_OPT_SERVER,
                        sdtcBuf.data(), &stdcBufSize);
 
   if (ret != 0) {
-    std::cerr << "Error initializing encoder." << std::endl;
+    std::cerr << "Error initializing encoder.\n";
     return;
   }
 
   uint64_t stream_id{};
-  uint32_t len = (uint32_t)sizeof(stream_id);
+  uint32_t len = static_cast<uint32_t>(sizeof(stream_id));
   if (QUIC_FAILED(ms_quic_->GetParam(*stream, QUIC_PARAM_STREAM_ID, &len,
                                      &stream_id))) {
     LogError("Failed to acquire stream id");
@@ -230,7 +233,7 @@ static void Dhi_Unblocked(void *hblock_ctx) {}
 static struct lsxpack_header *Dhi_PrepareDecode(void *hblock_ctx_p,
                                                 struct lsxpack_header *xhdr,
                                                 size_t space) {
-  hblock_ctx_t *block_ctx = (hblock_ctx_t *)hblock_ctx_p;
+  hblock_ctx_t *block_ctx = reinterpret_cast<hblock_ctx_t *>(hblock_ctx_p);
 
   if (xhdr != NULL) {
     xhdr->val_len = space;
@@ -245,7 +248,7 @@ static int Dhi_ProcessHeader(void *hblock_ctx, struct lsxpack_header *xhdr) {
   std::string headerKey(xhdr->buf + xhdr->name_offset, xhdr->name_len);
   std::string headerValue(xhdr->buf + xhdr->val_offset, xhdr->val_len);
 
-  hblock_ctx_t *block_ctx = (hblock_ctx_t *)hblock_ctx;
+  hblock_ctx_t *block_ctx = reinterpret_cast<hblock_ctx_t *>(hblock_ctx);
   std::unordered_map<std::string, std::string> &headers_map =
       *(block_ctx->decoded_headers_map);
 
@@ -257,12 +260,12 @@ static int Dhi_ProcessHeader(void *hblock_ctx, struct lsxpack_header *xhdr) {
 void QpackCodec::Decode(
     void *context, std::vector<uint8_t> &encoded_headers,
     std::unordered_map<std::string, std::string> &decoded_headers_map) {
-  HQUIC *stream = (HQUIC *)context;
+  HQUIC *stream = reinterpret_cast<HQUIC *>(context);
 
   std::vector<struct lsqpack_dec> dec(1);
 
   uint64_t stream_id{};
-  uint32_t len = (uint32_t)sizeof(stream_id);
+  auto len = static_cast<uint32_t>(sizeof(stream_id));
   if (QUIC_FAILED(ms_quic_->GetParam(*stream, QUIC_PARAM_STREAM_ID, &len,
                                      &stream_id))) {
     LogError("Failed to acquire stream id");

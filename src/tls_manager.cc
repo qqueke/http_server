@@ -1,5 +1,5 @@
 
-#include "tls_manager.h"
+#include "../include/tls_manager.h"
 
 #include <poll.h>
 #include <sys/poll.h>
@@ -9,8 +9,8 @@
 #include <iostream>
 #include <string>
 
-#include "log.h"
-#include "utils.h"
+#include "../include/log.h"
+#include "../include/utils.h"
 
 int TlsManager::AlpnCallback(SSL *ssl, const unsigned char **out,
                              unsigned char *outlen, const unsigned char *in,

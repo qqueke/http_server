@@ -1,11 +1,12 @@
-#include "router.h"
+#include "../include/router.h"
 
 #include <string>
+#include <utility>
 
-#include "utils.h"
+#include "../include/utils.h"
 
 // Default initializer adds default routes
-Router::Router() { AddRoute("BR", "", handleBadRequest); };
+Router::Router() { AddRoute("BR", "", handleBadRequest); }
 Router::~Router() = default;
 
 void Router::AddRoute(const std::string &method, const std::string &path,
@@ -13,9 +14,9 @@ void Router::AddRoute(const std::string &method, const std::string &path,
   routes_[{method, path}] = handler;
 }
 
-std::pair<std::string, std::string> Router::RouteRequest(
-    const std::string &method, const std::string &path,
-    const std::string &data) {
+std::pair<std::string, std::string>
+Router::RouteRequest(const std::string &method, const std::string &path,
+                     const std::string &data) {
   // std::cout << "Method: " << method << " Path: " << path << " Data: " << data
   //           << std::endl;
 
@@ -28,14 +29,13 @@ std::pair<std::string, std::string> Router::RouteRequest(
   return handleBadRequest();
 }
 
-std::pair<std::string, std::string> Router::handleBadRequest(
-    const std::string &data) {
-  std::string headers =
-      "HTTP/1.1 200 Bad Request\r\n"
-      // "Content-Type: text/plain\r\n"
-      // "Content-Length: 12\r\n"
-      // "Connection: close\r\n"
-      "\r\n";
+std::pair<std::string, std::string>
+Router::handleBadRequest(const std::string &data) {
+  std::string headers = "HTTP/1.1 200 Bad Request\r\n"
+                        // "Content-Type: text/plain\r\n"
+                        // "Content-Length: 12\r\n"
+                        // "Connection: close\r\n"
+                        "\r\n";
 
   std::string body = "Bad Request\n";
 

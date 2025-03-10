@@ -1,10 +1,11 @@
-#include "log.h"
+#include "../include/log.h"
 
 #include <chrono>
 #include <iostream>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 std::ofstream errorFile("logs/error.log", std::ios::app);
 std::ofstream requestLogFile("logs/requests.log", std::ios::app);

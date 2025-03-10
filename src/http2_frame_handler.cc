@@ -1,4 +1,4 @@
-#include "http2_frame_handler.h"
+#include "../include/http2_frame_handler.h"
 
 #include <fcntl.h>
 
@@ -6,12 +6,14 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <string>
 #include <string_view>
+#include <unordered_map>
+#include <vector>
 
-#include "header_parser.h"
-#include "http2_frame_builder.h"
-#include "log.h"
-#include "server.h"
+#include "../include/header_parser.h"
+#include "../include/http2_frame_builder.h"
+#include "../include/log.h"
 
 // #define HTTP2_DEBUG
 static void ValidatePseudoHeadersTmp(
@@ -382,12 +384,12 @@ int Http2FrameHandler::HandleHeadersFrame(void *context, uint32_t frame_stream,
 
   if (isFlagSet(frame_flags, HTTP2Flags::PADDED_FLAG)) {
     padLength = headerBlockStart[0];
-    ++headerBlockStart; // Jump over pad length
+    ++headerBlockStart;
   }
 
   if (isFlagSet(frame_flags, HTTP2Flags::PRIORITY_FLAG)) {
-    headerBlockStart += 4; // Jump over stream dependency
-    ++headerBlockStart;    // Jump over weight
+    headerBlockStart += 4;
+    ++headerBlockStart;
   }
 
   uint32_t headerBlockLength = payloadEnd - headerBlockStart - padLength;
@@ -646,10 +648,7 @@ int Http2FrameHandler::HandleContinuationFrame(void *context,
     codec_ptr->Decode(static_cast<void *>(&dec_),
                       encoded_headers_buf_map_[frame_stream],
                       tcp_decoded_headers_map_[frame_stream]);
-
-  }
-  // Expecting another continuation frame ...
-  else {
+  } else {
     wait_for_cont_frame_ = true;
   }
 
@@ -1011,12 +1010,12 @@ int Http2FrameHandler::HandleHeadersFrame(void *context, uint32_t frame_stream,
 
   if (isFlagSet(frame_flags, HTTP2Flags::PADDED_FLAG)) {
     padLength = headerBlockStart[0];
-    ++headerBlockStart; // Jump over pad length
+    ++headerBlockStart;
   }
 
   if (isFlagSet(frame_flags, HTTP2Flags::PRIORITY_FLAG)) {
-    headerBlockStart += 4; // Jump over stream dependency
-    ++headerBlockStart;    // Jump over weight
+    headerBlockStart += 4;
+    ++headerBlockStart;
   }
 
   uint32_t headerBlockLength = payloadEnd - headerBlockStart - padLength;
@@ -1302,9 +1301,7 @@ int Http2FrameHandler::HandleContinuationFrame(
                       encoded_headers_buf_map_[frame_stream],
                       tcp_decoded_headers_map_[frame_stream]);
 
-  }
-  // Expecting another continuation frame ...
-  else {
+  } else {
     wait_for_cont_frame_ = true;
   }
 

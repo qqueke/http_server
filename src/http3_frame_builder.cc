@@ -1,25 +1,23 @@
-#include "http3_frame_builder.h"
+#include "../include/http3_frame_builder.h"
 
-#include <iostream>
+#include <string>
+#include <vector>
 
-#include "log.h"
+#include "../include/log.h"
 
 static void EncodeVarint(std::vector<uint8_t> &buffer, uint64_t value) {
-  if (value <= 63) { // Fit in 1 byte
+  if (value <= 63) {
     buffer.emplace_back(static_cast<uint8_t>(value));
-  } else if (value <= 16383) { // Fit in 2 bytes
-    buffer.emplace_back(
-        static_cast<uint8_t>((value >> 8) | 0x40));          // Set prefix 01
-    buffer.emplace_back(static_cast<uint8_t>(value & 0xFF)); // Remaining 8 bits
-  } else if (value <= 1073741823) {                          // Fit in 4 bytes
-    buffer.emplace_back(
-        static_cast<uint8_t>((value >> 24) | 0x80)); // Set prefix 10
+  } else if (value <= 16383) {
+    buffer.emplace_back(static_cast<uint8_t>((value >> 8) | 0x40));
+    buffer.emplace_back(static_cast<uint8_t>(value & 0xFF));
+  } else if (value <= 1073741823) {
+    buffer.emplace_back(static_cast<uint8_t>((value >> 24) | 0x80));
     buffer.emplace_back(static_cast<uint8_t>((value >> 16) & 0xFF));
     buffer.emplace_back(static_cast<uint8_t>((value >> 8) & 0xFF));
     buffer.emplace_back(static_cast<uint8_t>(value & 0xFF));
-  } else if (value <= 4611686018427387903) { // Fit in 8 bytes
-    buffer.emplace_back(
-        static_cast<uint8_t>((value >> 56) | 0xC0)); // Set prefix 11
+  } else if (value <= 4611686018427387903) {
+    buffer.emplace_back(static_cast<uint8_t>((value >> 56) | 0xC0));
     buffer.emplace_back(static_cast<uint8_t>((value >> 48) & 0xFF));
     buffer.emplace_back(static_cast<uint8_t>((value >> 40) & 0xFF));
     buffer.emplace_back(static_cast<uint8_t>((value >> 32) & 0xFF));

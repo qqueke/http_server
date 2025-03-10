@@ -1,15 +1,17 @@
-#include "static_content_handler.h"
+#include "../include/static_content_handler.h"
 
 #include <sys/stat.h>
 #include <zlib.h>
 
 #include <array>
 #include <cstdint>
+#include <cstdio>
 #include <iostream>
+#include <string>
 #include <vector>
 
-#include "log.h"
-#include "utils.h"
+#include "../include/log.h"
+#include "../include/utils.h"
 
 static uint64_t CompressFileTmp(const std::string &in_file,
                                 const char *out_file, CompressionType type) {
@@ -41,8 +43,7 @@ static uint64_t CompressFileTmp(const std::string &in_file,
   zStream.next_out = compressedData.data();
   zStream.avail_out = compressedSize;
 
-  int windowBits =
-      (type == GZIP) ? 15 + 16 : 15; // 15 for Deflate, +16 for Gzip
+  int windowBits = (type == GZIP) ? 15 + 16 : 15;
 
   if (deflateInit2(&zStream, Z_BEST_COMPRESSION, Z_DEFLATED, windowBits, 8,
                    Z_DEFAULT_STRATEGY) != Z_OK) {
@@ -57,7 +58,7 @@ static uint64_t CompressFileTmp(const std::string &in_file,
   }
 
   outFileStream.write(reinterpret_cast<const char *>(compressedData.data()),
-                      (long)zStream.total_out);
+                      static_cast<long>(zStream.total_out));
 
   deflateEnd(&zStream);
 
@@ -251,7 +252,7 @@ StaticContentHandler::GetContentType(const std::string &file_ext) {
 void StaticContentHandler::AppendContentType(const std::string &file_path,
                                              std::string &headers) {
   std::string file_ext{};
-  for (int pos = (int)file_path.size() - 1; pos >= 0; --pos) {
+  for (int pos = static_cast<int>(file_path.size() - 1); pos >= 0; --pos) {
     if (file_path[pos] == '.') {
       file_ext = file_path.substr(pos, file_path.size() - pos);
       break;

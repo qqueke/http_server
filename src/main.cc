@@ -1,17 +1,16 @@
-// #include "client.cc"
-// #include <gperftools/profiler.h>
 #include <memory.h>
 
 #include <csignal>
+#include <iostream>
 #include <memory>
 #include <ostream>
 #include <thread>
 
-#include "client.h"
-#include "log.h"
-#include "routes.cc"
-#include "server.h"
-#include "utils.h"
+#include "../include/client.h"
+#include "../include/log.h"
+// #include "../include/routes.cc"
+#include "../include/server.h"
+#include "../include/utils.h"
 
 // void startProfiling() { ProfilerStart("my_profiler_output.prof"); }
 // void stopProfiling() { ProfilerStop(); }
@@ -45,9 +44,9 @@ int main(int argc, char *argv[]) {
 
     getchar();
   } else if (GetFlag(argc, argv, "server")) {
-    signal(SIGPIPE, SIG_IGN);       // SIGPIPE
-    signal(SIGINT, signalHandler);  // Ctrl+C
-    signal(SIGTERM, signalHandler); // Termination signal
+    signal(SIGPIPE, SIG_IGN);
+    signal(SIGINT, signalHandler);
+    signal(SIGTERM, signalHandler);
 
     {
       std::shared_ptr<HttpServer> server =

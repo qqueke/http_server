@@ -1,30 +1,33 @@
-#include "http2_frame_builder.h"
+#include "../include/http2_frame_builder.h"
 
 #include <array>
 #include <cstdint>
+#include <string>
+#include <utility>
+#include <vector>
 
-#include "log.h"
-#include "utils.h"
+#include "../include/log.h"
+#include "../include/utils.h"
 
 std::vector<uint8_t> Http2FrameBuilder::BuildFrame(
     Frame type, uint8_t frame_flags, uint32_t stream_id, uint32_t error_code,
     uint32_t increment, const std::vector<uint8_t> &encoded_headers,
     const std::string &data) {
   switch (type) {
-    case Frame::DATA:
-      return BuildDataFrame(data, stream_id);
-    case Frame::HEADERS:
-      return BuildHeaderFrame(encoded_headers, stream_id);
-    case Frame::GOAWAY:
-      return BuildGoAwayFrame(stream_id, error_code);
-    case Frame::SETTINGS:
-      return BuildSettingsFrame(frame_flags);
-    case Frame::RST_STREAM:
-      return BuildRstStreamFrame(stream_id, error_code);
-    case Frame::WINDOW_UPDATE:
-      return BuildWindowUpdateFrame(stream_id, increment);
-    default:
-      return {};
+  case Frame::DATA:
+    return BuildDataFrame(data, stream_id);
+  case Frame::HEADERS:
+    return BuildHeaderFrame(encoded_headers, stream_id);
+  case Frame::GOAWAY:
+    return BuildGoAwayFrame(stream_id, error_code);
+  case Frame::SETTINGS:
+    return BuildSettingsFrame(frame_flags);
+  case Frame::RST_STREAM:
+    return BuildRstStreamFrame(stream_id, error_code);
+  case Frame::WINDOW_UPDATE:
+    return BuildWindowUpdateFrame(stream_id, increment);
+  default:
+    return {};
   }
 }
 
@@ -55,9 +58,10 @@ std::vector<uint8_t> Http2FrameBuilder::BuildDataFrame(const std::string &data,
   return frame;
 }
 
-std::vector<uint8_t> Http2FrameBuilder::BuildDataFrame(
-    std::vector<uint8_t> &bytes, uint32_t payload_size, uint32_t stream_id,
-    uint8_t frame_flags) {
+std::vector<uint8_t>
+Http2FrameBuilder::BuildDataFrame(std::vector<uint8_t> &bytes,
+                                  uint32_t payload_size, uint32_t stream_id,
+                                  uint8_t frame_flags) {
   uint8_t frame_type = Frame::DATA;
   // uint8_t flags = HTTP2Flags::END_STREAM_FLAG;
   uint32_t total_frame_size = FRAME_HEADER_LENGTH + payload_size;
@@ -82,8 +86,9 @@ std::vector<uint8_t> Http2FrameBuilder::BuildDataFrame(
   return frame;
 }
 
-std::vector<uint8_t> Http2FrameBuilder::BuildDataFrameFromFile(
-    int fd, uint64_t file_size, uint32_t stream_id) {
+std::vector<uint8_t>
+Http2FrameBuilder::BuildDataFrameFromFile(int fd, uint64_t file_size,
+                                          uint32_t stream_id) {
   if (file_size > MAX_PAYLOAD_FRAME_SIZE) {
     LogError("File is too big. Call BuildDataFramesFromFile instead");
     return {};
@@ -112,8 +117,9 @@ std::vector<uint8_t> Http2FrameBuilder::BuildDataFrameFromFile(
                         HTTP2Flags::END_STREAM_FLAG);
 }
 
-std::vector<std::vector<uint8_t>> Http2FrameBuilder::BuildDataFramesFromFile(
-    int fd, uint64_t file_size, uint32_t stream_id) {
+std::vector<std::vector<uint8_t>>
+Http2FrameBuilder::BuildDataFramesFromFile(int fd, uint64_t file_size,
+                                           uint32_t stream_id) {
   std::vector<uint8_t> bytes(MAX_PAYLOAD_FRAME_SIZE);
 
   uint32_t n_required_frames = (file_size / MAX_PAYLOAD_FRAME_SIZE) + 1;
@@ -144,8 +150,9 @@ std::vector<std::vector<uint8_t>> Http2FrameBuilder::BuildDataFramesFromFile(
   return frames;
 }
 
-std::vector<uint8_t> Http2FrameBuilder::BuildHeaderFrame(
-    const std::vector<uint8_t> &encoded_headers, uint32_t stream_id) {
+std::vector<uint8_t>
+Http2FrameBuilder::BuildHeaderFrame(const std::vector<uint8_t> &encoded_headers,
+                                    uint32_t stream_id) {
   // Construct the frame header for Headers
   uint8_t frame_type = Frame::HEADERS;
   uint32_t payload_size = encoded_headers.size();
@@ -175,8 +182,8 @@ std::vector<uint8_t> Http2FrameBuilder::BuildHeaderFrame(
   return frame;
 }
 
-std::vector<uint8_t> Http2FrameBuilder::BuildSettingsFrame(
-    uint8_t frame_flags) {
+std::vector<uint8_t>
+Http2FrameBuilder::BuildSettingsFrame(uint8_t frame_flags) {
   static constexpr std::array<std::pair<uint16_t, uint32_t>, 4> settings = {
       std::make_pair(HTTP2Settings::MAX_CONCURRENT_STREAMS, 100),
       std::make_pair(HTTP2Settings::INITIAL_WINDOW_SIZE, 65535),
@@ -231,8 +238,9 @@ std::vector<uint8_t> Http2FrameBuilder::BuildSettingsFrame(
   return frame;
 }
 
-std::vector<uint8_t> Http2FrameBuilder::BuildRstStreamFrame(
-    uint32_t stream_id, uint32_t error_code) {
+std::vector<uint8_t>
+Http2FrameBuilder::BuildRstStreamFrame(uint32_t stream_id,
+                                       uint32_t error_code) {
   uint8_t frame_type = Frame::RST_STREAM;
   uint8_t frame_flags = HTTP2Flags::NONE_FLAG;
   uint8_t payload_size = 4;
@@ -299,8 +307,9 @@ std::vector<uint8_t> Http2FrameBuilder::BuildGoAwayFrame(uint32_t stream_id,
   return frame;
 }
 
-std::vector<uint8_t> Http2FrameBuilder::BuildWindowUpdateFrame(
-    uint32_t stream_id, uint32_t increment) {
+std::vector<uint8_t>
+Http2FrameBuilder::BuildWindowUpdateFrame(uint32_t stream_id,
+                                          uint32_t increment) {
   // Construct the frame header for Headers
   uint8_t frame_type = Frame::WINDOW_UPDATE;
   uint8_t payload_size = 4;

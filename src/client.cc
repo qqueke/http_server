@@ -1,4 +1,4 @@
-#include "client.h"
+#include "../include/client.h"
 
 #include <poll.h>
 #include <sys/poll.h>
@@ -9,9 +9,10 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <string>
 
-#include "quic_client.h"
-#include "utils.h"
+#include "../include/quic_client.h"
+#include "../include/utils.h"
 
 HttpClient::HttpClient(int argc, char *argv[]) {
   std::string requestsFile;

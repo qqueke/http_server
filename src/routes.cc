@@ -9,11 +9,9 @@
 #include <unistd.h>
 
 #include <cstring>
-#include <iostream>
 #include <string>
 
-#include "log.h"
-#include "server.h"
+#include "../include/log.h"
 
 inline std::string helloHandler(SSL *client_ssl, const std::string &cacheKey) {
   const char *httpResponse = "HTTP/1.1 200 OK\r\n"

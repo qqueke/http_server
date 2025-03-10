@@ -1,16 +1,19 @@
-#include "tcp_client.h"
+#include "../include/tcp_client.h"
 
 #include <netdb.h>
 
 #include <functional>
 #include <iostream>
+#include <memory>
+#include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
-#include "http2_frame_handler.h"
-#include "log.h"
-#include "lshpack.h"
-#include "utils.h"
+#include "../include/http2_frame_handler.h"
+#include "../include/log.h"
+#include "../include/utils.h"
+#include "../lib/ls-hpack/lshpack.h"
 
 TcpClient::TcpClient(
     int argc, char *argv[],
@@ -57,7 +60,7 @@ TcpClient::~TcpClient() {}
 void TcpClient::Run() {
   struct timeval timeout{};
   timeout.tv_usec = 100 * 1000;
-  static constexpr int buffSize = 256 * 1024;  // 256 KB
+  static constexpr int buffSize = 256 * 1024;
 
   struct addrinfo *addr = nullptr;
   for (addr = socket_addr_; addr != nullptr; addr = addr->ai_next) {
@@ -134,7 +137,7 @@ void TcpClient::RecvHttp2Response(SSL *ssl, std::mutex &conn_mutex) {
     }
 
     write_offset += n_bytes_recv;
-    n_readable_bytes += (size_t)n_bytes_recv;
+    n_readable_bytes += static_cast<size_t>(n_bytes_recv);
 
     // If we received atleast the frame header
     while (FRAME_HEADER_LENGTH <= n_readable_bytes && !goAway) {
@@ -167,10 +170,11 @@ void TcpClient::RecvHttp2Response(SSL *ssl, std::mutex &conn_mutex) {
       }
 
       // Move the offset to the next frame
-      read_offset += (int)FRAME_HEADER_LENGTH + payload_size;
+      read_offset += static_cast<int>(FRAME_HEADER_LENGTH + payload_size);
 
       // Decrement readably bytes by the current frame size
-      n_readable_bytes -= (size_t)FRAME_HEADER_LENGTH + payload_size;
+      n_readable_bytes -=
+          static_cast<size_t>(FRAME_HEADER_LENGTH + payload_size);
     }
 
     if (n_readable_bytes == 0) {
