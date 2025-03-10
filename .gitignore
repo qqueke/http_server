@@ -26,3 +26,7 @@ build/*
 
 # Ignore everything in logs/
 logs/*
+
+html/*
+
+latex/*
