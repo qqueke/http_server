@@ -68,8 +68,7 @@ RequestHeaderParser::ConvertToPseudoHeaders(const std::string_view headers) {
   // Read header fields
   while (pos < headers.size()) {
     line_end = headers.find("\n", pos);
-    if (line_end == std::string_view::npos)
-      break;
+    if (line_end == std::string_view::npos) break;
 
     std::string_view line = headers.substr(pos, line_end - pos);
 
@@ -79,8 +78,7 @@ RequestHeaderParser::ConvertToPseudoHeaders(const std::string_view headers) {
     }
 
     // If the line is empty, we reached the end of headers (\r\n\r\n)
-    if (line.empty())
-      break;
+    if (line.empty()) break;
 
     size_t colon_pos = line.find(':');
     if (colon_pos != std::string_view::npos) {
@@ -103,6 +101,35 @@ RequestHeaderParser::ConvertToPseudoHeaders(const std::string_view headers) {
     pos = line_end + 1;
   }
 
+  std::string_view line = headers.substr(pos);
+
+  // Trim \r
+  if (!line.empty() && line.back() == '\r') {
+    line = line.substr(0, line.size() - 1);
+  }
+
+  // If the line is empty, we reached the end of headers (\r\n\r\n)
+  if (line.empty()) {
+    return headers_map;
+  }
+
+  size_t colon_pos = line.find(':');
+  if (colon_pos != std::string_view::npos) {
+    std::string key = std::string(line.substr(0, colon_pos));
+    std::string value = std::string(line.substr(colon_pos + 1));
+
+    // Trim leading space in value
+    size_t value_start = value.find_first_not_of(" ");
+    if (value_start != std::string::npos) {
+      value = value.substr(value_start);
+    }
+
+    if (key != "Connection") {
+      std::transform(key.begin(), key.end(), key.begin(),
+                     [](unsigned char c) { return std::tolower(c); });
+      headers_map[key] = value;
+    }
+  }
   return headers_map;
 }
 
@@ -147,8 +174,7 @@ ResponseHeaderParser::ConvertToPseudoHeaders(const std::string_view headers) {
   // Read header fields
   while (pos < headers.size()) {
     line_end = headers.find("\n", pos);
-    if (line_end == std::string_view::npos)
-      break;
+    if (line_end == std::string_view::npos) break;
 
     std::string_view line = headers.substr(pos, line_end - pos);
 
@@ -158,8 +184,7 @@ ResponseHeaderParser::ConvertToPseudoHeaders(const std::string_view headers) {
     }
 
     // If the line is empty, we reached the end of headers (\r\n\r\n)
-    if (line.empty())
-      break;
+    if (line.empty()) break;
 
     size_t colon_pos = line.find(':');
     if (colon_pos != std::string_view::npos) {
@@ -180,6 +205,36 @@ ResponseHeaderParser::ConvertToPseudoHeaders(const std::string_view headers) {
     }
 
     pos = line_end + 1;
+  }
+
+  std::string_view line = headers.substr(pos);
+
+  // Trim \r
+  if (!line.empty() && line.back() == '\r') {
+    line = line.substr(0, line.size() - 1);
+  }
+
+  // If the line is empty, we reached the end of headers (\r\n\r\n)
+  if (line.empty()) {
+    return headers_map;
+  }
+
+  size_t colon_pos = line.find(':');
+  if (colon_pos != std::string_view::npos) {
+    std::string key = std::string(line.substr(0, colon_pos));
+    std::string value = std::string(line.substr(colon_pos + 1));
+
+    // Trim leading space in value
+    size_t value_start = value.find_first_not_of(" ");
+    if (value_start != std::string::npos) {
+      value = value.substr(value_start);
+    }
+
+    if (key != "Connection") {
+      std::transform(key.begin(), key.end(), key.begin(),
+                     [](unsigned char c) { return std::tolower(c); });
+      headers_map[key] = value;
+    }
   }
 
   return headers_map;

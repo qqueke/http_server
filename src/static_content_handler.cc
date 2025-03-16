@@ -17,11 +17,13 @@
 #include "../include/log.h"
 #include "../include/utils.h"
 
-static uint64_t CompressFileTmp(const std::string &in_file,
-                                const char *out_file, CompressionType type) {
+#define CHUNK_SIZE 16384
+uint64_t StaticContentHandler::CompressFileTmp(const std::string &in_file,
+                                               const char *out_file,
+                                               CompressionType type) {
   std::ifstream in_file_stream(in_file, std::ios::binary);
   if (!in_file_stream) {
-    LogError("Failed to open input file\n");
+    LogError("Failed to open input file: " + in_file);
     return 0;
   }
 
@@ -31,51 +33,72 @@ static uint64_t CompressFileTmp(const std::string &in_file,
 
   std::ofstream outFileStream(out_file, std::ios::binary);
   if (!outFileStream) {
-    LogError("Failed to open output file\n");
+    LogError("Failed to open output file: " + std::string(out_file));
     return 0;
   }
 
   // Will read file stream as chars until end of file ({}), to the vector
   std::vector<char> buffer(std::istreambuf_iterator<char>(in_file_stream), {});
 
-  uLongf compressedSize = compressBound(buffer.size());
-  std::vector<Bytef> compressedData(compressedSize);
+  uLongf compressed_size = compressBound(buffer.size());
+  std::vector<Bytef> compressed_data(compressed_size);
 
-  z_stream zStream = {};
-  zStream.next_in = reinterpret_cast<Bytef *>(buffer.data());
-  zStream.avail_in = buffer.size();
-  zStream.next_out = compressedData.data();
-  zStream.avail_out = compressedSize;
+  z_stream z_stream = {};
+  z_stream.next_in = reinterpret_cast<Bytef *>(buffer.data());
+  z_stream.avail_in = buffer.size();
+  z_stream.next_out = compressed_data.data();
+  z_stream.avail_out = compressed_size;
 
-  int windowBits = (type == GZIP) ? 15 + 16 : 15;
+  int window_bits = (type == GZIP) ? 15 + 16 : 15;
 
-  if (deflateInit2(&zStream, Z_BEST_COMPRESSION, Z_DEFLATED, windowBits, 8,
+  if (deflateInit2(&z_stream, Z_BEST_COMPRESSION, Z_DEFLATED, window_bits, 8,
                    Z_DEFAULT_STRATEGY) != Z_OK) {
     LogError("Compression initialization failed\n");
     return 0;
   }
+  std::vector<char> in_buffer(CHUNK_SIZE);
+  std::vector<Bytef> out_buffer(CHUNK_SIZE);
 
-  if (deflate(&zStream, Z_FINISH) != Z_STREAM_END) {
-    LogError("Compression failed\n");
-    deflateEnd(&zStream);
-    return 0;
-  }
+  uint64_t total_compressed_size = 0;
+  int err = 0;
 
-  outFileStream.write(reinterpret_cast<const char *>(compressedData.data()),
-                      static_cast<long>(zStream.total_out));
+  do {
+    // Read a chunk of the file
+    in_file_stream.read(in_buffer.data(), CHUNK_SIZE);
+    std::streamsize bytes_read = in_file_stream.gcount();
 
-  deflateEnd(&zStream);
+    z_stream.next_in = reinterpret_cast<Bytef *>(in_buffer.data());
+    z_stream.avail_in = static_cast<uInt>(bytes_read);
+
+    // Compress until input is fully consumed
+    do {
+      z_stream.next_out = out_buffer.data();
+      z_stream.avail_out = CHUNK_SIZE;
+
+      err = deflate(&z_stream, in_file_stream.eof() ? Z_FINISH : Z_NO_FLUSH);
+
+      if (err == Z_STREAM_ERROR) {
+        LogError("Compression failed: stream error");
+        deflateEnd(&z_stream);
+        return 0;
+      }
+
+      size_t bytes_compressed = CHUNK_SIZE - z_stream.avail_out;
+      outFileStream.write(reinterpret_cast<const char *>(out_buffer.data()),
+                          bytes_compressed);
+      total_compressed_size += bytes_compressed;
+    } while (z_stream.avail_out == 0);
+  } while (!in_file_stream.eof());
+
+  deflateEnd(&z_stream);
 
   std::cout << ((type == GZIP) ? "Gzip" : "Deflate")
             << " compression successful: " << out_file << "\n";
-
-  // ASsuming small files
-  return zStream.total_out;
+  return total_compressed_size;
 }
-
-static uint64_t TryCompressing(const std::string &file_path,
-                               std::string_view encoding,
-                               std::array<char, 128> &compressed_path) {
+uint64_t StaticContentHandler::TryCompressing(
+    const std::string &file_path, std::string_view encoding,
+    std::array<char, 128> &compressed_path) {
   static constexpr std::array<std::pair<std::string, CompressionType>, 2>
       compression_types = {{{"gzip", GZIP}, {"deflate", DEFLATE}}};
 

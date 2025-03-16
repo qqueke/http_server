@@ -1,15 +1,16 @@
 // Copyright 2024 Joao Brotas
 // Some portions of this file may be subject to third-party copyrights.
 
-
 #include "../include/tls_manager.h"
 
+#include <openssl/ssl.h>
 #include <poll.h>
 #include <sys/poll.h>
 
 #include <array>
 #include <cstdint>
 #include <iostream>
+#include <optional>
 #include <string>
 
 #include "../include/log.h"
@@ -33,9 +34,9 @@ TlsManager::TlsManager(TlsMode mode)
   OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CRYPTO_STRINGS, nullptr);
 
   if (mode == TlsMode::SERVER) {
-    _ctx_ = SSL_CTX_new(SSLv23_server_method());
+    _ctx_ = SSL_CTX_new(TLS_method());
   } else {
-    _ctx_ = SSL_CTX_new(SSLv23_client_method());
+    _ctx_ = SSL_CTX_new(TLS_client_method());
   }
 
   if (!_ctx_) {
@@ -76,8 +77,11 @@ TlsManager::TlsManager(TlsMode mode, uint32_t retry_count)
 
   if (mode == TlsMode::SERVER) {
     SSL_CTX_set_alpn_select_cb(_ctx_, AlpnCallback, NULL);
+
+    (void)LoadCertificates("certificates/server.crt",
+                           "certificates/server.key");
   } else {
-    SSL_CTX_set_verify(_ctx_, SSL_VERIFY_NONE, NULL);
+    SSL_CTX_set_verify(_ctx_, SSL_VERIFY_NONE, nullptr);
 
     if (SSL_CTX_set_alpn_protos(_ctx_, AlpnProtos.data(), AlpnProtos.size()) !=
         0) {
@@ -94,16 +98,16 @@ TlsManager::~TlsManager() {
   OPENSSL_cleanup();
 }
 
-int TlsManager::LoadCertificates(const std::string &certPath,
-                                 const std::string &keyPath) {
+int TlsManager::LoadCertificates(const std::string &cert_path,
+                                 const std::string &key_path) {
   int ret =
-      SSL_CTX_use_certificate_file(_ctx_, certPath.c_str(), SSL_FILETYPE_PEM);
+      SSL_CTX_use_certificate_file(_ctx_, cert_path.c_str(), SSL_FILETYPE_PEM);
   if (ret <= 0) {
     LogError("Failed to load server certificate");
     return ERROR;
   }
 
-  ret = SSL_CTX_use_PrivateKey_file(_ctx_, keyPath.c_str(), SSL_FILETYPE_PEM);
+  ret = SSL_CTX_use_PrivateKey_file(_ctx_, key_path.c_str(), SSL_FILETYPE_PEM);
   if (ret <= 0) {
     LogError("Failed to load server private key");
     return ERROR;
@@ -119,7 +123,7 @@ int TlsManager::LoadCertificates(const std::string &certPath,
   return 0;
 }
 
-SSL *TlsManager::CreateSSL(int socket) {
+SSL *TlsManager::CreateSSL(int socket, std::optional<bool> is_server) {
   SSL *ssl = SSL_new(_ctx_);
   if (ssl == nullptr) {
     LogError("Failed to create SSL object");
@@ -129,6 +133,16 @@ SSL *TlsManager::CreateSSL(int socket) {
   if (ret == 0) {
     LogError("Failed to set SSL fd");
     return nullptr;
+  }
+
+  // If is_server is not specified we default to the mode
+  // set on ctx_
+  if (is_server.has_value()) {
+    if (is_server) {
+      SSL_set_accept_state(ssl);
+    } else {
+      SSL_set_connect_state(ssl);
+    }
   }
 
   return ssl;
@@ -144,7 +158,7 @@ int TlsManager::Handshake(SSL *ssl, int socket) {
   pfd.events = POLLIN | POLLOUT | POLLHUP;
 
   while (retry_count < _retry_count_) {
-    if (_mode_ == TlsMode::SERVER) {
+    if (SSL_is_server(ssl) == 1) {
       ret = SSL_accept(ssl);
     } else {
       ret = SSL_connect(ssl);

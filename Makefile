@@ -10,11 +10,12 @@ LIBDIR = lib
 TESTDIR = tests
 
 # Dependencies
-OPENSSL_DIR = /usr/include/openssl
 LS_QPACK_REPO = https://github.com/litespeedtech/ls-qpack.git
 LS_HPACK_REPO = https://github.com/litespeedtech/ls-hpack.git
 MSQUIC_REPO = https://github.com/microsoft/msquic.git
 
+
+TEST_SRCS = $(filter-out src/main.cc, $(wildcard src/*.cc))
 
 LS_QPACK_DIR = $(LIBDIR)/ls-qpack
 LS_HPACK_DIR = $(LIBDIR)/ls-hpack
@@ -26,15 +27,15 @@ LS_HPACK_BUILD = $(LS_HPACK_DIR)/build
 MSQUIC_BUILD = $(MSQUIC_DIR)/build
 
 # Compiler flags
-CXXFLAGS += -O0 -g -std=c++20 
-# -fsanitize=address  
+CXXFLAGS += -O3 -g -Wall -std=c++20 
+#-fsanitize=address  
 
 # Include directories
 CXXFLAGS += -I$(INCDIR)          
-CXXFLAGS += -I$(OPENSSL_DIR)
 CXXFLAGS += -I$(LS_QPACK_DIR)
 CXXFLAGS += -I$(LS_HPACK_DIR)
 CXXFLAGS += -I$(MSQUIC_DIR)/src/inc  
+
 
 # Library paths 
 LDFLAGS += -L$(LS_QPACK_BUILD)
@@ -44,6 +45,8 @@ LDFLAGS += -L$(MSQUIC_BUILD)/bin/Release
 # Linked libraries
 # LDFLAGS += -lasan
 # LDFLAGS += -lprofiler -ltcmalloc
+
+LDFLAGS += -lgtest -lgtest_main -pthread
 LDFLAGS += -lssl -lcrypto -lz
 LDFLAGS += -lmsquic
 LDFLAGS += -lls-qpack
@@ -69,6 +72,7 @@ HEADER_VALIDATOR_SRC = $(SRCDIR)/header_validator.cc
 
 STATIC_CONTENT_HANDLER_SRC = $(SRCDIR)/static_content_handler.cc
 
+DATABASE_SRC = $(SRCDIR)/database.cc
 HTTP3_FRAME_HANDLER_SRC = $(SRCDIR)/http3_frame_handler.cc
 
 TRANSPORT_SRC = $(SRCDIR)/transport.cc
@@ -108,6 +112,8 @@ HEADER_PARSER_OBJ = $(BUILDDIR)/header_parser.o
 HEADER_VALIDATOR_OBJ = $(BUILDDIR)/header_validator.o
 
 STATIC_CONTENT_HANDLER_OBJ = $(BUILDDIR)/static_content_handler.o
+
+DATABASE_OBJ = $(BUILDDIR)/database.o
 
 HTTP3_FRAME_HANDLER_OBJ = $(BUILDDIR)/http3_frame_handler.o
 
@@ -176,7 +182,7 @@ dependencies:
 	fi
 
 # Build the main executable
-server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(CLIENT_OBJ) $(CODEC_OBJ) $(HTTP2_FRAME_BUILDER_OBJ) $(HTTP2_FRAME_HANDLER_OBJ) $(TRANSPORT_OBJ) $(HEADER_PARSER_OBJ) $(HEADER_VALIDATOR_OBJ) $(HTTP3_FRAME_BUILDER_OBJ) $(HTTP3_FRAME_HANDLER_OBJ) $(TLS_MANAGER_OBJ) $(TCP_SERVER_OBJ) $(TCP_CLIENT_OBJ) $(QUIC_SERVER_OBJ) $(QUIC_CLIENT_OBJ) $(STATIC_CONTENT_HANDLER_OBJ)
+server: $(MAIN_OBJ) $(SERVER_OBJ) $(ROUTER_OBJ) $(ROUTES_OBJ) $(LOG_OBJ) $(UTILS_OBJ) $(CLIENT_OBJ) $(CODEC_OBJ) $(HTTP2_FRAME_BUILDER_OBJ) $(HTTP2_FRAME_HANDLER_OBJ) $(TRANSPORT_OBJ) $(HEADER_PARSER_OBJ) $(HEADER_VALIDATOR_OBJ) $(HTTP3_FRAME_BUILDER_OBJ) $(HTTP3_FRAME_HANDLER_OBJ) $(TLS_MANAGER_OBJ) $(TCP_SERVER_OBJ) $(TCP_CLIENT_OBJ) $(QUIC_SERVER_OBJ) $(QUIC_CLIENT_OBJ) $(DATABASE_OBJ) $(STATIC_CONTENT_HANDLER_OBJ)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Rules for building object files
@@ -222,6 +228,9 @@ $(HEADER_VALIDATOR_OBJ): $(HEADER_VALIDATOR_SRC) $(INCDIR)/header_validator.h
 $(STATIC_CONTENT_HANDLER_OBJ): $(STATIC_CONTENT_HANDLER_SRC) $(INCDIR)/static_content_handler.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+$(DATABASE_OBJ): $(DATABASE_SRC) $(INCDIR)/database.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
 $(HTTP3_FRAME_HANDLER_OBJ): $(HTTP3_FRAME_HANDLER_SRC) $(INCDIR)/http3_frame_handler.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
@@ -247,6 +256,7 @@ clean:
 	rm -f $(BUILDDIR)/*.o server client
 
 # Testing target 
-test:
-	$(CXX) $(CXXFLAGS) $(TESTDIR)/*.cc -o $(BUILDDIR)/tests && ./$(BUILDDIR)/tests
+test: $(TESTDIR)/*.cc $(TEST_SRCS)
+	$(CXX) $(CXXFLAGS) $^ -o $(BUILDDIR)/tests $(LDFLAGS)
+	./$(BUILDDIR)/tests
 

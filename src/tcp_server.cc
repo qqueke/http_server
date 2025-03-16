@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -17,6 +18,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include "../include/http2_frame_handler.h"
@@ -24,6 +26,7 @@
 #include "../include/tls_manager.h"
 #include "../include/utils.h"
 
+// #define ECHO
 extern bool shouldShutdown;
 
 static std::string threadSafeStrerror(int errnum) {
@@ -34,7 +37,9 @@ static std::string threadSafeStrerror(int errnum) {
 TcpServer::TcpServer(
     const std::shared_ptr<Router> &router,
     const std::shared_ptr<StaticContentHandler> &content_handler)
-    : router_(router), static_content_handler_(content_handler), socket_(-1),
+    : router_(router),
+      static_content_handler_(content_handler),
+      socket_(-1),
       socket_addr_(nullptr) {
   struct addrinfo hints{};
   memset(&hints, 0, sizeof(hints));
@@ -79,6 +84,15 @@ TcpServer::TcpServer(
   struct timeval timeout{};
   timeout.tv_sec = TIMEOUT_SECONDS;
 
+  if (setsockopt(socket_, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) ==
+      ERROR) {
+    LogError("Failed to set socket recv timeout");
+  }
+  if (setsockopt(socket_, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) ==
+      ERROR) {
+    LogError("Failed to set socket send timeout");
+  }
+
   int buffSize = 4 * 256 * 1024;
   if (setsockopt(socket_, SOL_SOCKET, SO_RCVBUF, &buffSize, sizeof(buffSize)) ==
       ERROR) {
@@ -96,9 +110,6 @@ TcpServer::TcpServer(
   frame_builder_ = std::make_shared<Http2FrameBuilder>();
 
   tls_manager_ = std::make_unique<TlsManager>(TlsMode::SERVER, 10);
-
-  (void)tls_manager_->LoadCertificates("certificates/server.crt",
-                                       "certificates/server.key");
 }
 
 TcpServer::~TcpServer() {
@@ -129,9 +140,6 @@ void TcpServer::AcceptConnections() {
       LogError("Poll error on main thread");
       continue;
     }
-
-    sockaddr clientAddr{};
-    socklen_t len = sizeof(clientAddr);
 
     struct sockaddr_storage peerAddr;
     socklen_t peerAddrLen = sizeof(peerAddr);
@@ -218,62 +226,140 @@ void TcpServer::HandleRequest(int client_socket) {
 
 void TcpServer::HandleHTTP1Request(SSL *ssl) {
   auto startTime = std::chrono::high_resolution_clock::now();
-  std::array<char, BUFFER_SIZE> buffer{};
-  std::string request;
-
-  std::string method{};
-  std::string path{};
-  std::string status{};
-
+  std::string headers{};
+  std::string body{};
+  std::unordered_map<std::string, std::string> headers_map{};
   // Just to not delete the while loop
-  bool keepAlive = true;
+  bool keep_alive = true;
+  std::vector<uint8_t> buffer(65535);
 
-  while (!shouldShutdown && keepAlive) {
-    keepAlive = false;
+  uint32_t read_offset = 0;
+  uint32_t write_offset = 0;
+  size_t n_readable_bytes = 0;
 
-    ssize_t n_bytes_recv = SSL_read(ssl, buffer.data(), BUFFER_SIZE);
+  HeaderParser header_parser;
 
-    if (n_bytes_recv == 0) {
-      LogError("Client closed the connection");
-      break;
-    } else if (n_bytes_recv < 0) {
-      LogError("Failed to receive data");
+  while (!shouldShutdown && keep_alive) {
+    keep_alive = false;
+    int n_bytes_recv = transport_->Read(ssl, buffer, write_offset);
+    if (n_bytes_recv <= 0) {
       break;
     }
+    write_offset = (write_offset + n_bytes_recv) % buffer.size();
 
-    request.append(buffer.data(), n_bytes_recv);
+    n_readable_bytes += static_cast<size_t>(n_bytes_recv);
 
-    while (n_bytes_recv == BUFFER_SIZE && !shouldShutdown) {
-      if (SSL_pending(ssl) == 0) {
-        LogError("No more data to read");
+    for (size_t i = read_offset; i < n_readable_bytes - 3; ++i) {
+      if (!headers_map.empty()) {
+        // Body is already available
+        if (static_cast<int64_t>(n_readable_bytes) ==
+            std::stol(headers_map["content-length"])) {
+          uint32_t end_read_offset =
+              (read_offset + n_readable_bytes) % buffer.size();
+
+          if (end_read_offset < read_offset) {
+            body = std::string(&buffer[read_offset], &buffer[buffer.size()]);
+            body += std::string(&buffer[0], &buffer[end_read_offset]);
+          } else {
+            body = std::string(&buffer[read_offset],
+                               &buffer[read_offset + n_readable_bytes]);
+          }
+
+#ifdef ECHO
+          std::cout << "HTTP1 Request:\n";
+          std::cout << headers << "\n" << body << std::endl;
+#endif
+
+          auto [res_headers, res_body] = router_.lock()->RouteRequest(
+              headers_map[":method"], headers_map[":path"], body);
+
+          std::string res = res_headers + res_body;
+
+          transport_->Send(static_cast<void *>(ssl),
+                           static_cast<void *>(res.data()), res.size());
+
+          read_offset += n_readable_bytes;
+          headers_map.clear();
+        }
+        break;
+      } else if (buffer[(i + 0) % buffer.size()] == '\r' &&
+                 buffer[(i + 1) % buffer.size()] == '\n' &&
+                 buffer[(i + 2) % buffer.size()] == '\r' &&
+                 buffer[(i + 3) % buffer.size()] == '\n') {
+        if (i % buffer.size() < static_cast<size_t>(read_offset)) {
+          headers = std::string(&buffer[read_offset], &buffer[buffer.size()]);
+          headers += std::string(&buffer[0], &buffer[i % buffer.size()]);
+        } else {
+          headers = std::string(&buffer[read_offset], &buffer[i]);
+        }
+
+        // Maybe we could just parse the headerrs instead of converting to
+        // pseudo headers but the bottleneck is still there for the handshakes
+        // and all
+        headers_map = header_parser.ConvertRequestToPseudoHeaders(
+            std::string_view(headers));
+
+        read_offset = (i + 4) % buffer.size();
+        n_readable_bytes -= headers.size() + 4;
+
+        if (headers_map.find("keep-alive") != headers_map.end()) {
+          keep_alive = true;
+        }
+
+        if (headers_map.find("connection") != headers_map.end() &&
+            headers_map["connection"] == "close") {
+          keep_alive = false;
+        }
+
+        // Not expecting body so we route and answer
+        if (headers_map.find("content-length") == headers_map.end()) {
+#ifdef ECHO
+          std::cout << "HTTP1 Request:\n";
+          std::cout << headers << "\n" << body << std::endl;
+#endif
+          auto [res_headers, res_body] = router_.lock()->RouteRequest(
+              headers_map[":method"], headers_map[":path"]);
+          std::string res = res_headers + res_body;
+          transport_->Send(static_cast<void *>(ssl),
+                           static_cast<void *>(res.data()), res.size());
+          headers_map.clear();
+          break;
+        }
+
+        // Body is already available
+        if (static_cast<int32_t>(n_readable_bytes) ==
+            std::stol(headers_map["content-length"])) {
+          uint32_t end_read_offset =
+              (read_offset + n_readable_bytes) % buffer.size();
+
+          if (end_read_offset < read_offset) {
+            body = std::string(&buffer[read_offset], &buffer[buffer.size()]);
+            body += std::string(&buffer[0], &buffer[end_read_offset]);
+          } else {
+            body = std::string(&buffer[read_offset], &buffer[end_read_offset]);
+          }
+
+#ifdef ECHO
+          std::cout << "HTTP1 Request:\n";
+          std::cout << headers << "\n" << body << std::endl;
+#endif
+          auto [res_headers, res_body] = router_.lock()->RouteRequest(
+              headers_map[":method"], headers_map[":path"], body);
+
+          std::string res = res_headers + res_body;
+
+          transport_->Send(static_cast<void *>(ssl),
+                           static_cast<void *>(res.data()), res.size());
+
+          read_offset = (read_offset + n_readable_bytes) % buffer.size();
+          headers_map.clear();
+        } else {
+          std::cout << "Body is not available yet\n";
+        }
+
         break;
       }
-
-      n_bytes_recv = SSL_read(ssl, buffer.data(), BUFFER_SIZE);
-      request.append(buffer.data(), n_bytes_recv);
     }
-
-    std::cout << "HTTP1 Request:\n" << request << std::endl;
-
-    std::string body;
-    bool accept_enc = false;
-
-    // ValidateHeadersTmp(request, method, path, body, accept_enc);
-
-    auto [headers, resBody] = router_.lock()->RouteRequest(method, path, body);
-
-    static constexpr std::string_view altSvcHeader =
-        "Alt-Svc: h3=\":4567\"; ma=86400\r\n";
-
-    size_t headerEnd = headers.find("\r\n\r\n");
-    if (headerEnd != std::string::npos) {
-      headers.insert(headerEnd + 2, altSvcHeader);
-    }
-
-    std::string response = headers + resBody;
-
-    std::vector<uint8_t> responseBytes(response.begin(), response.end());
-    transport_->Send(ssl, responseBytes);
   }
 
   // Timer should end  here and log it to the file
@@ -281,13 +367,13 @@ void TcpServer::HandleHTTP1Request(SSL *ssl) {
 
   std::chrono::duration<double> elapsed = endTime - startTime;
 
-  std::ostringstream logStream;
-  logStream << "Protocol: HTTP1 "
-            << "Method: " << method << " Path: " << path
-            << " Status: " << status << " Elapsed time: " << elapsed.count()
-            << " s";
-
-  LogRequest(logStream.str());
+  // std::ostringstream logStream;
+  // logStream << "Protocol: HTTP1 "
+  //           << "Method: " << method << " Path: " << path
+  //           << " Status: " << status << " Elapsed time: " << elapsed.count()
+  //           << " s";
+  //
+  // LogRequest(logStream.str());
 }
 
 void TcpServer::HandleHTTP2Request(SSL *ssl) {
@@ -295,34 +381,34 @@ void TcpServer::HandleHTTP2Request(SSL *ssl) {
       0x50, 0x52, 0x49, 0x20, 0x2A, 0x20, 0x48, 0x54, 0x54, 0x50, 0x2F, 0x32,
       0x2E, 0x30, 0x0D, 0x0A, 0x0D, 0x0A, 0x53, 0x4D, 0x0D, 0x0A, 0x0D, 0x0A};
 
-  std::vector<uint8_t> buffer;
-  buffer.reserve(65535);
+  std::vector<uint8_t> buffer(65535);
+  // buffer.reserve(65535);
 
   std::unique_ptr<Http2FrameHandler> frame_handler =
       std::make_unique<Http2FrameHandler>(buffer, transport_, frame_builder_,
                                           codec_, router_.lock(),
                                           static_content_handler_.lock());
 
-  bool receivedPreface = false;
+  bool received_preface = false;
 
-  bool goAway = false;
+  bool go_away = false;
 
-  int read_offset = 0;
-  int write_offset = 0;
+  uint32_t read_offset = 0;
+  uint32_t write_offset = 0;
   size_t n_readable_bytes = 0;
 
   // TODO(QQueke): Implement circular buffer
 
-  while (!shouldShutdown && !goAway) {
+  while (!shouldShutdown && !go_away) {
     int n_bytes_recv = transport_->Read(ssl, buffer, write_offset);
     if (n_bytes_recv == ERROR) {
       break;
     }
 
-    write_offset += n_bytes_recv;
+    write_offset = (write_offset + n_bytes_recv) % buffer.size();
     n_readable_bytes += static_cast<size_t>(n_bytes_recv);
 
-    if (!receivedPreface) {
+    if (!received_preface) {
       if (n_readable_bytes < PREFACE_LENGTH) {
         continue;
       }
@@ -339,50 +425,61 @@ void TcpServer::HandleHTTP2Request(SSL *ssl) {
 
       transport_->Send(ssl, frame_builder_->BuildFrame(Frame::SETTINGS));
 
-      receivedPreface = true;
+      received_preface = true;
       read_offset = PREFACE_LENGTH;
       n_readable_bytes -= PREFACE_LENGTH;
     }
 
     // If we received atleast the frame header
-    while (FRAME_HEADER_LENGTH <= n_readable_bytes && !goAway) {
-      uint8_t *framePtr = buffer.data() + read_offset;
-
-      uint32_t payload_size = (static_cast<uint32_t>(framePtr[0]) << 16) |
-                              (static_cast<uint32_t>(framePtr[1]) << 8) |
-                              static_cast<uint32_t>(framePtr[2]);
+    while (FRAME_HEADER_LENGTH <= n_readable_bytes && !go_away) {
+      uint32_t payload_size =
+          (static_cast<uint32_t>(buffer[(read_offset + 0) % buffer.size()])
+           << 16) |
+          (static_cast<uint32_t>(buffer[(read_offset + 1) % buffer.size()])
+           << 8) |
+          static_cast<uint32_t>(buffer[(read_offset + 2) % buffer.size()]);
 
       if (payload_size > MAX_PAYLOAD_FRAME_SIZE) {
-        goAway = true;
+        go_away = true;
         transport_->Send(
             ssl, frame_builder_->BuildFrame(Frame::GOAWAY, 0, 0,
                                             HTTP2ErrorCode::FRAME_SIZE_ERROR));
         break;
       }
 
-      uint8_t frame_type = framePtr[3];
+      if (payload_size + FRAME_HEADER_LENGTH > n_readable_bytes) {
+        // Not ready to process the payloads
+        break;
+      }
 
-      uint8_t frame_flags = framePtr[4];
+      uint8_t frame_type = buffer[(read_offset + 3) % buffer.size()];
 
-      uint32_t frame_stream = (framePtr[5] << 24) | (framePtr[6] << 16) |
-                              (framePtr[7] << 8) | framePtr[8];
+      uint8_t frame_flags = buffer[(read_offset + 4) % buffer.size()];
+
+      uint32_t frame_stream =
+          (buffer[(read_offset + 5) % buffer.size()] << 24) |
+          (buffer[(read_offset + 6) % buffer.size()] << 16) |
+          (buffer[(read_offset + 7) % buffer.size()] << 8) |
+          buffer[(read_offset + 8) % buffer.size()];
+
+      read_offset = (read_offset + FRAME_HEADER_LENGTH) % buffer.size();
 
       if (frame_handler->ProcessFrame(nullptr, frame_type, frame_stream,
                                       read_offset, payload_size, frame_flags,
                                       ssl) == ERROR) {
-        goAway = true;
+        go_away = true;
         break;
       }
 
       // Move the offset to the next frame
-      read_offset += static_cast<int>(FRAME_HEADER_LENGTH + payload_size);
+      read_offset = (read_offset + payload_size) % buffer.size();
 
       // Decrement readably bytes by the current frame size
       n_readable_bytes -=
           static_cast<size_t>(FRAME_HEADER_LENGTH + payload_size);
     }
 
-    if (n_readable_bytes == 0) {
+    if (static_cast<int32_t>(n_readable_bytes) == 0) {
       write_offset = 0;
       read_offset = 0;
     }

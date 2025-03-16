@@ -32,7 +32,6 @@
 #include "../include/static_content_handler.h"
 #include "../include/tcp_server.h"
 #include "../include/utils.h"
-
 // #define HTTP2_DEBUG
 
 bool shouldShutdown(false);
@@ -52,7 +51,8 @@ void HttpServer::Run() {
 }
 
 HttpServer::HttpServer(int argc, char *argv[]) {
-  router_ = std::make_shared<Router>();
+  db_ = Database::GetInstance();
+  router_ = std::make_shared<Router>(db_);
   static_content_handler_ = std::make_shared<StaticContentHandler>();
   tcp_server_ = std::make_unique<TcpServer>(router_, static_content_handler_);
   quic_server_ = std::make_unique<QuicServer>(router_, static_content_handler_,

@@ -39,6 +39,11 @@
   std::function<std::pair<std::string, std::string>( \
       const std::string &)> /**< Defines a route handler function type. */
 
+#define OPT_ROUTE_HANDLER                                                   \
+  std::function<                                                            \
+      std::pair<std::unordered_map<std::string, std::string>, std::string>( \
+          const std::string &)> /**< Defines a route handler function type. */
+
 #define STATUS_CODE std::string /**< Type alias for HTTP status codes. */
 
 /**

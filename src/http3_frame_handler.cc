@@ -5,6 +5,7 @@
 
 #include <fcntl.h>
 
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -13,6 +14,8 @@
 
 #include "../include/log.h"
 
+// #define HTTP3_DEBUG
+// #define ECHO
 static uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
                            const std::vector<uint8_t>::iterator &end) {
   // Check if there's enough data for at least the first byte
@@ -40,21 +43,6 @@ static uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
   }
 
   return value;
-}
-
-static void ValidatePseudoHeadersTmp(
-    std::unordered_map<std::string, std::string> &headers_map) {
-  static constexpr std::array<std::string_view, 3> requiredHeaders = {
-      ":method", ":scheme", ":path"};
-
-  for (const auto &header : requiredHeaders) {
-    if (headers_map.find(std::string(header)) == headers_map.end()) {
-      // LogError("Failed to validate pseudo-headers (missing header field)");
-      headers_map[":method"] = "BR";
-      headers_map[":path"] = "";
-      return;
-    }
-  }
 }
 
 bool Http3FrameHandler::static_init_;
@@ -170,13 +158,24 @@ int Http3FrameHandler::HandleRouterRequest(
     return ERROR;
   }
 
-  auto [headers, body] = router_ptr->RouteRequest(method, path, data);
+  std::string body;
 
-  // std::unordered_map<std::string, std::string> headers_map;
-  // headers_map.reserve(2);
+  std::unordered_map<std::string, std::string> res_headers_map;
 
-  std::unordered_map<std::string, std::string> res_headers_map =
-      header_parser_.ConvertResponseToPseudoHeaders(headers);
+  auto opt = router_ptr->OptRouteRequest(method, path, data);
+  if (opt) {
+    auto &[pseudo_headers, body_ref] = *opt;
+    res_headers_map = pseudo_headers;
+    body = body_ref;
+    res_headers_map["alt-svc"] = "h3=\":4567\"; ma=86400";
+  } else {
+    auto [headers, body_ref] = router_ptr->RouteRequest(method, path, data);
+    body = body_ref;
+    res_headers_map = header_parser_.ConvertResponseToPseudoHeaders(
+        std::string_view(headers));
+
+    res_headers_map["alt-svc"] = "h3=\":4567\"; ma=86400";
+  }
   std::vector<uint8_t> encoded_headers;
 
   auto codec_ptr = codec_.lock();
@@ -232,7 +231,7 @@ int Http3FrameHandler::AnswerRequest(
     return ERROR;
   }
 
-  ValidatePseudoHeadersTmp(headers_map);
+  header_parser_.ValidateRequestPseudoHeaders(headers_map);
 
   std::string &path = headers_map[":path"];
   std::string &method = headers_map[":method"];
@@ -268,10 +267,11 @@ int Http3FrameHandler::ProcessFrames(HQUIC &stream,
     uint64_t payload_size = ReadVarint(iter, stream_buffer.end());
 
     // Ensure the payload doesn't exceed the bounds of the buffer
-    if (std::distance(iter, stream_buffer.end()) < payload_size) {
-      LogError("Payload exceeds buffer bounds");
-      break;
-    }
+    // if (static_cast<uint64_t>(std::distance(iter, stream_buffer.end())) <
+    //     payload_size) {
+    //   LogError("Payload exceeds buffer bounds");
+    //   break;
+    // }
 
     ProcessFrame(stream, iter, frame_type, payload_size, headers_map, data);
 
@@ -308,37 +308,41 @@ int Http3FrameHandler::ProcessFrame(
     std::unordered_map<std::string, std::string> &headers_map,
     std::string &data) {
   switch (frame_type) {
-  case Frame::DATA:
-    // std::cout << "[strm][" << Stream << "] Received DATA frame\n";
-    // Data might have been transmitted over multiple frames
-    data += std::string(iter, iter + payload_size);
-    break;
+    case Frame::DATA:
+#ifdef HTTP3_DEBUG
+      std::cout << "[strm][" << stream << "] Received DATA frame\n";
+#endif
+      // Data might have been transmitted over multiple frames
+      data += std::string(iter, iter + payload_size);
+      break;
 
-  case Frame::HEADERS:
-    // std::cout << "[strm][" << Stream << "] Received HEADERS frame\n";
+    case Frame::HEADERS:
+#ifdef HTTP3_DEBUG
+      std::cout << "[strm][" << stream << "] Received Headers frame\n";
+#endif
 
-    {
-      std::vector<uint8_t> encoded_headers(iter, iter + payload_size);
+      {
+        std::vector<uint8_t> encoded_headers(iter, iter + payload_size);
 
-      // QuicClient::QPACK_DecodeHeaders(Stream, encoded_headers);
+        // QuicClient::QPACK_DecodeHeaders(Stream, encoded_headers);
 
-      auto codec_ptr = codec_.lock();
-      if (codec_ptr == nullptr) {
-        return ERROR;
+        auto codec_ptr = codec_.lock();
+        if (codec_ptr == nullptr) {
+          return ERROR;
+        }
+
+        // Kinda inefficient could change to get start and end ptr of the
+        // encoded headers in the stream_buffer
+        codec_ptr->Decode(static_cast<void *>(&stream), encoded_headers,
+                          headers_map);
       }
 
-      // Kinda inefficient could change to get start and end ptr of the
-      // encoded headers in the stream_buffer
-      codec_ptr->Decode(static_cast<void *>(&stream), encoded_headers,
-                        headers_map);
-    }
+      break;
 
-    break;
-
-  default:
-    std::cout << "[strm][" << stream << "] Unknown frame type: 0x" << std::hex
-              << frame_type << std::dec << "\n";
-    break;
+    default:
+      std::cout << "[strm][" << stream << "] Unknown frame type: 0x" << std::hex
+                << frame_type << std::dec << "\n";
+      break;
   }
 
   return 0;

@@ -68,12 +68,6 @@ class QuicClient {
   // Public member variables
 
   /**
-   * @brief A vector of request pairs where each pair represents a header and
-   * data for the request.
-   */
-  const std::vector<std::pair<std::string, std::string>> requests_;
-
-  /**
    * @brief A weak pointer to the router for routing QUIC frames.
    */
   std::weak_ptr<Router> router_;
@@ -97,6 +91,11 @@ class QuicClient {
 
  private:
   // Private member variables and constants
+
+  /**
+   * @brief The QUIC status code, used to report the status of QUIC operations.
+   */
+  QUIC_STATUS status_;
 
   /**
    * @brief The QUIC API/function table returned from MsQuicOpen2.
@@ -128,14 +127,15 @@ class QuicClient {
       "quicsample", QUIC_EXECUTION_PROFILE_LOW_LATENCY};
 
   /**
-   * @brief The QUIC status code, used to report the status of QUIC operations.
-   */
-  QUIC_STATUS status_;
-
-  /**
    * @brief A map holding buffers for each QUIC stream.
    */
   std::unordered_map<HQUIC, std::vector<uint8_t>> quic_buffer_map_;
+
+  /**
+   * @brief A vector of request pairs where each pair represents a header and
+   * data for the request.
+   */
+  const std::vector<std::pair<std::string, std::string>> requests_;
 
   /**
    * @brief Loads the QUIC client configuration from the provided arguments.

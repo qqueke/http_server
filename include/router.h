@@ -14,10 +14,13 @@
 #ifndef INCLUDE_ROUTER_H_
 #define INCLUDE_ROUTER_H_
 #include <functional>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
 
+#include "../include/database.h"
+#include "../include/routes.h"
 #include "../include/utils.h"
 
 /**
@@ -61,7 +64,7 @@ class Router {
   /**
    * @brief Default constructor for the `Router` class.
    */
-  Router();
+  explicit Router(const std::shared_ptr<Database> &db);
 
   /**
    * @brief Destructor for the `Router` class.
@@ -82,6 +85,8 @@ class Router {
   void AddRoute(const std::string &method, const std::string &path,
                 const ROUTE_HANDLER &handler);
 
+  void AddOptRoute(const std::string &method, const std::string &path,
+                   const OPT_ROUTE_HANDLER &handler);
   /**
    * @brief Routes a request to the appropriate handler.
    *
@@ -91,11 +96,29 @@ class Router {
    * @param method The HTTP method of the incoming request (e.g., "GET").
    * @param path The path of the incoming request (e.g., "/home").
    * @param data The optional request data (e.g., POST body, query parameters).
-   * @return A pair consisting of the response status and data.
+   * @return A pair consisting of the response headers and body.
    */
   std::pair<std::string, std::string> RouteRequest(
       const std::string &method, const std::string &path,
       const std::string &data = "");
+
+  /**
+   * @brief Routes a request to the appropriate handler.
+   *
+   * This method checks the request method and path, and if a matching route is
+   * found, it invokes the corresponding handler function.
+   *
+   * @param method The HTTP method of the incoming request (e.g., "GET").
+   * @param path The path of the incoming request (e.g., "/home").
+   * @param data The optional request data (e.g., POST body, query parameters).
+   * @return A pair consisting of the response headers and body.
+   */
+  std::optional<
+      std::pair<std::unordered_map<std::string, std::string>, std::string>>
+  OptRouteRequest(const std::string &method, const std::string &path,
+                  const std::string &data = "");
+
+  std::unique_ptr<Routes> routes_;
 
  private:
   /**
@@ -107,7 +130,22 @@ class Router {
    */
   std::unordered_map<std::pair<std::string, std::string>, ROUTE_HANDLER,
                      pair_hash>
-      routes_;
+      routes_map_;
+
+  /**
+   * @brief A map of routes, where each key is a pair of method and path, and
+   * the value is the corresponding route handler.
+   *
+   * This map stores all registered routes and allows quick lookup based on
+   * method and path.
+   */
+  std::unordered_map<std::pair<std::string, std::string>, OPT_ROUTE_HANDLER,
+                     pair_hash>
+      opt_routes_map_;
+
+  /** A weak pointer to the Database instance that manages database
+   * operations. */
+  std::weak_ptr<Database> db_;
 
   /**
    * @brief A static method that handles bad requests.
@@ -119,7 +157,20 @@ class Router {
    * @return A pair consisting of a status message ("400 Bad Request") and the
    * optional data.
    */
-  static std::pair<std::string, std::string> handleBadRequest(
+  static std::pair<std::unordered_map<std::string, std::string>, std::string>
+  OptHandleBadRequest(const std::string &data = "");
+
+  /**
+   * @brief A static method that handles bad requests.
+   *
+   * This method is used as the default handler for requests that do not match
+   * any registered route.
+   *
+   * @param data Optional data to return with the bad request response.
+   * @return A pair consisting of a status message ("400 Bad Request") and the
+   * optional data.
+   */
+  static std::pair<std::string, std::string> HandleBadRequest(
       const std::string &data = "");
 };
 

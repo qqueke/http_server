@@ -3,11 +3,13 @@
 
 #include "../include/http3_frame_builder.h"
 
+#include <iostream>
 #include <string>
 #include <vector>
 
 #include "../include/log.h"
 
+// This will change the vector size
 static void EncodeVarint(std::vector<uint8_t> &buffer, uint64_t value) {
   if (value <= 63) {
     buffer.emplace_back(static_cast<uint8_t>(value));
@@ -31,105 +33,91 @@ static void EncodeVarint(std::vector<uint8_t> &buffer, uint64_t value) {
   }
 }
 
-std::vector<uint8_t>
-Http3FrameBuilder::BuildFrame(Frame type, uint32_t stream_id,
-                              const std::vector<uint8_t> &encoded_headers,
-                              const std::string &data) {
+std::vector<uint8_t> Http3FrameBuilder::BuildFrame(
+    Frame type, uint32_t stream_id, const std::vector<uint8_t> &encoded_headers,
+    const std::string &data) {
   switch (type) {
-  case Frame::DATA:
-    return BuildDataFrame(data);
-  case Frame::HEADERS:
-    return BuildHeaderFrame(encoded_headers);
-  case Frame::GOAWAY:
-    return BuildGoAwayFrame(stream_id);
-  case Frame::SETTINGS:
-    return BuildSettingsFrame();
-  default:
-    return {};
+    case Frame::DATA:
+      return BuildDataFrame(data);
+    case Frame::HEADERS:
+      return BuildHeaderFrame(encoded_headers);
+    case Frame::GOAWAY:
+      return BuildGoAwayFrame(stream_id);
+    case Frame::SETTINGS:
+      return BuildSettingsFrame();
+    default:
+      return {};
   }
 }
 
-std::vector<uint8_t>
-Http3FrameBuilder::BuildDataFrame(const std::string &data) {
-  // Construct the frame header for Headers
+std::vector<uint8_t> Http3FrameBuilder::BuildDataFrame(
+    const std::string &data) {
   uint8_t frame_type = Frame::DATA;
+  std::vector<uint8_t> frame;
   uint32_t payload_size = data.size();
 
-  // Header Frame : Type, Length
-  std::vector<uint8_t> frame_header;
+  uint8_t frame_header_size{};
+  if (payload_size <= 63) {
+    frame_header_size = 2;
+  } else if (payload_size <= 16383) {
+    frame_header_size = 3;
+  } else if (payload_size <= 1073741823) {
+    frame_header_size = 5;
+  } else if (payload_size <= 4611686018427387903) {
+    frame_header_size = 9;
+  }
+
+  frame.reserve(frame_header_size + payload_size);
 
   // Encode the frame type (0x01 for HEADERS frame)
-  EncodeVarint(frame_header, frame_type);
+  EncodeVarint(frame, frame_type);
   // Encode the frame length (size of the payload)
-  EncodeVarint(frame_header, payload_size);
+  EncodeVarint(frame, payload_size);
 
-  // Frame payload for Headers
-  std::vector<uint8_t> framePayload(payload_size);
-  memcpy(framePayload.data(), data.c_str(), payload_size);
+  // Initialize the remaining size since memcpy does not
+  frame.resize(frame_header_size + payload_size);
 
-  // Combine the Frame Header and Payload into one buffer
-  uint32_t total_frame_size = frame_header.size() + framePayload.size();
-
-  // Complete Header frame (frame header + frame payload)
-  std::vector<uint8_t> frame(total_frame_size);
-  memcpy(frame.data(), frame_header.data(), frame_header.size());
-  memcpy(frame.data() + frame_header.size(), framePayload.data(), payload_size);
-
-  // std::vector<uint8_t> frame;
-  // frame.reserve();
-  // // Encode the frame type (0x01 for HEADERS frame)
-  // EncodeVarint(frame, frame_type);
-  // // Encode the frame length (size of the payload)
-  // EncodeVarint(frame, payload_size);
-  //
-  // frame.insert(frame.end(), data.begin(), data.end());
+  memcpy(frame.data() + frame_header_size, data.data(), payload_size);
 
   return frame;
 }
 
-std::vector<uint8_t>
-Http3FrameBuilder::BuildDataFrame(std::vector<uint8_t> bytes,
-                                  uint32_t payload_size) {
-  // Construct the frame header for Headers
+std::vector<uint8_t> Http3FrameBuilder::BuildDataFrame(
+    const std::vector<uint8_t> &bytes, uint32_t payload_size) {
   uint8_t frame_type = Frame::DATA;
 
-  // Header Frame : Type, Length
-  std::vector<uint8_t> frame_header;
+  uint8_t frame_header_size{};
+  if (payload_size <= 63) {
+    frame_header_size = 2;
+  } else if (payload_size <= 16383) {
+    frame_header_size = 3;
+  } else if (payload_size <= 1073741823) {
+    frame_header_size = 5;
+  } else if (payload_size <= 4611686018427387903) {
+    frame_header_size = 9;
+  }
 
-  // Encode the frame type (0x01 for HEADERS frame)
-  EncodeVarint(frame_header, frame_type);
+  std::vector<uint8_t> frame;
+  frame.reserve(frame_header_size + payload_size);
+
+  EncodeVarint(frame, frame_type);
   // Encode the frame length (size of the payload)
-  EncodeVarint(frame_header, payload_size);
+  EncodeVarint(frame, payload_size);
 
-  // Frame payload for Headers
-  std::vector<uint8_t> framePayload(payload_size);
-  memcpy(framePayload.data(), bytes.data(), payload_size);
+  // Initialize the remaining size since memcpy does not
+  frame.resize(frame_header_size + payload_size);
 
-  // Combine the Frame Header and Payload into one buffer
-  uint32_t total_frame_size = frame_header.size() + framePayload.size();
-
-  // Complete Header frame (frame header + frame payload)
-  std::vector<uint8_t> frame(total_frame_size);
-  memcpy(frame.data(), frame_header.data(), frame_header.size());
-  memcpy(frame.data() + frame_header.size(), framePayload.data(), payload_size);
-
-  // std::vector<uint8_t> frame;
-  // frame.reserve();
-  // // Encode the frame type (0x01 for HEADERS frame)
-  // EncodeVarint(frame, frame_type);
-  // // Encode the frame length (size of the payload)
-  // EncodeVarint(frame, payload_size);
-  //
-  // frame.insert(frame.end(), data.begin(), data.end());
+  memcpy(frame.data() + frame_header_size, bytes.data(), payload_size);
 
   return frame;
 }
 
-std::vector<std::vector<uint8_t>>
-Http3FrameBuilder::BuildDataFramesFromFile(int fd, uint64_t file_size) {
+std::vector<std::vector<uint8_t>> Http3FrameBuilder::BuildDataFramesFromFile(
+    int fd, uint64_t file_size) {
   std::vector<uint8_t> bytes(MAX_PAYLOAD_FRAME_SIZE);
 
   uint32_t n_required_frames = (file_size / MAX_PAYLOAD_FRAME_SIZE) + 1;
+
   std::vector<std::vector<uint8_t>> frames;
   frames.reserve(n_required_frames);
 
@@ -151,6 +139,10 @@ Http3FrameBuilder::BuildDataFramesFromFile(int fd, uint64_t file_size) {
     frames.emplace_back(BuildDataFrame(bytes, read_bytes));
   }
 
+  if (total_bytes_read != file_size) {
+    std::cout << "Missing: " << file_size - total_bytes_read << " bytes?\n";
+  }
+
   return frames;
 }
 
@@ -159,26 +151,26 @@ std::vector<uint8_t> Http3FrameBuilder::BuildHeaderFrame(
   uint8_t frame_type = Frame::HEADERS;
   size_t payload_size = encoded_headers.size();
 
-  // Header Frame : Type, Length
-  std::vector<uint8_t> frame_header;
+  uint8_t frame_header_size{};
+  if (payload_size <= 63) {
+    frame_header_size = 2;
+  } else if (payload_size <= 16383) {
+    frame_header_size = 3;
+  } else if (payload_size <= 1073741823) {
+    frame_header_size = 5;
+  } else if (payload_size <= 4611686018427387903) {
+    frame_header_size = 9;
+  }
 
-  // Encode the frame type (0x01 for HEADERS frame)
-  EncodeVarint(frame_header, frame_type);
-  // Encode the frame length (size of the payload)
-  EncodeVarint(frame_header, payload_size);
+  std::vector<uint8_t> frame;
+  frame.reserve(frame_header_size + payload_size);
 
-  // Frame payload for Headers
-  // std::vector<uint8_t> framePayload(payload_size);
-  // memcpy(framePayload.data(), encoded_headers.c_str(), payload_size);
+  EncodeVarint(frame, frame_type);
+  EncodeVarint(frame, payload_size);
 
-  // Combine the Frame Header and Payload into one buffer
-  size_t total_frame_size = frame_header.size() + payload_size;
+  frame.resize(frame_header_size + payload_size);
 
-  // Complete Header frame (frame header + frame payload)
-  std::vector<uint8_t> frame(total_frame_size);
-  frame.resize(total_frame_size);
-  memcpy(frame.data(), frame_header.data(), frame_header.size());
-  memcpy(frame.data() + frame_header.size(), encoded_headers.data(),
+  memcpy(frame.data() + frame_header_size, encoded_headers.data(),
          payload_size);
 
   return frame;
@@ -192,12 +184,13 @@ std::vector<uint8_t> Http3FrameBuilder::BuildGoAwayFrame(uint32_t stream_id) {
   uint32_t payload_size = 0;
 
   // Header Frame : Type, Length
-  std::vector<uint8_t> frame_header;
+  std::vector<uint8_t> frame;
+  frame.reserve(2);
 
   // Encode the frame type (0x01 for HEADERS frame)
-  EncodeVarint(frame_header, frame_type);
+  EncodeVarint(frame, frame_type);
   // Encode the frame length (size of the payload)
-  EncodeVarint(frame_header, payload_size);
+  EncodeVarint(frame, payload_size);
 
-  return frame_header;
+  return frame;
 }

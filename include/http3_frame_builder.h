@@ -68,7 +68,7 @@ class Http3FrameBuilder {
    * @param payload_size The size of the payload in the DATA frame.
    * @return A vector of bytes representing the constructed DATA frame.
    */
-  std::vector<uint8_t> BuildDataFrame(std::vector<uint8_t> bytes,
+  std::vector<uint8_t> BuildDataFrame(const std::vector<uint8_t> &bytes,
                                       uint32_t payload_size);
 
   /**

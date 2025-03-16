@@ -32,6 +32,8 @@
  */
 class HttpClient {
  public:
+  std::vector<QuicClient> quic_client_vector_;
+
   /**
    * @brief Constructs an HttpClient object.
    *
@@ -58,7 +60,7 @@ class HttpClient {
    * sent by the client. Each pair consists of a header field and its
    * corresponding value.
    */
-  std::vector<std::pair<std::string, std::string>> requests;
+  std::vector<std::pair<std::string, std::string>> requests_;
 
   /**
    * @brief Starts the HttpClient and processes the given arguments.
@@ -71,14 +73,6 @@ class HttpClient {
    */
   void Run(int argc, char *argv[]);
 
- private:
-  /** A unique pointer to the QuicClient instance used for QUIC-based requests.
-   */
-  std::unique_ptr<QuicClient> quic_client_;
-
-  /** A unique pointer to the TcpClient instance used for TCP-based requests. */
-  std::unique_ptr<TcpClient> tcp_client_;
-
   /**
    * @brief Parses HTTP request data from a file.
    *
@@ -88,6 +82,14 @@ class HttpClient {
    * @param file_path The path to the file containing HTTP request data.
    */
   void ParseRequestsFromFile(const std::string &file_path);
+
+ private:
+  /** A unique pointer to the QuicClient instance used for QUIC-based requests.
+   */
+  std::unique_ptr<QuicClient> quic_client_;
+
+  /** A unique pointer to the TcpClient instance used for TCP-based requests. */
+  std::unique_ptr<TcpClient> tcp_client_;
 };
 
 #endif  // INCLUDE_CLIENT_H_

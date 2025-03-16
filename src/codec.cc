@@ -118,13 +118,13 @@ void QpackCodec::Encode(
     std::vector<uint8_t> &encoded_headers) {
   HQUIC *stream = reinterpret_cast<HQUIC *>(context);
 
-  struct lsqpack_enc enc;
+  struct lsqpack_enc enc{};
 
   size_t stdcBufSize = 1024;
 
   std::vector<unsigned char> sdtcBuf(1024);
 
-  lsqpack_enc_opts encOpts{};
+  // lsqpack_enc_opts encOpts{};
 
   int ret =
       lsqpack_enc_init(&enc, nullptr, 0x1000, 0x1000, 0, LSQPACK_ENC_OPT_SERVER,
@@ -136,7 +136,7 @@ void QpackCodec::Encode(
   }
 
   uint64_t stream_id{};
-  uint32_t len = static_cast<uint32_t>(sizeof(stream_id));
+  auto len = static_cast<uint32_t>(sizeof(stream_id));
   if (QUIC_FAILED(ms_quic_->GetParam(*stream, QUIC_PARAM_STREAM_ID, &len,
                                      &stream_id))) {
     LogError("Failed to acquire stream id");
@@ -144,88 +144,89 @@ void QpackCodec::Encode(
 
   ret = lsqpack_enc_start_header(&enc, stream_id, 0);
 
-  enum lsqpack_enc_status encStatus;
-
   std::vector<std::pair<std::vector<unsigned char>, size_t>>
-      encoded_headersInfo;
+      encoded_headers_info;
   // Iterate through the headers_map and encode each header
 
-  size_t headerSize = 1024;
-  size_t totalHeaderSize = 0;
+  size_t header_size = 1024;
+  size_t total_headers_size = 0;
 
   // Status needs to be sent first (curl HTTP2 seems to not work otherwise)
   if (headers_map.find(":status") != headers_map.end()) {
     const std::string &name = ":status";
     const std::string &value = headers_map.at(":status");
 
-    std::string combinedHeader = name + ": " + value;
+    std::string combined_header = name + ": " + value;
 
-    struct lsxpack_header headerFormat;
-    lsxpack_header_set_offset2(&headerFormat, combinedHeader.c_str(), 0,
+    struct lsxpack_header header_format{};
+    lsxpack_header_set_offset2(&header_format, combined_header.c_str(), 0,
                                name.length(), name.length() + 2, value.size());
 
-    size_t encSize = 1024;
-    std::vector<unsigned char> encBuf(encSize);
+    size_t enc_size = 1024;
+    std::vector<unsigned char> encBuf(enc_size);
 
     lsqpack_enc_flags enc_flags{};
 
-    encoded_headersInfo.emplace_back(std::vector<unsigned char>(headerSize),
-                                     headerSize);
+    encoded_headers_info.emplace_back(std::vector<unsigned char>(header_size),
+                                      header_size);
 
-    encStatus = lsqpack_enc_encode(
-        &enc, encBuf.data(), &encSize, encoded_headersInfo.back().first.data(),
-        &encoded_headersInfo.back().second, &headerFormat, enc_flags);
+    // enum lsqpack_enc_status enc_status =
+    (void)lsqpack_enc_encode(&enc, encBuf.data(), &enc_size,
+                             encoded_headers_info.back().first.data(),
+                             &encoded_headers_info.back().second,
+                             &header_format, enc_flags);
 
-    totalHeaderSize += encoded_headersInfo.back().second;
+    total_headers_size += encoded_headers_info.back().second;
   }
 
   for (const auto &header : headers_map) {
-    if (header.first == ":status")
-      continue;
+    if (header.first == ":status") continue;
 
     const std::string &name = header.first;
     const std::string &value = header.second;
 
-    std::string combinedHeader = name + ": " + value;
+    std::string combined_header = name + ": " + value;
 
-    struct lsxpack_header headerFormat;
-    lsxpack_header_set_offset2(&headerFormat, combinedHeader.c_str(), 0,
+    struct lsxpack_header header_format;
+    lsxpack_header_set_offset2(&header_format, combined_header.c_str(), 0,
                                name.length(), name.length() + 2, value.size());
 
-    size_t encSize = 1024;
-    std::vector<unsigned char> encBuf(encSize);
+    size_t enc_size = 1024;
+    std::vector<unsigned char> enc_buf(enc_size);
 
     lsqpack_enc_flags enc_flags{};
 
-    encoded_headersInfo.emplace_back(std::vector<unsigned char>(headerSize),
-                                     headerSize);
+    encoded_headers_info.emplace_back(std::vector<unsigned char>(header_size),
+                                      header_size);
 
-    encStatus = lsqpack_enc_encode(
-        &enc, encBuf.data(), &encSize, encoded_headersInfo.back().first.data(),
-        &encoded_headersInfo.back().second, &headerFormat, enc_flags);
+    // enum lsqpack_enc_status enc_status =
 
-    totalHeaderSize += encoded_headersInfo.back().second;
+    (void)lsqpack_enc_encode(&enc, enc_buf.data(), &enc_size,
+                             encoded_headers_info.back().first.data(),
+                             &encoded_headers_info.back().second,
+                             &header_format, enc_flags);
+
+    total_headers_size += encoded_headers_info.back().second;
   }
 
-  std::vector<unsigned char> endHeaderBuf(headerSize);
+  std::vector<unsigned char> end_header_buf(header_size);
 
-  size_t endHeaderSize =
-      lsqpack_enc_end_header(&enc, endHeaderBuf.data(), headerSize, NULL);
+  size_t end_header_size =
+      lsqpack_enc_end_header(&enc, end_header_buf.data(), header_size, NULL);
 
-  totalHeaderSize += endHeaderSize;
+  total_headers_size += end_header_size;
 
-  encoded_headers.resize(totalHeaderSize);
-  const unsigned char *encoded_headersPtr = encoded_headers.data();
+  encoded_headers.resize(total_headers_size);
 
-  memcpy(encoded_headers.data(), endHeaderBuf.data(), endHeaderSize);
+  memcpy(encoded_headers.data(), end_header_buf.data(), end_header_size);
 
-  totalHeaderSize = endHeaderSize;
-  for (auto &headerInfo : encoded_headersInfo) {
+  total_headers_size = end_header_size;
+  for (auto &headerInfo : encoded_headers_info) {
     unsigned char *headerPointer = headerInfo.first.data();
     size_t currHeaderSize = headerInfo.second;
-    memcpy(encoded_headers.data() + totalHeaderSize, headerPointer,
+    memcpy(encoded_headers.data() + total_headers_size, headerPointer,
            currHeaderSize);
-    totalHeaderSize += currHeaderSize;
+    total_headers_size += currHeaderSize;
   }
 
   lsqpack_enc_cleanup(&enc);
@@ -292,11 +293,10 @@ void QpackCodec::Decode(
   const unsigned char *encoded_headersPtr = encoded_headers.data();
   size_t totalHeaderSize = encoded_headers.size();
 
-  enum lsqpack_read_header_status readStatus;
-
-  readStatus = lsqpack_dec_header_in(dec.data(), &blockCtx.back(), stream_id,
-                                     totalHeaderSize, &encoded_headersPtr,
-                                     totalHeaderSize, NULL, NULL);
+  // enum lsqpack_read_header_status read_status =
+  (void)lsqpack_dec_header_in(dec.data(), &blockCtx.back(), stream_id,
+                              totalHeaderSize, &encoded_headersPtr,
+                              totalHeaderSize, NULL, NULL);
 
   lsqpack_dec_cleanup(dec.data());
 }

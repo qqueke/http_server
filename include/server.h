@@ -27,6 +27,7 @@
 #include <memory>
 #include <string>
 
+#include "../include/database.h"
 #include "../include/quic_server.h"
 #include "../include/router.h"
 #include "../include/tcp_server.h"
@@ -84,6 +85,9 @@ class HttpServer {
    */
   void Run();
 
+  /** A shared pointer to the Router instance that manages request routing. */
+  std::shared_ptr<Router> router_;
+
  private:
   /** A unique pointer to the TcpServer instance. */
   std::unique_ptr<TcpServer> tcp_server_;
@@ -91,9 +95,9 @@ class HttpServer {
   /** A unique pointer to the QuicServer instance. */
   std::unique_ptr<QuicServer> quic_server_;
 
-  /** A shared pointer to the Router instance that manages request routing. */
-  std::shared_ptr<Router> router_;
-
+  /** A shared pointer to the Database instance that manages database
+   * operations. */
+  std::shared_ptr<Database> db_;
   /** A shared pointer to the StaticContentHandler used to serve static content.
    */
   std::shared_ptr<StaticContentHandler> static_content_handler_;

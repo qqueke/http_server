@@ -19,6 +19,8 @@
 #include <cstdint>
 #include <string>
 
+#include "utils.h"
+
 /**
  * @class StaticContentHandler
  * @brief Handles static content requests for file transfer and sets the
@@ -68,6 +70,13 @@ class StaticContentHandler {
    */
   std::string BuildHeadersForFileTransfer(std::string &file_path,
                                           uint64_t file_size);
+
+  static uint64_t CompressFileTmp(const std::string &in_file,
+                                  const char *out_file, CompressionType type);
+
+  static uint64_t TryCompressing(const std::string &file_path,
+                                 std::string_view encoding,
+                                 std::array<char, 128> &compressed_path);
 
  private:
   /**

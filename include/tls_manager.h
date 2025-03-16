@@ -20,6 +20,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 
 /**
@@ -98,7 +99,7 @@ class TlsManager {
    * @param socket The socket descriptor to associate with the SSL object.
    * @return A pointer to the created SSL object.
    */
-  SSL *CreateSSL(int socket);
+  SSL *CreateSSL(int socket, std::optional<bool> is_server = std::nullopt);
 
   /**
    * @brief Deletes an SSL object.
@@ -170,6 +171,9 @@ class TlsManager {
    */
   static constexpr std::array<unsigned char, 12> AlpnProtos = {
       2, 'h', '2', 8, 'h', 't', 't', 'p', '/', '1', '.', '1'};
+
+  // static constexpr std::array<unsigned char, 9> AlpnProtos = {
+  //     8, 'h', 't', 't', 'p', '/', '1', '.', '1'};
 
   /**
    * @brief Callback function for ALPN negotiation.

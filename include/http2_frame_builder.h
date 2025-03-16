@@ -81,7 +81,7 @@ class Http2FrameBuilder {
    * @param frame_flags The flags to apply to the DATA frame.
    * @return A vector of bytes representing the built DATA frame.
    */
-  std::vector<uint8_t> BuildDataFrame(std::vector<uint8_t> &bytes,
+  std::vector<uint8_t> BuildDataFrame(const std::vector<uint8_t> &bytes,
                                       uint32_t payload_size, uint32_t stream_id,
                                       uint8_t frame_flags);
 

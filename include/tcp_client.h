@@ -90,7 +90,7 @@ class TcpClient {
 
   /** A vector of request data containing HTTP request URLs and associated
    * headers. */
-  const std::vector<std::pair<std::string, std::string>> requests_;
+  std::vector<std::pair<std::string, std::string>> requests_;
 
   /**
    * @brief Sends an HTTP/1 request to the server.
@@ -112,6 +112,7 @@ class TcpClient {
    */
   void SendHttp2Request(SSL *client_ssl);
 
+  void RecvHttp1Response(SSL *ssl, std::mutex &conn_mutex);
   /**
    * @brief Receives an HTTP/2 response from the server.
    *

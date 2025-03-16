@@ -17,6 +17,7 @@
 #include <netinet/in.h>
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -130,6 +131,7 @@ class QuicServer {
   /** A map storing stream buffers associated with QUIC streams. */
   std::unordered_map<HQUIC, std::vector<uint8_t>> quic_buffer_map_;
 
+  std::unordered_map<HQUIC, std::mutex> quic_buffer_map_mutex_;
   /**
    * @brief Loads the server configuration from command-line arguments.
    *

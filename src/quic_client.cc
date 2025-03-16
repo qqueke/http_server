@@ -3,6 +3,8 @@
 
 #include "../include/quic_client.h"
 
+#include <msquic.h>
+
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -42,28 +44,13 @@ static std::vector<uint8_t> ReadResumptionTicketFromFile() {
   return {};
 }
 
-static void ValidatePseudoHeadersTmp(
-    std::unordered_map<std::string, std::string> &headers_map) {
-  static constexpr std::array<std::string_view, 3> requiredHeaders = {
-      ":method", ":scheme", ":path"};
-
-  for (const auto &header : requiredHeaders) {
-    if (headers_map.find(std::string(header)) == headers_map.end()) {
-      // LogError("Failed to validate pseudo-headers (missing header field)");
-      headers_map[":method"] = "BR";
-      headers_map[":path"] = "";
-      return;
-    }
-  }
-}
-
 const QUIC_API_TABLE *QuicClient::ms_quic_ = nullptr;
 HQUIC QuicClient::config_ = nullptr;
 
 QuicClient::QuicClient(
     int argc, char *argv[],
     const std::vector<std::pair<std::string, std::string>> &requests)
-    : requests_(requests), status_(0), secrets_(0) {
+    : status_(0), secrets_(0), requests_(requests) {
   // Open a handle to the library and get the API function table.
   if (QUIC_FAILED(status_ = MsQuicOpen2(&ms_quic_))) {
     printf("MsQuicOpen2 failed, 0x%x!\n", status_);
@@ -129,7 +116,7 @@ int QuicClient::LoadConfiguration(int argc, char *argv[]) {
   cred_config.Type = QUIC_CREDENTIAL_TYPE_NONE;
   cred_config.Flags = QUIC_CREDENTIAL_FLAG_CLIENT;
   if (unsecure) {
-    std::cout << "Unsecure connection\n";
+    // std::cout << "Unsecure connection\n";
     cred_config.Flags |= QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION;
   }
 
@@ -199,7 +186,7 @@ void QuicClient::Run(int argc, char *argv[]) {
       exit(EXIT_FAILURE);
     }
   } else if (!(ticket = ReadResumptionTicketFromFile()).empty()) {
-    std::cout << "Found ticket file\n";
+    // std::cout << "Found ticket file\n";
 
     if (QUIC_FAILED(Status = ms_quic_->SetParam(
                         Connection, QUIC_PARAM_CONN_RESUMPTION_TICKET,
@@ -237,7 +224,7 @@ void QuicClient::Run(int argc, char *argv[]) {
     exit(EXIT_FAILURE);
   }
 
-  printf("[conn][%p] Connecting...\n", Connection);
+  // printf("[conn][%p] Connecting...\n", Connection);
 
   // Start the connection to the server.
   if (QUIC_FAILED(Status = ms_quic_->ConnectionStart(Connection, config_,
@@ -255,70 +242,83 @@ void QuicClient::QuicSend(_In_ HQUIC Connection, void *Context) {
   QuicClient *client = reinterpret_cast<QuicClient *>(Context);
   QUIC_STATUS Status;
 
-  int i = 0;
-  std::vector<HQUIC> Streams(client->requests_.size());
+  // int i = 0;
+  std::vector<HQUIC> Streams(10000);
 
-  for (auto &[headers, body] : client->requests_) {
-    HQUIC &Stream = Streams[i++];
+  HeaderParser parser;
 
-    // Create/allocate a new bidirectional stream. The stream is just
-    // allocated and no QUIC stream identifier is assigned until it's
-    // started.
-    // QUIC_STREAM_OPEN_FLAG_UNIDIRECTIONAL
-    if (QUIC_FAILED(Status = ms_quic_->StreamOpen(
-                        Connection, QUIC_STREAM_OPEN_FLAG_NONE,
-                        QuicClient::StreamCallback, Context, &Stream))) {
-      printf("StreamOpen failed, 0x%x!\n", Status);
-      if (QUIC_FAILED(Status)) {
-        ms_quic_->ConnectionShutdown(Connection,
-                                     QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+  // std::cout << "Requests:\n";
+
+  for (int i = 0; i < static_cast<int>(Streams.size()); ++i) {
+    for (auto &[headers, body] : client->requests_) {
+      HQUIC &Stream = Streams[i];
+
+      // std::cout << headers << std::endl;
+      // Create/allocate a new bidirectional stream. The stream is just
+      // allocated and no QUIC stream identifier is assigned until it's
+      // started.
+      // QUIC_STREAM_OPEN_FLAG_UNIDIRECTIONAL
+      if (QUIC_FAILED(Status = ms_quic_->StreamOpen(
+                          Connection, QUIC_STREAM_OPEN_FLAG_NONE,
+                          QuicClient::StreamCallback, Context, &Stream))) {
+        printf("StreamOpen failed, 0x%x!\n", Status);
+        if (QUIC_FAILED(Status)) {
+          ms_quic_->ConnectionShutdown(Connection,
+                                       QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+        }
       }
-    }
 
 #ifdef QUIC_DEBUG
-    printf("[strm][%p] Starting Stream...\n", Stream);
+      printf("[strm][%p] Starting Stream...\n", Stream);
 #endif
-    // Starts the stream. By default, the peer is not notified of
-    // the stream being started until data is sent on the stream.
-    // QUIC_STREAM_START_FLAG_NONE
-    // QUIC_STREAM_START_FLAG_IMMEDIATE
-    if (QUIC_FAILED(Status = ms_quic_->StreamStart(
-                        Stream, QUIC_STREAM_START_FLAG_NONE))) {
-      printf("StreamStart failed, 0x%x!\n", Status);
+      // Starts the stream. By default, the peer is not notified of
+      // the stream being started until data is sent on the stream.
+      // QUIC_STREAM_START_FLAG_NONE
+      // QUIC_STREAM_START_FLAG_IMMEDIATE
+      if (QUIC_FAILED(Status = ms_quic_->StreamStart(
+                          Stream, QUIC_STREAM_START_FLAG_NONE))) {
+        printf("StreamStart failed, 0x%x!\n", Status);
 
-      ms_quic_->StreamClose(Stream);
-      if (QUIC_FAILED(Status)) {
-        ms_quic_->ConnectionShutdown(Connection,
-                                     QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
-        return;
-      }
-    }
-
-    {
-      HeaderParser parser;
-      std::unordered_map<std::string, std::string> headers_map =
-          parser.ConvertRequestToPseudoHeaders(headers);
-
-      std::vector<uint8_t> encoded_headers;
-
-      uint64_t stream_id{};
-      uint32_t len = static_cast<uint32_t>(sizeof(stream_id));
-      if (QUIC_FAILED(ms_quic_->GetParam(Stream, QUIC_PARAM_STREAM_ID, &len,
-                                         &stream_id))) {
-        LogError("Failed to acquire stream id");
+        ms_quic_->StreamClose(Stream);
+        if (QUIC_FAILED(Status)) {
+          ms_quic_->ConnectionShutdown(Connection,
+                                       QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+          return;
+        }
       }
 
-      client->codec_->Encode(&Stream, headers_map, encoded_headers);
-      // Put header frame and data frames in frames response
-      std::vector<std::vector<uint8_t>> frames;
+      {
+        std::unordered_map<std::string, std::string> headers_map =
+            parser.ConvertRequestToPseudoHeaders(headers);
 
-      frames.emplace_back(client->frame_builder_->BuildFrame(Frame::HEADERS, 0,
-                                                             encoded_headers));
+        std::vector<uint8_t> encoded_headers;
 
-      frames.emplace_back(
-          client->frame_builder_->BuildFrame(Frame::DATA, 0, {}, body));
+        uint64_t stream_id{};
+        uint32_t len = static_cast<uint32_t>(sizeof(stream_id));
+        if (QUIC_FAILED(ms_quic_->GetParam(Stream, QUIC_PARAM_STREAM_ID, &len,
+                                           &stream_id))) {
+          LogError("Failed to acquire stream id");
+        }
 
-      client->transport_->SendBatch(Stream, frames);
+        client->codec_->Encode(&Stream, headers_map, encoded_headers);
+        // Put header frame and data frames in frames response
+
+        client->transport_->Send(Stream,
+                                 client->frame_builder_->BuildFrame(
+                                     Frame::HEADERS, 0, encoded_headers),
+                                 QUIC_SEND_FLAG_FIN);
+
+        // std::vector<std::vector<uint8_t>> frames;
+        //
+        // frames.emplace_back(client->frame_builder_->BuildFrame(Frame::HEADERS,
+        // 0,
+        //                                                        encoded_headers));
+        //
+        // frames.emplace_back(
+        //     client->frame_builder_->BuildFrame(Frame::DATA, 0, {}, body));
+        //
+        // client->transport_->SendBatch(Stream, frames);
+      }
     }
   }
 }
@@ -431,9 +431,11 @@ static void SaveResumptionTicketToFile(const uint8_t *resumptionTicket,
     outFile.write(reinterpret_cast<const char *>(resumptionTicket),
                   ticketLength);
     outFile.close();
-    std::cout << "Resumption ticket saved to file: " << filename << std::endl;
+    // std::cout << "Resumption ticket saved to file: " << filename <<
+    // std::endl;
   } else {
-    std::cout << "Failed to open file for writing: " << filename << std::endl;
+    // std::cout << "Failed to open file for writing: " << filename <<
+    // std::endl;
   }
 }
 
@@ -468,6 +470,8 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
       // The connection has been shut down by the transport. Generally, this
       // is the expected way for the connection to shut down with this
       // protocol, since we let idle timeout kill the connection.
+
+#ifdef HTTP3_DEBUG
       if (Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status ==
           QUIC_STATUS_CONNECTION_IDLE) {
         printf("[conn][%p] Successfully shut down on idle.\n", Connection);
@@ -475,6 +479,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
         printf("[conn][%p] Shut down by transport, 0x%x\n", Connection,
                Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status);
       }
+#endif
       break;
     case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
 #ifdef QUIC_DEBUG

@@ -19,12 +19,14 @@
 // #include "ssl.h"
 
 TcpTransport::TcpTransport()
-    : _retry_count_(MAX_RETRIES), _sendDelayMS_(SEND_DELAY_MS),
+    : _retry_count_(MAX_RETRIES),
+      _sendDelayMS_(SEND_DELAY_MS),
       _recvDelayMS_(RECV_DELAY_MS) {}
 
 TcpTransport::TcpTransport(uint32_t retry_count, uint32_t sendDelayMS,
                            uint32_t recvDelayMS)
-    : _retry_count_(retry_count), _sendDelayMS_(sendDelayMS),
+    : _retry_count_(retry_count),
+      _sendDelayMS_(sendDelayMS),
       _recvDelayMS_(recvDelayMS) {}
 
 int TcpTransport::SendBatch(void *connection,
@@ -48,15 +50,15 @@ int TcpTransport::SendFile(void *connection, int fd) {
   SSL *ssl = static_cast<SSL *>(connection);
 
   uint32_t retry_count = 0;
-  size_t totalBytesSent = 0;
+  int64_t totalBytesSent = 0;
 
-  int file_size = file_stats.st_size;
+  int64_t file_size = file_stats.st_size;
 
   if (BIO_get_ktls_send(SSL_get_wbio(ssl))) {
     while (totalBytesSent < file_size) {
       int sentBytes =
-          SSL_sendfile(ssl, fd, totalBytesSent,
-                       static_cast<int>(file_size - totalBytesSent), 0);
+          SSL_sendfile(ssl, fd, static_cast<int64_t>(totalBytesSent),
+                       static_cast<size_t>(file_size - totalBytesSent), 0);
 
       if (sentBytes > 0) {
         totalBytesSent += sentBytes;
@@ -83,9 +85,9 @@ int TcpTransport::SendFile(void *connection, int fd) {
   std::vector<uint8_t> bytes(file_size);
 
   int read_bytes = 0;
-  while (read_bytes = read(fd, bytes.data(), bytes.size()) > 0) {
+  while ((read_bytes = read(fd, bytes.data(), bytes.size())) > 0) {
     totalBytesSent = 0;
-    while (totalBytesSent < read_bytes) {
+    while (static_cast<int>(totalBytesSent) < read_bytes) {
       int sentBytes = SSL_write(ssl, bytes.data() + totalBytesSent,
                                 static_cast<int>(read_bytes - totalBytesSent));
 

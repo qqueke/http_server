@@ -4,17 +4,18 @@
 #include <memory.h>
 
 #include <csignal>
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <ostream>
 #include <thread>
 
 #include "../include/client.h"
+// #include "../include/database.h"
 #include "../include/log.h"
-// #include "../include/routes.cc"
+#include "../include/routes.h"
 #include "../include/server.h"
 #include "../include/utils.h"
-
 // void startProfiling() { ProfilerStart("my_profiler_output.prof"); }
 // void stopProfiling() { ProfilerStop(); }
 
@@ -35,7 +36,9 @@ static void signalHandler(int signal) {
 }
 
 int main(int argc, char *argv[]) {
-  // startProfiling();
+  {
+    std::shared_ptr db = Database::GetInstance();
+  }
 
   if (GetFlag(argc, argv, "help") || GetFlag(argc, argv, "?")) {
     PrintUsage();
@@ -43,9 +46,18 @@ int main(int argc, char *argv[]) {
     std::unique_ptr<HttpClient> client =
         std::make_unique<HttpClient>(argc, argv);
 
+    auto startTime = std::chrono::high_resolution_clock::now();
+
     client->Run(argc, argv);
 
     getchar();
+
+    auto endTime = std::chrono::high_resolution_clock::now();
+
+    std::chrono::duration<double> elapsed = endTime - startTime;
+
+    std::cout << "Elapsed time: " << elapsed.count() << " s\n";
+
   } else if (GetFlag(argc, argv, "server")) {
     signal(SIGPIPE, SIG_IGN);
     signal(SIGINT, signalHandler);
@@ -55,8 +67,13 @@ int main(int argc, char *argv[]) {
       std::shared_ptr<HttpServer> server =
           std::make_shared<HttpServer>(argc, argv);
 
-      std::thread([]() { periodicFlush(); }).detach();
+      server->AddRoute("GET", "/hello", server->router_->routes_->HelloHandler);
+      server->AddRoute("POST", "/echo", server->router_->routes_->EchoHandler);
+      server->AddRoute("POST", "/user", server->router_->routes_->AddUser);
+      server->AddRoute("DELETE", "/user", server->router_->routes_->DeleteUser);
+      server->AddRoute("GET", "/user", server->router_->routes_->SearchUser);
 
+      std::thread([]() { periodicFlush(); }).detach();
       std::cout << "Server started, press Ctrl+C to stop.\n";
 
       server->Run();
