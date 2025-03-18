@@ -2,6 +2,8 @@
 
 This is a simple HTTP server implementation with SSL/TLS support using OpenSSL, `ls-qpack`, and `msquic`. It includes both server and client functionalities.
 
+![Alt Text](https://raw.githubusercontent.com/qqueke/http_server/refs/heads/gRpc/images/Server%20architecture.svg)
+
 ## Requirements
 
 - **Linux** (other OS may work, but this has been tested on Linux)
