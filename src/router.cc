@@ -12,8 +12,8 @@
 #include "../include/utils.h"
 
 // Default initializer adds default routes
-Router::Router(const std::shared_ptr<Database> &db) : db_(db) {
-  routes_ = std::make_unique<Routes>(db);
+Router::Router() {
+  routes_ = std::make_unique<Routes>();
   AddRoute("BR", "", HandleBadRequest);
   AddOptRoute("BR", "", OptHandleBadRequest);
 }

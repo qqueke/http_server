@@ -15,11 +15,11 @@
 #define INCLUDE_ROUTER_H_
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
 
-#include "../include/database.h"
 #include "../include/routes.h"
 #include "../include/utils.h"
 
@@ -64,7 +64,7 @@ class Router {
   /**
    * @brief Default constructor for the `Router` class.
    */
-  explicit Router(const std::shared_ptr<Database> &db);
+  explicit Router();
 
   /**
    * @brief Destructor for the `Router` class.
@@ -142,10 +142,6 @@ class Router {
   std::unordered_map<std::pair<std::string, std::string>, OPT_ROUTE_HANDLER,
                      pair_hash>
       opt_routes_map_;
-
-  /** A weak pointer to the Database instance that manages database
-   * operations. */
-  std::weak_ptr<Database> db_;
 
   /**
    * @brief A static method that handles bad requests.

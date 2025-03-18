@@ -12,7 +12,7 @@
 #include <sstream>
 #include <vector>
 
-#include "../include/http3_frame_handler.h"
+#include "../include/http3_request_handler.h"
 #include "../include/log.h"
 
 const QUIC_API_TABLE *QuicServer::ms_quic_ = nullptr;
@@ -20,10 +20,11 @@ HQUIC QuicServer::config_ = nullptr;
 
 QuicServer::QuicServer(
     const std::shared_ptr<Router> &router,
-    const std::shared_ptr<StaticContentHandler> &content_handler, int argc,
-    char *argv[])
+    const std::shared_ptr<StaticContentHandler> &content_handler,
+    const std::shared_ptr<DatabaseHandler> &db_handler, int argc, char *argv[])
     : router_(router),
       static_content_handler_(content_handler),
+      database_handler_(db_handler),
       status_(0),
       listener_(nullptr) {
   // Open a handle to the library and get the API function table.
@@ -278,14 +279,16 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
       }
 
       {
-        std::unique_ptr<Http3FrameHandler> frame_handler =
+        std::unique_ptr<Http3FrameHandler> request_handler =
             std::make_unique<Http3FrameHandler>(
                 server->transport_, server->frame_builder_, server->codec_,
-                server->router_.lock(), server->static_content_handler_.lock());
+                server->router_.lock(), server->static_content_handler_.lock(),
+                server->database_handler_.lock());
 
         // Should buffer per connection and eventually stream not just stream in
         // case it gets reused no?
-        frame_handler->ProcessFrames(Stream, server->quic_buffer_map_[Stream]);
+        request_handler->ProcessFrames(Stream,
+                                       server->quic_buffer_map_[Stream]);
       }
 
       // Freed here

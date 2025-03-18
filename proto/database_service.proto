@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+message Query {
+  string operation = 1;
+  string table = 2;
+  string data = 3;
+}
+
+message Status {
+  int32 value = 1;
+}
+
+service DatabaseService {
+  rpc ProcessQuery(Query) returns (Status) {}
+}

@@ -11,7 +11,6 @@
 #include <thread>
 
 #include "../include/client.h"
-// #include "../include/database.h"
 #include "../include/log.h"
 #include "../include/routes.h"
 #include "../include/server.h"
@@ -36,10 +35,6 @@ static void signalHandler(int signal) {
 }
 
 int main(int argc, char *argv[]) {
-  {
-    std::shared_ptr db = Database::GetInstance();
-  }
-
   if (GetFlag(argc, argv, "help") || GetFlag(argc, argv, "?")) {
     PrintUsage();
   } else if (GetFlag(argc, argv, "client")) {
@@ -69,9 +64,6 @@ int main(int argc, char *argv[]) {
 
       server->AddRoute("GET", "/hello", server->router_->routes_->HelloHandler);
       server->AddRoute("POST", "/echo", server->router_->routes_->EchoHandler);
-      server->AddRoute("POST", "/user", server->router_->routes_->AddUser);
-      server->AddRoute("DELETE", "/user", server->router_->routes_->DeleteUser);
-      server->AddRoute("GET", "/user", server->router_->routes_->SearchUser);
 
       std::thread([]() { periodicFlush(); }).detach();
       std::cout << "Server started, press Ctrl+C to stop.\n";

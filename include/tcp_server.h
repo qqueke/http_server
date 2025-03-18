@@ -20,6 +20,7 @@
 #include <memory>
 
 #include "../include/codec.h"
+#include "../include/database_handler.h"
 #include "../include/http2_frame_builder.h"
 #include "../include/router.h"
 #include "../include/static_content_handler.h"
@@ -51,7 +52,8 @@ class TcpServer {
    */
   explicit TcpServer(
       const std::shared_ptr<Router> &router,
-      const std::shared_ptr<StaticContentHandler> &content_handler);
+      const std::shared_ptr<StaticContentHandler> &content_handler,
+      const std::shared_ptr<DatabaseHandler> &db_handler);
 
   /**
    * @brief Destroys the TcpServer object.
@@ -92,6 +94,10 @@ class TcpServer {
   /** A weak pointer to the static content handler used for serving static
    * files. */
   std::weak_ptr<StaticContentHandler> static_content_handler_;
+
+  /** A weak pointer to the static content handler used for serving static
+   * files. */
+  std::weak_ptr<DatabaseHandler> database_handler_;
 
   /** The socket used to listen for incoming connections. */
   int socket_;

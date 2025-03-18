@@ -2,7 +2,7 @@
 // Some portions of this file may be subject to third-party copyrights.
 
 /**
- * @file http2_frame_handler.h
+ * @file http2_request_handler.h
  * @brief Defines the `IHttp2FrameHandler` interface and `Http2FrameHandler`
  * class for handling HTTP/2 frames and their processing.
  *
@@ -13,8 +13,8 @@
  * handle different frame types.
  */
 
-#ifndef INCLUDE_HTTP2_FRAME_HANDLER_H_
-#define INCLUDE_HTTP2_FRAME_HANDLER_H_
+#ifndef INCLUDE_HTTP2_REQUEST_HANDLER_H_
+#define INCLUDE_HTTP2_REQUEST_HANDLER_H_
 
 #include <cstdint>
 #include <memory>
@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "../include/codec.h"
+#include "../include/database_handler.h"
 #include "../include/header_parser.h"
 #include "../include/http2_frame_builder.h"
 #include "../include/router.h"
@@ -235,7 +236,8 @@ class Http2FrameHandler : IHttp2FrameHandler {
       const std::shared_ptr<Http2FrameBuilder> &frame_builder,
       const std::shared_ptr<HpackCodec> &hpack_codec,
       const std::shared_ptr<Router> &router = nullptr,
-      const std::shared_ptr<StaticContentHandler> &content_handler = nullptr);
+      const std::shared_ptr<StaticContentHandler> &content_handler = nullptr,
+      const std::shared_ptr<DatabaseHandler> &db_handler = nullptr);
 
   /**
    * @brief Destructor for cleaning up resources.
@@ -293,12 +295,14 @@ class Http2FrameHandler : IHttp2FrameHandler {
       const std::shared_ptr<Http2FrameBuilder> &frame_builder,
       const std::shared_ptr<HpackCodec> &hpack_codec,
       const std::shared_ptr<Router> &router = nullptr,
-      const std::shared_ptr<StaticContentHandler> &content_handler = nullptr);
+      const std::shared_ptr<StaticContentHandler> &content_handler = nullptr,
+      const std::shared_ptr<DatabaseHandler> &db_handler = nullptr);
 
   // Static members for shared resources.
   static bool static_init_;
   static std::weak_ptr<Router> router_;
   static std::weak_ptr<StaticContentHandler> static_content_handler_;
+  static std::weak_ptr<DatabaseHandler> database_handler_;
   static std::weak_ptr<TcpTransport> transport_;
   static std::weak_ptr<Http2FrameBuilder> frame_builder_;
   static std::weak_ptr<HpackCodec> codec_;
@@ -325,6 +329,24 @@ class Http2FrameHandler : IHttp2FrameHandler {
    */
   std::vector<uint8_t> EncodeHeaders(
       const std::unordered_map<std::string, std::string> &headers_map);
+
+  /**
+   * @brief Handles a router request and forwards it to the appropriate handler.
+   *
+   * @param frame_stream The stream ID of the frame.
+   * @param ssl SSL context for secure processing.
+   * @param frame_builder_ptr Shared pointer to the frame builder.
+   * @param transport_ptr Shared pointer to the transport layer.
+   * @param method The HTTP method used in the request.
+   * @param path The requested path.
+   * @param data The request data.
+   * @return int Status code indicating success or failure.
+   */
+  int HandleRouterRequest(
+      uint32_t frame_stream, SSL *ssl,
+      const std::shared_ptr<Http2FrameBuilder> &frame_builder_ptr,
+      const std::shared_ptr<TcpTransport> &transport_ptr, std::string &method,
+      std::string &path, const std::string &data);
 
   /**
    * @brief Handles static content requests.
@@ -365,7 +387,8 @@ class Http2FrameHandler : IHttp2FrameHandler {
       std::string &path, std::mutex &mut);
 
   /**
-   * @brief Handles a router request and forwards it to the appropriate handler.
+   * @brief Handles a database request and forwards it to the appropriate
+   * handler.
    *
    * @param frame_stream The stream ID of the frame.
    * @param ssl SSL context for secure processing.
@@ -376,7 +399,7 @@ class Http2FrameHandler : IHttp2FrameHandler {
    * @param data The request data.
    * @return int Status code indicating success or failure.
    */
-  int HandleRouterRequest(
+  int HandleDatabaseRequest(
       uint32_t frame_stream, SSL *ssl,
       const std::shared_ptr<Http2FrameBuilder> &frame_builder_ptr,
       const std::shared_ptr<TcpTransport> &transport_ptr, std::string &method,
@@ -504,4 +527,4 @@ class Http2FrameHandler : IHttp2FrameHandler {
                               uint8_t frame_flags, SSL *ssl, std::mutex &mut);
 };
 
-#endif  // INCLUDE_HTTP2_FRAME_HANDLER_H_
+#endif  // INCLUDE_HTTP2_REQUEST_HANDLER_H_

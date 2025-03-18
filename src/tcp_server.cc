@@ -21,7 +21,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "../include/http2_frame_handler.h"
+#include "../include/database_handler.h"
+#include "../include/http2_request_handler.h"
 #include "../include/log.h"
 #include "../include/tls_manager.h"
 #include "../include/utils.h"
@@ -36,9 +37,11 @@ static std::string threadSafeStrerror(int errnum) {
 
 TcpServer::TcpServer(
     const std::shared_ptr<Router> &router,
-    const std::shared_ptr<StaticContentHandler> &content_handler)
+    const std::shared_ptr<StaticContentHandler> &content_handler,
+    const std::shared_ptr<DatabaseHandler> &db_handler)
     : router_(router),
       static_content_handler_(content_handler),
+      database_handler_(db_handler),
       socket_(-1),
       socket_addr_(nullptr) {
   struct addrinfo hints{};
@@ -241,7 +244,7 @@ void TcpServer::HandleHTTP1Request(SSL *ssl) {
 
   while (!shouldShutdown && keep_alive) {
     keep_alive = false;
-    int n_bytes_recv = transport_->Read(ssl, buffer, write_offset);
+    int n_bytes_recv = transport_->Recv(ssl, buffer, write_offset);
     if (n_bytes_recv <= 0) {
       break;
     }
@@ -384,10 +387,10 @@ void TcpServer::HandleHTTP2Request(SSL *ssl) {
   std::vector<uint8_t> buffer(65535);
   // buffer.reserve(65535);
 
-  std::unique_ptr<Http2FrameHandler> frame_handler =
-      std::make_unique<Http2FrameHandler>(buffer, transport_, frame_builder_,
-                                          codec_, router_.lock(),
-                                          static_content_handler_.lock());
+  std::unique_ptr<Http2FrameHandler> request_handler =
+      std::make_unique<Http2FrameHandler>(
+          buffer, transport_, frame_builder_, codec_, router_.lock(),
+          static_content_handler_.lock(), database_handler_.lock());
 
   bool received_preface = false;
 
@@ -400,7 +403,7 @@ void TcpServer::HandleHTTP2Request(SSL *ssl) {
   // TODO(QQueke): Implement circular buffer
 
   while (!shouldShutdown && !go_away) {
-    int n_bytes_recv = transport_->Read(ssl, buffer, write_offset);
+    int n_bytes_recv = transport_->Recv(ssl, buffer, write_offset);
     if (n_bytes_recv == ERROR) {
       break;
     }
@@ -464,9 +467,9 @@ void TcpServer::HandleHTTP2Request(SSL *ssl) {
 
       read_offset = (read_offset + FRAME_HEADER_LENGTH) % buffer.size();
 
-      if (frame_handler->ProcessFrame(nullptr, frame_type, frame_stream,
-                                      read_offset, payload_size, frame_flags,
-                                      ssl) == ERROR) {
+      if (request_handler->ProcessFrame(nullptr, frame_type, frame_stream,
+                                        read_offset, payload_size, frame_flags,
+                                        ssl) == ERROR) {
         go_away = true;
         break;
       }

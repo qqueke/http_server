@@ -1,7 +1,7 @@
 // Copyright 2024 Joao Brotas
 // Some portions of this file may be subject to third-party copyrights.
 
-#include "../include/http3_frame_handler.h"
+#include "../include/http3_request_handler.h"
 
 #include <fcntl.h>
 
@@ -58,10 +58,11 @@ Http3FrameHandler::Http3FrameHandler(
     const std::shared_ptr<Http3FrameBuilder> &frame_builder,
     const std::shared_ptr<QpackCodec> &codec,
     const std::shared_ptr<Router> &router,
-    const std::shared_ptr<StaticContentHandler> &content_handler) {
+    const std::shared_ptr<StaticContentHandler> &content_handler,
+    const std::shared_ptr<DatabaseHandler> &db_handler) {
   if (!static_init_) {
     InitializeSharedResources(transport, frame_builder, codec, router,
-                              content_handler);
+                              content_handler, db_handler);
   }
 
   if (router != nullptr && content_handler != nullptr) {
@@ -79,12 +80,14 @@ void Http3FrameHandler::InitializeSharedResources(
     const std::shared_ptr<Http3FrameBuilder> &frame_builder,
     const std::shared_ptr<QpackCodec> &hpack_codec,
     const std::shared_ptr<Router> &router,
-    const std::shared_ptr<StaticContentHandler> &content_handler) {
+    const std::shared_ptr<StaticContentHandler> &content_handler,
+    const std::shared_ptr<DatabaseHandler> &db_handler) {
   transport_ = transport;
   frame_builder_ = frame_builder;
   codec_ = hpack_codec;
   router_ = router;
   static_content_handler_ = content_handler;
+  database_handler_ = db_handler;
   static_init_ = true;
 }
 
@@ -104,7 +107,7 @@ int Http3FrameHandler::HandleStaticContent(
     return ERROR;
   }
 
-  uint64_t file_size = content_handler_ptr->FileHandler(
+  uint64_t file_size = content_handler_ptr->HandleFile(
       headers_map[":path"], headers_map.count("accept-encoding")
                                 ? headers_map.at("accept-encoding")
                                 : "");
@@ -219,6 +222,9 @@ int Http3FrameHandler::HandleRouterRequest(
 int Http3FrameHandler::AnswerRequest(
     HQUIC &stream, std::unordered_map<std::string, std::string> &headers_map,
     std::string &data) {
+  static constexpr std::string_view db_path = "/db/";
+  static constexpr uint8_t db_path_size = db_path.size();
+
   static constexpr std::string_view static_path = "/static/";
   static constexpr uint8_t static_path_size = static_path.size();
 
@@ -240,8 +246,38 @@ int Http3FrameHandler::AnswerRequest(
   if (path.size() > static_path_size && path.starts_with(static_path)) {
     return HandleStaticContent(stream, headers_map, data, frame_builder_ptr,
                                transport_ptr);
-  }
+  } else if (path.size() > db_path_size && path.starts_with(db_path)) {
+    std::cout << "Sending query\n";
+    auto database_ptr =
+        database_handler_.lock()->HandleQuery(method, path, data);
 
+    std::string body = "Uen\n";
+    std::unordered_map<std::string, std::string> res_headers_map;
+    res_headers_map[":status"] = "200";
+    res_headers_map["alt-svc"] = "h3=\":4567\"; ma=86400";
+
+    auto codec_ptr = codec_.lock();
+    if (codec_ptr == nullptr) {
+      return ERROR;
+    }
+
+    std::vector<uint8_t> encoded_headers;
+
+    codec_ptr->Encode(static_cast<void *>(&stream), res_headers_map,
+                      encoded_headers);
+
+    std::vector<std::vector<uint8_t>> frames;
+    frames.reserve(2);
+
+    frames.emplace_back(
+        frame_builder_ptr->BuildFrame(Frame::HEADERS, 0, encoded_headers));
+
+    frames.emplace_back(
+        frame_builder_ptr->BuildFrame(Frame::DATA, 0, {}, body));
+
+    transport_ptr->SendBatch(stream, frames);
+    return 0;
+  }
   // Handle dynamic content via router
   return HandleRouterRequest(stream, frame_builder_ptr, transport_ptr, method,
                              path, data);

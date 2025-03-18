@@ -247,7 +247,7 @@ class TcpTransport : public ITransportManager {
    * @param write_offset The offset in the buffer where to start writing data.
    * @return Returns 0 on success, or a non-zero value on failure.
    */
-  int Read(void *connection, std::vector<uint8_t> &buffer,
+  int Recv(void *connection, std::vector<uint8_t> &buffer,
            uint32_t write_offset);
 
   /**
@@ -263,7 +263,7 @@ class TcpTransport : public ITransportManager {
    * operation.
    * @return Returns 0 on success, or a non-zero value on failure.
    */
-  int Read(void *connection, std::vector<uint8_t> &buffer,
+  int Recv(void *connection, std::vector<uint8_t> &buffer,
            uint32_t write_offset, std::mutex &mut);
 
   /**

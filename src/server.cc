@@ -27,6 +27,7 @@
 #include <memory>
 #include <string>
 
+#include "../include/database_handler.h"
 #include "../include/quic_server.h"
 #include "../include/router.h"
 #include "../include/static_content_handler.h"
@@ -51,10 +52,12 @@ void HttpServer::Run() {
 }
 
 HttpServer::HttpServer(int argc, char *argv[]) {
-  db_ = Database::GetInstance();
-  router_ = std::make_shared<Router>(db_);
+  // db_ = Database::GetInstance();
+  router_ = std::make_shared<Router>();
+  database_handler_ = std::make_shared<DatabaseHandler>();
   static_content_handler_ = std::make_shared<StaticContentHandler>();
-  tcp_server_ = std::make_unique<TcpServer>(router_, static_content_handler_);
+  tcp_server_ = std::make_unique<TcpServer>(router_, static_content_handler_,
+                                            database_handler_);
   quic_server_ = std::make_unique<QuicServer>(router_, static_content_handler_,
-                                              argc, argv);
+                                              database_handler_, argc, argv);
 }

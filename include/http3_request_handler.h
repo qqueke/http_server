@@ -2,7 +2,7 @@
 // Some portions of this file may be subject to third-party copyrights.
 
 /**
- * @file http3_frame_handler.h
+ * @file http3_request_handler.h
  * @brief Defines the `IHttp3FrameHandler` interface and `Http3FrameHandler`
  * class for handling HTTP/3 frames and their processing.
  *
@@ -13,8 +13,8 @@
  * handle different frame types.
  */
 
-#ifndef INCLUDE_HTTP3_FRAME_HANDLER_H_
-#define INCLUDE_HTTP3_FRAME_HANDLER_H_
+#ifndef INCLUDE_HTTP3_REQUEST_HANDLER_H_
+#define INCLUDE_HTTP3_REQUEST_HANDLER_H_
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -26,6 +26,7 @@
 #include "../include/router.h"
 #include "../include/static_content_handler.h"
 #include "../include/transport.h"
+#include "database_handler.h"
 
 /**
  * @class Http3FrameHandler
@@ -59,7 +60,8 @@ class Http3FrameHandler {
       const std::shared_ptr<Http3FrameBuilder> &http3_frame_builder,
       const std::shared_ptr<QpackCodec> &codec,
       const std::shared_ptr<Router> &router = nullptr,
-      const std::shared_ptr<StaticContentHandler> &content_handler = nullptr);
+      const std::shared_ptr<StaticContentHandler> &content_handler = nullptr,
+      const std::shared_ptr<DatabaseHandler> &db_handler = nullptr);
 
   /**
    * @brief Destructor for Http3FrameHandler.
@@ -116,7 +118,8 @@ class Http3FrameHandler {
       const std::shared_ptr<Http3FrameBuilder> &frame_builder,
       const std::shared_ptr<QpackCodec> &hpack_codec,
       const std::shared_ptr<Router> &router = nullptr,
-      const std::shared_ptr<StaticContentHandler> &content_handler = nullptr);
+      const std::shared_ptr<StaticContentHandler> &content_handler = nullptr,
+      const std::shared_ptr<DatabaseHandler> &db_handler = nullptr);
 
   /** A flag indicating whether static resources have been initialized. */
   static bool static_init_;
@@ -135,6 +138,10 @@ class Http3FrameHandler {
 
   /** A weak pointer to the static content handler. */
   static std::weak_ptr<StaticContentHandler> static_content_handler_;
+
+  /** A weak pointer to the static content handler used for serving static
+   * files. */
+  std::weak_ptr<DatabaseHandler> database_handler_;
 
   /** A header parser used to parse HTTP/3 headers. */
   static HeaderParser header_parser_;
@@ -348,4 +355,4 @@ class Http3FrameHandler {
                               uint8_t frame_flags, SSL *ssl);
 };
 
-#endif  // INCLUDE_HTTP3_FRAME_HANDLER_H_
+#endif  // INCLUDE_HTTP3_REQUEST_HANDLER_H_

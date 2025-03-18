@@ -27,6 +27,7 @@
 #include "../include/router.h"
 #include "../include/static_content_handler.h"
 #include "../include/transport.h"
+#include "database_handler.h"
 
 /**
  * @class QuicServer
@@ -54,7 +55,8 @@ class QuicServer {
    */
   explicit QuicServer(
       const std::shared_ptr<Router> &router,
-      const std::shared_ptr<StaticContentHandler> &content_handler, int argc,
+      const std::shared_ptr<StaticContentHandler> &content_handler,
+      const std::shared_ptr<DatabaseHandler> &db_handler, int argc,
       char *argv[]);
 
   /**
@@ -104,6 +106,10 @@ class QuicServer {
   /** A weak pointer to the static content handler used to serve static files.
    */
   std::weak_ptr<StaticContentHandler> static_content_handler_;
+
+  /** A weak pointer to the static content handler used for serving static
+   * files. */
+  std::weak_ptr<DatabaseHandler> database_handler_;
 
  private:
   /** The QUIC API table used for interacting with the MsQuic API. */

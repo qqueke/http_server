@@ -54,8 +54,7 @@ class StaticContentHandler {
    * for the file.
    * @return The size of the file in bytes.
    */
-  uint64_t FileHandler(std::string &file_path,
-                       const std::string_view enc_types);
+  uint64_t HandleFile(std::string &file_path, const std::string_view enc_types);
 
   /**
    * @brief Builds the HTTP headers required for a file transfer.

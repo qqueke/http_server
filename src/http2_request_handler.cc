@@ -1,7 +1,7 @@
 // Copyright 2024 Joao Brotas
 // Some portions of this file may be subject to third-party copyrights.
 
-#include "../include/http2_frame_handler.h"
+#include "../include/http2_request_handler.h"
 
 #include <fcntl.h>
 
@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../include/database_handler.h"
 #include "../include/header_parser.h"
 #include "../include/http2_frame_builder.h"
 #include "../include/log.h"
@@ -28,6 +29,7 @@ std::weak_ptr<Http2FrameBuilder> Http2FrameHandler::frame_builder_;
 std::weak_ptr<HpackCodec> Http2FrameHandler::codec_;
 std::weak_ptr<Router> Http2FrameHandler::router_;
 std::weak_ptr<StaticContentHandler> Http2FrameHandler::static_content_handler_;
+std::weak_ptr<DatabaseHandler> Http2FrameHandler::database_handler_;
 
 Http2FrameHandler::Http2FrameHandler(
     const std::vector<uint8_t> &read_buf,
@@ -35,7 +37,8 @@ Http2FrameHandler::Http2FrameHandler(
     const std::shared_ptr<Http2FrameBuilder> &frame_builder,
     const std::shared_ptr<HpackCodec> &hpack_codec,
     const std::shared_ptr<Router> &router,
-    const std::shared_ptr<StaticContentHandler> &content_handler)
+    const std::shared_ptr<StaticContentHandler> &content_handler,
+    const std::shared_ptr<DatabaseHandler> &db_handler)
     : read_buf(read_buf),
       enc_(),
       dec_(),
@@ -43,7 +46,7 @@ Http2FrameHandler::Http2FrameHandler(
       wait_for_cont_frame_(false) {
   if (!static_init_) {
     InitializeSharedResources(transport, frame_builder, hpack_codec, router,
-                              content_handler);
+                              content_handler, db_handler);
   }
 
   if (router != nullptr && content_handler != nullptr) {
@@ -61,12 +64,14 @@ void Http2FrameHandler::InitializeSharedResources(
     const std::shared_ptr<Http2FrameBuilder> &frame_builder,
     const std::shared_ptr<HpackCodec> &hpack_codec,
     const std::shared_ptr<Router> &router,
-    const std::shared_ptr<StaticContentHandler> &content_handler) {
+    const std::shared_ptr<StaticContentHandler> &content_handler,
+    const std::shared_ptr<DatabaseHandler> &db_handler) {
   transport_ = transport;
   frame_builder_ = frame_builder;
   codec_ = hpack_codec;
   router_ = router;
   static_content_handler_ = content_handler;
+  database_handler_ = db_handler;
   static_init_ = true;
 }
 
@@ -191,7 +196,7 @@ int Http2FrameHandler::HandleStaticContent(
   }
 
   const auto &req_headers_map = tcp_decoded_headers_map_[frame_stream];
-  uint64_t file_size = content_handler_ptr->FileHandler(
+  uint64_t file_size = content_handler_ptr->HandleFile(
       path, req_headers_map.contains("accept-encoding")
                 ? req_headers_map.at("accept-encoding")
                 : "");
@@ -232,6 +237,59 @@ int Http2FrameHandler::HandleStaticContent(
       frame_builder_ptr->BuildDataFramesFromFile(fd, file_size, frame_stream));
 
   close(fd);
+  return 0;
+}
+
+int Http2FrameHandler::HandleDatabaseRequest(
+    uint32_t frame_stream, SSL *ssl,
+    const std::shared_ptr<Http2FrameBuilder> &frame_builder_ptr,
+    const std::shared_ptr<TcpTransport> &transport_ptr, std::string &method,
+    std::string &path, const std::string &data) {
+  auto router_ptr = router_.lock();
+  if (router_ptr == nullptr) {
+    return ERROR;
+  }
+
+  std::string body;
+
+  std::unordered_map<std::string, std::string> headers_map;
+
+  auto opt = router_ptr->OptRouteRequest(method, path, data);
+  if (opt) {
+    auto &[pseudo_headers, body_ref] = *opt;
+    headers_map = pseudo_headers;
+    body = body_ref;
+    headers_map["alt-svc"] = "h3=\":4567\"; ma=86400";
+  } else {
+    auto [headers, body_ref] = router_ptr->RouteRequest(method, path, data);
+    body = body_ref;
+    headers_map = header_parser_.ConvertResponseToPseudoHeaders(
+        std::string_view(headers));
+
+    headers_map["alt-svc"] = "h3=\":4567\"; ma=86400";
+  }
+
+  auto encoded_headers = EncodeHeaders(headers_map);
+  if (encoded_headers.empty()) {
+    return ERROR;
+  }
+
+  // Send response
+  if (body.empty()) {
+    (void)transport_ptr->Send(
+        ssl, frame_builder_ptr->BuildFrame(Frame::HEADERS, 0, frame_stream, 0,
+                                           0, encoded_headers));
+  } else {
+    std::vector<std::vector<uint8_t>> frames;
+    frames.reserve(2);
+    frames.emplace_back(frame_builder_ptr->BuildFrame(
+        Frame::HEADERS, 0, frame_stream, 0, 0, encoded_headers));
+    frames.emplace_back(frame_builder_ptr->BuildFrame(
+        Frame::DATA, 0, frame_stream, 0, 0, {}, body));
+
+    (void)transport_ptr->SendBatch(ssl, frames);
+  }
+
   return 0;
 }
 
@@ -292,6 +350,9 @@ int Http2FrameHandler::AnswerRequest(
     uint32_t frame_stream, SSL *ssl,
     const std::shared_ptr<Http2FrameBuilder> &frame_builder_ptr,
     const std::shared_ptr<TcpTransport> &transport_ptr) {
+  static constexpr std::string_view db_path = "/db/";
+  static constexpr uint8_t db_path_size = db_path.size();
+
   static constexpr std::string_view static_path = "/static/";
   static constexpr uint8_t static_path_size = static_path.size();
 
@@ -306,6 +367,42 @@ int Http2FrameHandler::AnswerRequest(
   if (path.size() > static_path_size && path.starts_with(static_path)) {
     return HandleStaticContent(frame_stream, ssl, frame_builder_ptr,
                                transport_ptr, method, path);
+
+  } else if (path.size() > db_path_size && path.starts_with(db_path)) {
+    std::cout << "Sending query\n";
+    auto database_ptr = database_handler_.lock()->HandleQuery(
+        tcp_decoded_headers_map_[frame_stream][":method"],
+        tcp_decoded_headers_map_[frame_stream][":path"],
+        tcp_data_map_[frame_stream]);
+
+    std::string body = "Uen\n";
+    std::unordered_map<std::string, std::string> headers_map;
+    headers_map[":status"] = "200";
+    headers_map["alt-svc"] = "h3=\":4567\"; ma=86400";
+
+    auto encoded_headers = EncodeHeaders(headers_map);
+    if (encoded_headers.empty()) {
+      return ERROR;
+    }
+
+    // Send response
+    if (body.empty()) {
+      std::cout << "Body empty\n";
+      (void)transport_ptr->Send(
+          ssl, frame_builder_ptr->BuildFrame(Frame::HEADERS, 0, frame_stream, 0,
+                                             0, encoded_headers));
+    } else {
+      std::vector<std::vector<uint8_t>> frames;
+      frames.reserve(2);
+      frames.emplace_back(frame_builder_ptr->BuildFrame(
+          Frame::HEADERS, 0, frame_stream, 0, 0, encoded_headers));
+      frames.emplace_back(frame_builder_ptr->BuildFrame(
+          Frame::DATA, 0, frame_stream, 0, 0, {}, body));
+
+      (void)transport_ptr->SendBatch(ssl, frames);
+    }
+
+    return 0;
   }
 
   // Handle dynamic content via router
@@ -832,7 +929,7 @@ int Http2FrameHandler::HandleStaticContent(
   }
 
   const auto &req_headers_map = tcp_decoded_headers_map_[frame_stream];
-  uint64_t file_size = content_handler_ptr->FileHandler(
+  uint64_t file_size = content_handler_ptr->HandleFile(
       path, req_headers_map.contains("accept-encoding")
                 ? req_headers_map.at("accept-encoding")
                 : "");
@@ -945,6 +1042,12 @@ int Http2FrameHandler::AnswerRequest(
   std::string &path = tcp_decoded_headers_map_[frame_stream][":path"];
   std::string &method = tcp_decoded_headers_map_[frame_stream][":method"];
   std::string &data = tcp_data_map_[frame_stream];
+
+  std::cout << "Sending query\n";
+  auto database_ptr = database_handler_.lock()->HandleQuery(
+      tcp_decoded_headers_map_[frame_stream][":method"],
+      tcp_decoded_headers_map_[frame_stream][":path"],
+      tcp_data_map_[frame_stream]);
 
   // Handle static content
   if (path.size() > static_path_size && path.starts_with(static_path)) {

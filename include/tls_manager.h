@@ -99,7 +99,7 @@ class TlsManager {
    * @param socket The socket descriptor to associate with the SSL object.
    * @return A pointer to the created SSL object.
    */
-  SSL *CreateSSL(int socket, std::optional<bool> is_server = std::nullopt);
+  SSL *CreateSSL(int socket);
 
   /**
    * @brief Deletes an SSL object.

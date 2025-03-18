@@ -15,7 +15,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "../include/http2_frame_handler.h"
+#include "../include/http2_request_handler.h"
 #include "../include/log.h"
 #include "../include/utils.h"
 #include "../lib/ls-hpack/lshpack.h"
@@ -144,7 +144,7 @@ void TcpClient::RecvHttp1Response(SSL *ssl, std::mutex &conn_mutex) {
 
   while (keep_alive) {
     keep_alive = false;
-    int n_bytes_recv = transport_->Read(ssl, buffer, write_offset, conn_mutex);
+    int n_bytes_recv = transport_->Recv(ssl, buffer, write_offset, conn_mutex);
     if (n_bytes_recv <= 0) {
       break;
     }
@@ -254,7 +254,7 @@ void TcpClient::RecvHttp1Response(SSL *ssl, std::mutex &conn_mutex) {
 void TcpClient::RecvHttp2Response(SSL *ssl, std::mutex &conn_mutex) {
   std::vector<uint8_t> buffer(65535);
 
-  std::unique_ptr<Http2FrameHandler> frame_handler =
+  std::unique_ptr<Http2FrameHandler> request_handler =
       std::make_unique<Http2FrameHandler>(buffer, transport_, frame_builder_,
                                           codec_);
 
@@ -266,7 +266,7 @@ void TcpClient::RecvHttp2Response(SSL *ssl, std::mutex &conn_mutex) {
   auto startTime = std::chrono::high_resolution_clock::now();
 
   while (!go_away) {
-    int n_bytes_recv = transport_->Read(ssl, buffer, write_offset, conn_mutex);
+    int n_bytes_recv = transport_->Recv(ssl, buffer, write_offset, conn_mutex);
     if (n_bytes_recv == ERROR) {
       break;
     }
@@ -308,7 +308,7 @@ void TcpClient::RecvHttp2Response(SSL *ssl, std::mutex &conn_mutex) {
 
       read_offset = (read_offset + FRAME_HEADER_LENGTH) % buffer.size();
 
-      if (frame_handler->ProcessFrame_TS(nullptr, frame_type, frame_stream,
+      if (request_handler->ProcessFrame_TS(nullptr, frame_type, frame_stream,
                                          read_offset, payload_size, frame_flags,
                                          ssl, conn_mutex) == ERROR) {
         go_away = true;

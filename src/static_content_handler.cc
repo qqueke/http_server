@@ -142,7 +142,7 @@ uint64_t StaticContentHandler::TryCompressing(
   return file_size;
 }
 
-uint64_t StaticContentHandler::FileHandler(std::string &file_path,
+uint64_t StaticContentHandler::HandleFile(std::string &file_path,
                                            const std::string_view enc_types) {
   uint64_t file_size = 0;
 

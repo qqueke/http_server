@@ -41,78 +41,79 @@ int TcpTransport::SendBatch(void *connection,
 }
 
 int TcpTransport::SendFile(void *connection, int fd) {
-  struct stat file_stats{};
-  if (fstat(fd, &file_stats) == -1) {
-    LogError("Could not read file stats");
-    return ERROR;
-  }
-
-  SSL *ssl = static_cast<SSL *>(connection);
-
-  uint32_t retry_count = 0;
-  int64_t totalBytesSent = 0;
-
-  int64_t file_size = file_stats.st_size;
-
-  if (BIO_get_ktls_send(SSL_get_wbio(ssl))) {
-    while (totalBytesSent < file_size) {
-      int sentBytes =
-          SSL_sendfile(ssl, fd, static_cast<int64_t>(totalBytesSent),
-                       static_cast<size_t>(file_size - totalBytesSent), 0);
-
-      if (sentBytes > 0) {
-        totalBytesSent += sentBytes;
-      } else {
-        int error = SSL_get_error(ssl, sentBytes);
-        if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
-          if (retry_count < _retry_count_) {
-            ++retry_count;
-            std::this_thread::sleep_for(
-                std::chrono::milliseconds(_sendDelayMS_));
-            continue;
-          } else {
-            LogError("Max retries reached while trying to send data");
-            return ERROR;
-          }
-        } else {
-          LogError(GetSSLErrorMessage(error));
-          return ERROR;
-        }
-      }
-    }
-  }
-
-  std::vector<uint8_t> bytes(file_size);
-
-  int read_bytes = 0;
-  while ((read_bytes = read(fd, bytes.data(), bytes.size())) > 0) {
-    totalBytesSent = 0;
-    while (static_cast<int>(totalBytesSent) < read_bytes) {
-      int sentBytes = SSL_write(ssl, bytes.data() + totalBytesSent,
-                                static_cast<int>(read_bytes - totalBytesSent));
-
-      if (sentBytes > 0) {
-        totalBytesSent += sentBytes;
-      } else {
-        int error = SSL_get_error(ssl, sentBytes);
-        if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
-          if (retry_count < _retry_count_) {
-            ++retry_count;
-            std::this_thread::sleep_for(
-                std::chrono::milliseconds(_sendDelayMS_));
-            continue;
-          } else {
-            LogError("Max retries reached while trying to send data");
-            return ERROR;
-          }
-        } else {
-          LogError(GetSSLErrorMessage(error));
-          return ERROR;
-        }
-      }
-    }
-  }
-  return 0;
+  // struct stat file_stats{};
+  // if (fstat(fd, &file_stats) == -1) {
+  //   LogError("Could not read file stats");
+  //   return ERROR;
+  // }
+  //
+  // SSL *ssl = static_cast<SSL *>(connection);
+  //
+  // uint32_t retry_count = 0;
+  // int64_t totalBytesSent = 0;
+  //
+  // int64_t file_size = file_stats.st_size;
+  //
+  // if (BIO_get_ktls_send(SSL_get_wbio(ssl))) {
+  //   while (totalBytesSent < file_size) {
+  //     int sentBytes =
+  //         SSL_sendfile(ssl, fd, static_cast<int64_t>(totalBytesSent),
+  //                      static_cast<size_t>(file_size - totalBytesSent), 0);
+  //
+  //     if (sentBytes > 0) {
+  //       totalBytesSent += sentBytes;
+  //     } else {
+  //       int error = SSL_get_error(ssl, sentBytes);
+  //       if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
+  //         if (retry_count < _retry_count_) {
+  //           ++retry_count;
+  //           std::this_thread::sleep_for(
+  //               std::chrono::milliseconds(_sendDelayMS_));
+  //           continue;
+  //         } else {
+  //           LogError("Max retries reached while trying to send data");
+  //           return ERROR;
+  //         }
+  //       } else {
+  //         LogError(GetSSLErrorMessage(error));
+  //         return ERROR;
+  //       }
+  //     }
+  //   }
+  // }
+  //
+  // std::vector<uint8_t> bytes(file_size);
+  //
+  // int read_bytes = 0;
+  // while ((read_bytes = read(fd, bytes.data(), bytes.size())) > 0) {
+  //   totalBytesSent = 0;
+  //   while (static_cast<int>(totalBytesSent) < read_bytes) {
+  //     int sentBytes = SSL_write(ssl, bytes.data() + totalBytesSent,
+  //                               static_cast<int>(read_bytes -
+  //                               totalBytesSent));
+  //
+  //     if (sentBytes > 0) {
+  //       totalBytesSent += sentBytes;
+  //     } else {
+  //       int error = SSL_get_error(ssl, sentBytes);
+  //       if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
+  //         if (retry_count < _retry_count_) {
+  //           ++retry_count;
+  //           std::this_thread::sleep_for(
+  //               std::chrono::milliseconds(_sendDelayMS_));
+  //           continue;
+  //         } else {
+  //           LogError("Max retries reached while trying to send data");
+  //           return ERROR;
+  //         }
+  //       } else {
+  //         LogError(GetSSLErrorMessage(error));
+  //         return ERROR;
+  //       }
+  //     }
+  //   }
+  // }
+  // return 0;
 }
 
 int TcpTransport::Send(void *connection, const std::vector<uint8_t> &bytes) {
@@ -149,7 +150,7 @@ int TcpTransport::Send(void *connection, const std::vector<uint8_t> &bytes) {
   return 0;
 }
 
-int TcpTransport::Read(void *connection, std::vector<uint8_t> &buffer,
+int TcpTransport::Recv(void *connection, std::vector<uint8_t> &buffer,
                        uint32_t write_offset) {
   SSL *ssl = static_cast<SSL *>(connection);
 
@@ -236,7 +237,7 @@ int TcpTransport::Send(void *connection, const std::vector<uint8_t> &bytes,
   return 0;
 }
 
-int TcpTransport::Read(void *connection, std::vector<uint8_t> &buffer,
+int TcpTransport::Recv(void *connection, std::vector<uint8_t> &buffer,
                        uint32_t write_offset, std::mutex &mut) {
   SSL *ssl = static_cast<SSL *>(connection);
 

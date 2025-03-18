@@ -16,7 +16,7 @@
 #include <vector>
 
 #include "../include/http3_frame_builder.h"
-#include "../include/http3_frame_handler.h"
+#include "../include/http3_request_handler.h"
 #include "../include/log.h"
 
 static std::vector<uint8_t> ReadResumptionTicketFromFile() {
@@ -389,11 +389,11 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
       }
 
       {
-        std::unique_ptr<Http3FrameHandler> frame_handler =
+        std::unique_ptr<Http3FrameHandler> request_handler =
             std::make_unique<Http3FrameHandler>(
                 client->transport_, client->frame_builder_, client->codec_);
 
-        frame_handler->ProcessFrames(Stream, client->quic_buffer_map_[Stream]);
+        request_handler->ProcessFrames(Stream, client->quic_buffer_map_[Stream]);
       }
 
       client->quic_buffer_map_.erase(Stream);

@@ -34,7 +34,7 @@ TlsManager::TlsManager(TlsMode mode)
   OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CRYPTO_STRINGS, nullptr);
 
   if (mode == TlsMode::SERVER) {
-    _ctx_ = SSL_CTX_new(TLS_method());
+    _ctx_ = SSL_CTX_new(TLS_server_method());
   } else {
     _ctx_ = SSL_CTX_new(TLS_client_method());
   }
@@ -64,9 +64,9 @@ TlsManager::TlsManager(TlsMode mode, uint32_t retry_count)
   OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CRYPTO_STRINGS, nullptr);
 
   if (mode == TlsMode::SERVER) {
-    _ctx_ = SSL_CTX_new(SSLv23_server_method());
+    _ctx_ = SSL_CTX_new(TLS_server_method());
   } else {
-    _ctx_ = SSL_CTX_new(SSLv23_client_method());
+    _ctx_ = SSL_CTX_new(TLS_client_method());
   }
 
   if (!_ctx_) {
@@ -78,8 +78,8 @@ TlsManager::TlsManager(TlsMode mode, uint32_t retry_count)
   if (mode == TlsMode::SERVER) {
     SSL_CTX_set_alpn_select_cb(_ctx_, AlpnCallback, NULL);
 
-    (void)LoadCertificates("certificates/server.crt",
-                           "certificates/server.key");
+    (void)LoadCertificates("../certificates/server.crt",
+                           "../certificates/server.key");
   } else {
     SSL_CTX_set_verify(_ctx_, SSL_VERIFY_NONE, nullptr);
 
@@ -123,7 +123,7 @@ int TlsManager::LoadCertificates(const std::string &cert_path,
   return 0;
 }
 
-SSL *TlsManager::CreateSSL(int socket, std::optional<bool> is_server) {
+SSL *TlsManager::CreateSSL(int socket) {
   SSL *ssl = SSL_new(_ctx_);
   if (ssl == nullptr) {
     LogError("Failed to create SSL object");
@@ -133,16 +133,6 @@ SSL *TlsManager::CreateSSL(int socket, std::optional<bool> is_server) {
   if (ret == 0) {
     LogError("Failed to set SSL fd");
     return nullptr;
-  }
-
-  // If is_server is not specified we default to the mode
-  // set on ctx_
-  if (is_server.has_value()) {
-    if (is_server) {
-      SSL_set_accept_state(ssl);
-    } else {
-      SSL_set_connect_state(ssl);
-    }
   }
 
   return ssl;
