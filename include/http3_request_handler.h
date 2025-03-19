@@ -9,7 +9,7 @@
  * This file provides the interface and class definition for handling various
  * types of HTTP/3 frames, including Data, Headers, Priority, RstStream,
  * Settings, Ping, GoAway, WindowUpdate, and Continuation frames. The
- * `Http2FrameHandler` class processes incoming frames and provides methods to
+ * `Http2RequestHandler` class processes incoming frames and provides methods to
  * handle different frame types.
  */
 
@@ -39,7 +39,7 @@
  * lifecycle, including processing different frame types (e.g., headers, data,
  * settings, etc.) and managing QUIC stream interactions.
  */
-class Http3FrameHandler {
+class Http3RequestHandler {
  public:
   /**
    * @brief Constructs a new Http3FrameHandler instance.
@@ -55,7 +55,7 @@ class Http3FrameHandler {
    * @param content_handler A shared pointer to the static content handler
    * (optional).
    */
-  explicit Http3FrameHandler(
+  explicit Http3RequestHandler(
       const std::shared_ptr<QuicTransport> &transport,
       const std::shared_ptr<Http3FrameBuilder> &http3_frame_builder,
       const std::shared_ptr<QpackCodec> &codec,
@@ -66,7 +66,7 @@ class Http3FrameHandler {
   /**
    * @brief Destructor for Http3FrameHandler.
    */
-  ~Http3FrameHandler();
+  ~Http3RequestHandler();
 
   /**
    * @brief Processes the frames for a given QUIC stream.

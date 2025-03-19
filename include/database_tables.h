@@ -22,7 +22,20 @@ class ITable {
 
   virtual int Delete(const std::string &data) = 0;
 
+  // This function looks for indexing field
   virtual std::optional<std::string> Search(const std::string &data) = 0;
+
+  // This function searches provided the same arguments to Add and returns
+  // indexing field
+  virtual std::optional<std::string> GetIndexFromEntry(
+      const std::string &data) = 0;
+
+  virtual std::string GetIndexFromAddData(const std::string &data) = 0;
+
+  // This function looks for index and returns entry in same style as the input
+  // to Add()
+  virtual std::optional<std::string> GetEntryFromIndex(
+      const std::string &data) = 0;
 
  private:
   void FlushToFile();
@@ -69,6 +82,14 @@ class CustomersTable : public ITable {
   int Delete(const std::string &data) override;
 
   std::optional<std::string> Search(const std::string &data) override;
+
+  std::optional<std::string> GetIndexFromEntry(
+      const std::string &data) override;
+
+  std::string GetIndexFromAddData(const std::string &data) override;
+
+  std::optional<std::string> GetEntryFromIndex(
+      const std::string &data) override;
 
  private:
   uint64_t table_idx_;

@@ -279,8 +279,8 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
       }
 
       {
-        std::unique_ptr<Http3FrameHandler> request_handler =
-            std::make_unique<Http3FrameHandler>(
+        std::unique_ptr<Http3RequestHandler> request_handler =
+            std::make_unique<Http3RequestHandler>(
                 server->transport_, server->frame_builder_, server->codec_,
                 server->router_.lock(), server->static_content_handler_.lock(),
                 server->database_handler_.lock());

@@ -99,6 +99,7 @@ target_link_libraries(server
 set(DB_SERVER_SOURCES
     ${SRC_DIR}/database_server.cc
     ${SRC_DIR}/database_tables.cc
+    ${SRC_DIR}/transaction_manager.cc
     ${SRC_DIR}/database.cc
 )
 

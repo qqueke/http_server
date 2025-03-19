@@ -11,7 +11,8 @@
 #include <string>
 #include <unordered_map>
 
-#include "../include/database_tables.h"
+#include "database_tables.h"
+#include "transaction_manager.h"
 
 class Database {
  public:
@@ -23,12 +24,19 @@ class Database {
 
   static std::shared_ptr<Database> GetInstance();
 
-  int Add(const std::string &table_name, const std::string &data);
-
-  int Delete(const std::string &table_name, const std::string &data);
-
   std::optional<std::string> Search(const std::string &table_name,
                                     const std::string &data);
+
+  void BeginTransaction();
+
+  int AddToTransaction(const std::string &table_name, TableOp op,
+                       const std::string &data);
+
+  void CommitTransaction();
+
+  void RollbackTransaction();
+
+  bool TableExists(const std::string &table_name);
 
  private:
   Database();
@@ -37,9 +45,9 @@ class Database {
 
   static std::mutex instance_mut_;
 
-  std::unordered_map<std::string, std::unique_ptr<ITable>> tables_collection_;
+  std::unordered_map<std::string, std::shared_ptr<ITable>> tables_collection_;
 
-  void InitializeIndexFromFile();
+  std::unique_ptr<TransactionManager> tx_manager_;
 };
 
 #endif  // INCLUDE_DATABASE_H_

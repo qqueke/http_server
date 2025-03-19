@@ -20,7 +20,7 @@ std::vector<uint8_t> Http2FrameBuilder::BuildFrame(
     case Frame::DATA:
       return BuildDataFrame(data, stream_id);
     case Frame::HEADERS:
-      return BuildHeaderFrame(encoded_headers, stream_id);
+      return BuildHeaderFrame(encoded_headers, frame_flags, stream_id);
     case Frame::GOAWAY:
       return BuildGoAwayFrame(stream_id, error_code);
     case Frame::SETTINGS:
@@ -150,11 +150,13 @@ std::vector<std::vector<uint8_t>> Http2FrameBuilder::BuildDataFramesFromFile(
 }
 
 std::vector<uint8_t> Http2FrameBuilder::BuildHeaderFrame(
-    const std::vector<uint8_t> &encoded_headers, uint32_t stream_id) {
+    const std::vector<uint8_t> &encoded_headers, uint8_t frame_flags,
+    uint32_t stream_id) {
   // Construct the frame header for Headers
   uint8_t frame_type = Frame::HEADERS;
   uint32_t payload_size = encoded_headers.size();
-  uint8_t flags = HTTP2Flags::END_HEADERS_FLAG;
+  // This works since our server headers are small and fit within a header block
+  uint8_t flags = HTTP2Flags::END_HEADERS_FLAG | frame_flags;
   // flags |= (1 << 0);
 
   uint32_t total_frame_size = FRAME_HEADER_LENGTH + payload_size;

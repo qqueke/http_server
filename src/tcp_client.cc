@@ -254,8 +254,8 @@ void TcpClient::RecvHttp1Response(SSL *ssl, std::mutex &conn_mutex) {
 void TcpClient::RecvHttp2Response(SSL *ssl, std::mutex &conn_mutex) {
   std::vector<uint8_t> buffer(65535);
 
-  std::unique_ptr<Http2FrameHandler> request_handler =
-      std::make_unique<Http2FrameHandler>(buffer, transport_, frame_builder_,
+  std::unique_ptr<Http2RequestHandler> request_handler =
+      std::make_unique<Http2RequestHandler>(buffer, transport_, frame_builder_,
                                           codec_);
 
   bool go_away = false;

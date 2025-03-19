@@ -3,13 +3,17 @@
 #include <grpcpp/security/server_credentials.h>
 #include <grpcpp/server_builder.h>
 #include <grpcpp/server_context.h>
+#include <grpcpp/support/status.h>
 
+#include <chrono>
 #include <memory>
 #include <optional>
+#include <thread>
 
 #include "../build/proto/database_service.grpc.pb.h"
 #include "../build/proto/database_service.pb.h"
 #include "../include/database.h"
+#include "../include/database_tables.h"
 
 class DatabaseImpl : public DatabaseService::Service {
  public:
@@ -20,24 +24,35 @@ class DatabaseImpl : public DatabaseService::Service {
     std::cout << "Query: " << query->operation() << " in TABLE "
               << query->table() << " " << query->data() << std::endl;
 
+    auto db_ptr = db_.lock();
+    if (db_ptr == nullptr) {
+      response->set_code(Code::DATABASE_ERROR);
+      return grpc::Status::OK;
+    } else if (!db_ptr->TableExists(query->table())) {
+      std::cout << "Table: " << query->table() << " does not exist\n";
+      response->set_code(Code::DATABASE_ERROR);
+      return grpc::Status::OK;
+    }
     // From table choose the database
     if (query->operation() == "ADD") {
-      int ret = db_.lock()->Add(query->table(), query->data());
-      std::cout << ((ret == 0) ? "Added customer: "
-                               : "Could not add customer: ")
-                << query->data() << std::endl;
+      db_ptr->BeginTransaction();
+      int ret =
+          db_ptr->AddToTransaction(query->table(), TableOp::ADD, query->data());
+      db_ptr->CommitTransaction();
+      (ret == -1) ? response->set_code(Code::ALREADY_EXISTS)
+                  : response->set_code(Code::SUCCESS);
     } else if (query->operation() == "SEARCH") {
-      auto c = db_.lock()->Search(query->table(), query->data());
-      if (c != std::nullopt) {
-        std::cout << "Found customer: " << c.value() << "\n";
-      } else {
-        std::cout << "Failed to find customer\n";
-      }
+      auto ret = db_ptr->Search(query->table(), query->data());
+      (ret == std::nullopt) ? response->set_code(Code::NOT_FOUND)
+                            : response->set_code(Code::SUCCESS);
     } else if (query->operation() == "DELETE") {
-      int ret = db_.lock()->Delete(query->table(), query->data());
-      std::cout << ((ret == 0) ? "Deleted customer: "
-                               : "Could not delete customer: ")
-                << query->data() << std::endl;
+      db_ptr->BeginTransaction();
+      int ret = db_ptr->AddToTransaction(query->table(), TableOp::DELETE,
+                                         query->data());
+      db_ptr->CommitTransaction();
+
+      (ret == -1) ? response->set_code(Code::NOT_FOUND)
+                  : response->set_code(Code::SUCCESS);
     }
 
     return grpc::Status::OK;

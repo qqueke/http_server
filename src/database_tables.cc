@@ -6,8 +6,19 @@
 
 int CustomersTable::Add(const std::string &data) {
   // ParseData(data);
+  std::cout << "Attempting to add\n";
+  std::string_view data_view = data;
+  size_t comma_pos = data_view.find(',');
+  if (comma_pos == std::string::npos) {
+    return -1;
+  }
 
-  Customer customer(data, "random");
+  std::string username = data.substr(0, comma_pos);
+  std::string customer_name =
+      data.substr(comma_pos + 1, data.size() - comma_pos);
+  std::cout << "Username: " << username << ", Name: " << customer_name
+            << std::endl;
+  Customer customer(username, customer_name);
 
   if (Search(customer.username) != std::nullopt) {
     std::cout << "Username already exists, skipping...\n";
@@ -15,7 +26,7 @@ int CustomersTable::Add(const std::string &data) {
   }
 
   {
-    std::lock_guard<std::mutex> lock_buf(buffer_mut_);
+    // std::lock_guard<std::mutex> lock_buf(buffer_mut_);
     for (auto &[index, buffer_customer] : buffer_) {
       if (buffer_customer.username == customer.username) {
         std::cout << "Username already exists in-memory\n";
@@ -25,10 +36,10 @@ int CustomersTable::Add(const std::string &data) {
   }
 
   {
-    std::lock_guard<std::mutex> lock_buf(buffer_mut_);
+    // std::lock_guard<std::mutex> lock_buf(buffer_mut_);
     buffer_.emplace(table_idx_, customer);
+    ++table_idx_;
   }
-
   FlushToFile();
 
   // if (buffer_.size() >= 10) {
@@ -40,7 +51,7 @@ int CustomersTable::Add(const std::string &data) {
 int CustomersTable::Delete(const std::string &data) {
   const std::string &target_username = data;
   {
-    std::lock_guard<std::mutex> lock_buf(buffer_mut_);
+    // std::lock_guard<std::mutex> lock_buf(buffer_mut_);
     for (auto &[index, customer] : buffer_) {
       if (customer.username == target_username) {
         buffer_.erase(index);
@@ -48,7 +59,7 @@ int CustomersTable::Delete(const std::string &data) {
       }
     }
   }
-  std::lock_guard<std::mutex> lock(file_mut_);
+  // std::lock_guard<std::mutex> lock(file_mut_);
   std::string line;
   std::ifstream in_file(file_path_.c_str(), std::ios::in);
 
@@ -67,19 +78,19 @@ int CustomersTable::Delete(const std::string &data) {
   return -1;
 }
 
-std::optional<std::string> CustomersTable::Search(const std::string &data) {
-  // If still in memory, perfect
+std::optional<std::string> CustomersTable::GetEntryFromIndex(
+    const std::string &data) {
   const std::string &target_username = data;
   {
-    std::lock_guard<std::mutex> lock_buf(buffer_mut_);
+    // std::lock_guard<std::mutex> lock_buf(buffer_mut_);
     for (auto &[index, customer] : buffer_) {
       if (customer.username == target_username) {
-        return CustomerRecord(index, customer).to_json();
+        return customer.username + "," + customer.customer_name;
       }
     }
   }
 
-  std::lock_guard<std::mutex> lock(file_mut_);
+  // std::lock_guard<std::mutex> lock(file_mut_);
   std::string line;
   std::ifstream in_file(file_path_.c_str(), std::ios::in);
 
@@ -89,9 +100,76 @@ std::optional<std::string> CustomersTable::Search(const std::string &data) {
 
     if (username == target_username &&
         !IsInvalidCustomer(GetRecordId(line_view))) {
-      return CustomerRecord(GetRecordId(line_view),
-                            DeserializeCustomer(line_view))
-          .to_json();
+      Customer customer = DeserializeCustomer(line_view);
+      return customer.username + "," + customer.customer_name;
+    }
+  }
+
+  return std::nullopt;
+}
+
+std::string CustomersTable::GetIndexFromAddData(const std::string &data) {
+  std::string_view data_view = data;
+  size_t comma_pos = data_view.find(',');
+  return data.substr(0, comma_pos);
+}
+
+std::optional<std::string> CustomersTable::GetIndexFromEntry(
+    const std::string &data) {
+  std::string_view data_view = data;
+  size_t comma_pos = data_view.find('n');
+
+  std::string_view target_username = data_view.substr(0, comma_pos);
+
+  // If still in memory, perfect
+  {
+    // std::lock_guard<std::mutex> lock_buf(buffer_mut_);
+    for (auto &[index, customer] : buffer_) {
+      if (customer.username == target_username) {
+        return customer.username;
+      }
+    }
+  }
+
+  // std::lock_guard<std::mutex> lock(file_mut_);
+  std::string line;
+  std::ifstream in_file(file_path_.c_str(), std::ios::in);
+
+  while (std::getline(in_file, line)) {
+    std::string_view line_view = line;
+    std::string username = GetRecordUsername(line_view);
+
+    if (username == target_username &&
+        !IsInvalidCustomer(GetRecordId(line_view))) {
+      return username;
+    }
+  }
+
+  return std::nullopt;
+}
+
+std::optional<std::string> CustomersTable::Search(const std::string &data) {
+  const std::string &target_username = data;
+  {
+    // std::lock_guard<std::mutex> lock_buf(buffer_mut_);
+    for (auto &[index, customer] : buffer_) {
+      if (customer.username == target_username) {
+        return CustomerRecord(index, customer).to_json();
+      }
+    }
+  }
+
+  // std::lock_guard<std::mutex> lock(file_mut_);
+  std::string line;
+  std::ifstream in_file(file_path_.c_str(), std::ios::in);
+
+  while (std::getline(in_file, line)) {
+    std::string_view line_view = line;
+    std::string username = GetRecordUsername(line_view);
+
+    if (username == target_username &&
+        !IsInvalidCustomer(GetRecordId(line_view))) {
+      return std::string(line_view);
     }
   }
 
@@ -99,14 +177,14 @@ std::optional<std::string> CustomersTable::Search(const std::string &data) {
 }
 
 void CustomersTable::FlushToFile() {
-  std::lock_guard<std::mutex> lock(file_mut_);
+  // std::lock_guard<std::mutex> lock(file_mut_);
   std::ofstream out_file(file_path_.c_str(), std::ios::out | std::ios::app);
   if (!out_file.is_open()) {
     return;
   }
 
   {
-    std::lock_guard<std::mutex> lock_buf(buffer_mut_);
+    // std::lock_guard<std::mutex> lock_buf(buffer_mut_);
     for (auto &[key, value] : buffer_) {
       out_file << "\t" << CustomerRecord(key, value).to_json() << "\n";
     }
@@ -159,7 +237,7 @@ uint64_t CustomersTable::GetRecordId(std::string_view line) {
 }
 
 bool CustomersTable::IsInvalidCustomer(uint64_t target_id) {
-  std::lock_guard<std::mutex> lock(invalid_file_mut_);
+  // std::lock_guard<std::mutex> lock(invalid_file_mut_);
   std::string line;
   std::ifstream invalid_file(invalid_file_path_.c_str(), std::ios::in);
   while (std::getline(invalid_file, line)) {
@@ -173,7 +251,7 @@ bool CustomersTable::IsInvalidCustomer(uint64_t target_id) {
 }
 
 void CustomersTable::InvalidateCustomer(std::string_view line_view) {
-  std::lock_guard<std::mutex> lock(invalid_file_mut_);
+  // std::lock_guard<std::mutex> lock(invalid_file_mut_);
   std::ofstream invalid_file(invalid_file_path_.c_str(), std::ios::app);
   invalid_file << GetRecordId(line_view) << "\n";
 }

@@ -13,19 +13,17 @@
  * * POST -> "username, customer_name"
  * * DELETE -> customer_id or username
  * */
+
 #include <array>
 #include <string>
 class QueryBuilder {
  public:
-  std::string BuildQuery(const std::string &method, const std::string &path,
-                         const std::string &body);
+  std::string GetOperationType(const std::string &method);
 
  private:
   static constexpr std::array<std::pair<std::string_view, std::string_view>, 3>
       kMethod_map_ = {
           {{"GET", "SEARCH"}, {"POST", "ADD"}, {"DELETE", "DELETE"}}};
-
-  std::string_view GetOperationType(const std::string &method);
 };
 
 #endif  // INCLUDE_QUERY_BUILDER_H_

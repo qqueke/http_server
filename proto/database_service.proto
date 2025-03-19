@@ -6,8 +6,15 @@ message Query {
   string data = 3;
 }
 
+enum Code {
+  SUCCESS = 0;
+  ALREADY_EXISTS = 1;
+  NOT_FOUND = 2;
+  DATABASE_ERROR = 3;
+}
+
 message Status {
-  int32 value = 1;
+  Code code = 1;
 }
 
 service DatabaseService {

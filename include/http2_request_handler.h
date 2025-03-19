@@ -3,13 +3,13 @@
 
 /**
  * @file http2_request_handler.h
- * @brief Defines the `IHttp2FrameHandler` interface and `Http2FrameHandler`
+ * @brief Defines the `IHttp2RequestHandler` interface and `Http2FrameHandler`
  * class for handling HTTP/2 frames and their processing.
  *
  * This file provides the interface and class definition for handling various
  * types of HTTP/2 frames, including Data, Headers, Priority, RstStream,
  * Settings, Ping, GoAway, WindowUpdate, and Continuation frames. The
- * `Http2FrameHandler` class processes incoming frames and provides methods to
+ * `Http2RequestHandler` class processes incoming frames and provides methods to
  * handle different frame types.
  */
 
@@ -37,9 +37,9 @@
  * This interface defines the methods to process different types of HTTP/2
  * frames and handle their corresponding actions.
  */
-class IHttp2FrameHandler {
+class IHttp2RequestHandler {
  public:
-  virtual ~IHttp2FrameHandler() = default;
+  virtual ~IHttp2RequestHandler() = default;
 
   /**
    * @brief Processes an HTTP/2 frame based on its type.
@@ -203,11 +203,11 @@ class IHttp2FrameHandler {
 /**
  * @brief Handles the processing of HTTP/2 frames.
  *
- * This class implements the IHttp2FrameHandler interface and processes
+ * This class implements the IHttp2RequestHandler interface and processes
  * different types of HTTP/2 frames, including data, headers, and various
  * control frames.
  */
-class Http2FrameHandler : IHttp2FrameHandler {
+class Http2RequestHandler : IHttp2RequestHandler {
  public:
   /**
    * @brief Constructs an HTTP/2 frame handler for a server.
@@ -215,8 +215,8 @@ class Http2FrameHandler : IHttp2FrameHandler {
    * @param read_buf The buffer containing the frame data to process.
    * @param is_server Flag indicating if the handler is for a server or client.
    */
-  explicit Http2FrameHandler(const std::vector<uint8_t> &read_buf,
-                             bool is_server);
+  explicit Http2RequestHandler(const std::vector<uint8_t> &read_buf,
+                               bool is_server);
 
   /**
    * @brief Constructs an HTTP/2 frame handler with transport and other
@@ -230,7 +230,7 @@ class Http2FrameHandler : IHttp2FrameHandler {
    * @param content_handler Optional shared pointer to the static content
    * handler.
    */
-  explicit Http2FrameHandler(
+  explicit Http2RequestHandler(
       const std::vector<uint8_t> &read_buf,
       const std::shared_ptr<TcpTransport> &transport,
       const std::shared_ptr<Http2FrameBuilder> &frame_builder,
@@ -242,7 +242,7 @@ class Http2FrameHandler : IHttp2FrameHandler {
   /**
    * @brief Destructor for cleaning up resources.
    */
-  ~Http2FrameHandler();
+  ~Http2RequestHandler();
 
   /**
    * @brief Processes an HTTP/2 frame based on its type.

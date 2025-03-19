@@ -389,8 +389,8 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
       }
 
       {
-        std::unique_ptr<Http3FrameHandler> request_handler =
-            std::make_unique<Http3FrameHandler>(
+        std::unique_ptr<Http3RequestHandler> request_handler =
+            std::make_unique<Http3RequestHandler>(
                 client->transport_, client->frame_builder_, client->codec_);
 
         request_handler->ProcessFrames(Stream, client->quic_buffer_map_[Stream]);

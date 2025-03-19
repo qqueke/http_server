@@ -37,12 +37,12 @@ Before you begin, make sure you have the following dependencies installed:
   - **Linux**: `sudo apt-get install git`
   - **macOS**: `brew install git`
 
-This project depends on two external libraries:
+This project depends on four external libraries:
 
-- **ls-qpack** (a library for HTTP/2 compression)
+- **ls-qpack** (a library for HTTP/3 compression)
+- **ls-hpack** (a library for HTTP/2 compression)
 - **msquic** (Microsoft's QUIC implementation)
-
-When you clone the repository, the Makefile will attempt to clone these libraries and build them automatically.
+- **grpc** (Google RPC implementation)
 
 ## Build
 

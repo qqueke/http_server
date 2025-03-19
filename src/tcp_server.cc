@@ -387,8 +387,8 @@ void TcpServer::HandleHTTP2Request(SSL *ssl) {
   std::vector<uint8_t> buffer(65535);
   // buffer.reserve(65535);
 
-  std::unique_ptr<Http2FrameHandler> request_handler =
-      std::make_unique<Http2FrameHandler>(
+  std::unique_ptr<Http2RequestHandler> request_handler =
+      std::make_unique<Http2RequestHandler>(
           buffer, transport_, frame_builder_, codec_, router_.lock(),
           static_content_handler_.lock(), database_handler_.lock());
 

@@ -35,21 +35,9 @@ int DatabaseClient::Send(const std::string &operation, const std::string &table,
   grpc::Status status = stub_->ProcessQuery(&context, query, &response);
 
   if (status.ok()) {
-    std::cout << "Server Response: " << response.value() << std::endl;
-  } else {
-    std::cout << "RPC failed: " << status.error_message() << std::endl;
+    return response.code();
   }
 
-  return 0;
+  std::cout << "RPC failed: " << status.error_message() << std::endl;
+  return -1;
 }
-
-// int main() {
-//   // Create a channel to connect to the server
-//   DatabaseClient client(grpc::CreateChannel(
-//       "localhost:9999", grpc::InsecureChannelCredentials()));
-//
-//   // Call the RPC method
-//   client.Send("INSERT");
-//
-//   return 0;
-// }

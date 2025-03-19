@@ -16,22 +16,11 @@
  * * DELETE -> customer_id or username
  * */
 
-std::string_view QueryBuilder::GetOperationType(const std::string &method) {
+std::string QueryBuilder::GetOperationType(const std::string &method) {
   for (const auto &pair : kMethod_map_) {
     if (method == pair.first) {
-      return pair.second;
+      return std::string(pair.second);
     }
   }
   return "";
-}
-
-std::string QueryBuilder::BuildQuery(const std::string &method,
-                                     const std::string &path,
-                                     const std::string &body) {
-  std::string query = std::string(GetOperationType(method));
-  if (query == "") {
-    return query;
-  }
-
-  return query;
 }

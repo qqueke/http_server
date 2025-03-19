@@ -123,11 +123,13 @@ class Http2FrameBuilder {
    *
    * @param encoded_headers The encoded headers to be included in the HEADER
    * frame.
+   * @param frame_flags Additional flags to the frame
    * @param stream_id The stream ID associated with the HEADER frame.
    * @return A vector of bytes representing the built HEADER frame.
    */
   std::vector<uint8_t> BuildHeaderFrame(
-      const std::vector<uint8_t> &encoded_headers, uint32_t stream_id);
+      const std::vector<uint8_t> &encoded_headers, uint8_t frame_flags,
+      uint32_t stream_id);
 
   /**
    * @brief Builds a GOAWAY frame.

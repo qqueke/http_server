@@ -45,15 +45,16 @@ static uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
   return value;
 }
 
-bool Http3FrameHandler::static_init_;
-HeaderParser Http3FrameHandler::header_parser_;
-std::weak_ptr<QuicTransport> Http3FrameHandler::transport_;
-std::weak_ptr<Http3FrameBuilder> Http3FrameHandler::frame_builder_;
-std::weak_ptr<QpackCodec> Http3FrameHandler::codec_;
-std::weak_ptr<Router> Http3FrameHandler::router_;
-std::weak_ptr<StaticContentHandler> Http3FrameHandler::static_content_handler_;
+bool Http3RequestHandler::static_init_;
+HeaderParser Http3RequestHandler::header_parser_;
+std::weak_ptr<QuicTransport> Http3RequestHandler::transport_;
+std::weak_ptr<Http3FrameBuilder> Http3RequestHandler::frame_builder_;
+std::weak_ptr<QpackCodec> Http3RequestHandler::codec_;
+std::weak_ptr<Router> Http3RequestHandler::router_;
+std::weak_ptr<StaticContentHandler>
+    Http3RequestHandler::static_content_handler_;
 
-Http3FrameHandler::Http3FrameHandler(
+Http3RequestHandler::Http3RequestHandler(
     const std::shared_ptr<QuicTransport> &transport,
     const std::shared_ptr<Http3FrameBuilder> &frame_builder,
     const std::shared_ptr<QpackCodec> &codec,
@@ -75,7 +76,7 @@ Http3FrameHandler::Http3FrameHandler(
   // lsqpack_dec_init(&dec_);
 }
 
-void Http3FrameHandler::InitializeSharedResources(
+void Http3RequestHandler::InitializeSharedResources(
     const std::shared_ptr<QuicTransport> &transport,
     const std::shared_ptr<Http3FrameBuilder> &frame_builder,
     const std::shared_ptr<QpackCodec> &hpack_codec,
@@ -91,12 +92,12 @@ void Http3FrameHandler::InitializeSharedResources(
   static_init_ = true;
 }
 
-Http3FrameHandler::~Http3FrameHandler() {
+Http3RequestHandler::~Http3RequestHandler() {
   // lsqpack_enc_cleanup(&enc_);
   // lsqpack_dec_cleanup(&dec_);
 }
 
-int Http3FrameHandler::HandleStaticContent(
+int Http3RequestHandler::HandleStaticContent(
     HQUIC &stream, std::unordered_map<std::string, std::string> &headers_map,
     std::string &data,
     const std::shared_ptr<Http3FrameBuilder> &frame_builder_ptr,
@@ -152,7 +153,7 @@ int Http3FrameHandler::HandleStaticContent(
   return 0;
 }
 
-int Http3FrameHandler::HandleRouterRequest(
+int Http3RequestHandler::HandleRouterRequest(
     HQUIC &stream, const std::shared_ptr<Http3FrameBuilder> &frame_builder_ptr,
     const std::shared_ptr<QuicTransport> &transport_ptr, std::string &method,
     std::string &path, const std::string &data) {
@@ -219,7 +220,7 @@ int Http3FrameHandler::HandleRouterRequest(
   return 0;
 }
 
-int Http3FrameHandler::AnswerRequest(
+int Http3RequestHandler::AnswerRequest(
     HQUIC &stream, std::unordered_map<std::string, std::string> &headers_map,
     std::string &data) {
   static constexpr std::string_view db_path = "/db/";
@@ -283,8 +284,8 @@ int Http3FrameHandler::AnswerRequest(
                              path, data);
 }
 
-int Http3FrameHandler::ProcessFrames(HQUIC &stream,
-                                     std::vector<uint8_t> &stream_buffer) {
+int Http3RequestHandler::ProcessFrames(HQUIC &stream,
+                                       std::vector<uint8_t> &stream_buffer) {
   std::unordered_map<std::string, std::string> headers_map;
   std::string data{};
 
@@ -338,7 +339,7 @@ int Http3FrameHandler::ProcessFrames(HQUIC &stream,
   return 0;
 }
 
-int Http3FrameHandler::ProcessFrame(
+int Http3RequestHandler::ProcessFrame(
     HQUIC &stream, std::vector<uint8_t>::iterator &iter, uint64_t frame_type,
     uint64_t payload_size,
     std::unordered_map<std::string, std::string> &headers_map,
