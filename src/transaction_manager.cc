@@ -29,36 +29,35 @@ int TransactionManager::ProcessTransaction(const std::string &table_name,
   }
 
   auto &[table_n, table] = *table_it;
-  // std::cout << "Table name: " << table_n << "\n";
   if (op == TableOp::DELETE) {
-    auto exists = table->GetEntryFromIndex(data);
+    auto exists = table->GetAddDataFromDeleteKey(data);
     if (!exists.has_value()) {
       return -1;
     }
 
+    std::cout << "Data placed for add rollback: " << exists.value()
+              << std::endl;
+
     undo_buffer_.emplace_back(table_name, op, exists.value());
     return table->Delete(data);
   } else if (op == TableOp::ADD) {
-    std::optional<std::string> exists = table->GetIndexFromEntry(data);
-    if (exists.has_value()) {
-      return -1;  // Rejecting duplicates
+    int ret = table->Add(data);
+    if (ret != 0) {
+      return ret;
     }
-    // std::cout << "Data placed: " << table->GetIndexFromAddData(data)
-    //           << std::endl;
-    undo_buffer_.emplace_back(table_name, op, table->GetIndexFromAddData(data));
-    return table->Add(data);
+    // Operation succeded so lets add to the undo_log
+    std::cout << "Data placed for delete rollback: "
+              << table->GetDeleteKeyFromAddData(data) << std::endl;
+    undo_buffer_.emplace_back(table_name, op,
+                              table->GetDeleteKeyFromAddData(data));
+    return ret;
   }
-  // Whenever we want search to be atomic across tables (for SQL for instance),
-  // then we can implement it
 
-  // LogError("Unknown transaction type: " + std::to_string(op));
   return -1;  // Unknown transaction type
 }
 
 void TransactionManager::Commit() {
-  // std::cout << "Trying to commit...\n";
   std::lock_guard<std::mutex> lock(tx_mut_);
-  // std::cout << "Committing transaction...\n";
   in_transaction_ = false;
   undo_buffer_.clear();
 }
@@ -74,10 +73,8 @@ void TransactionManager::Rollback() {
     }
     auto &[table_name, table] = *table_it;
     if (it->op == TableOp::ADD) {
-      // std::cout << "Delete data : " << it->data << std::endl;
       table->Delete(it->data);
     } else if (it->op == TableOp::DELETE) {
-      // std::cout << "Adding data back: " << it->data << std::endl;
       table->Add(it->data);
     }
   }

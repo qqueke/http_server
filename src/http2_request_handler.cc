@@ -256,14 +256,15 @@ int Http2RequestHandler::HandleDatabaseRequest(
 
   std::unordered_map<std::string, std::string> headers_map;
 
-  auto opt = router_ptr->OptRouteRequest(method, path, data);
+  auto opt = router_ptr->RouteRequestWithMapHeaders(method, path, data);
   if (opt) {
     auto &[pseudo_headers, body_ref] = *opt;
     headers_map = pseudo_headers;
     body = body_ref;
     headers_map["alt-svc"] = "h3=\":4567\"; ma=86400";
   } else {
-    auto [headers, body_ref] = router_ptr->RouteRequest(method, path, data);
+    auto [headers, body_ref] =
+        router_ptr->RouteRequestWithStringHeaders(method, path, data);
     body = body_ref;
     headers_map = header_parser_.ConvertResponseToPseudoHeaders(
         std::string_view(headers));
@@ -310,14 +311,15 @@ int Http2RequestHandler::HandleRouterRequest(
 
   std::unordered_map<std::string, std::string> headers_map;
 
-  auto opt = router_ptr->OptRouteRequest(method, path, data);
+  auto opt = router_ptr->RouteRequestWithMapHeaders(method, path, data);
   if (opt) {
     auto &[pseudo_headers, body_ref] = *opt;
     headers_map = pseudo_headers;
     body = body_ref;
     headers_map["alt-svc"] = "h3=\":4567\"; ma=86400";
   } else {
-    auto [headers, body_ref] = router_ptr->RouteRequest(method, path, data);
+    auto [headers, body_ref] =
+        router_ptr->RouteRequestWithStringHeaders(method, path, data);
     body = body_ref;
     headers_map = header_parser_.ConvertResponseToPseudoHeaders(
         std::string_view(headers));
@@ -379,7 +381,7 @@ int Http2RequestHandler::AnswerRequest(
     std::string db_table =
         path.substr(db_path.size(), path.size() - db_path.size());
 
-    auto [headers_map, body] = database_ptr->OptHandleQuery(
+    auto [headers_map, body] = database_ptr->HandleQueryWithMapHeaders(
         tcp_decoded_headers_map_[frame_stream][":method"], db_table,
         tcp_data_map_[frame_stream]);
 
@@ -994,14 +996,15 @@ int Http2RequestHandler::HandleRouterRequest(
 
   std::unordered_map<std::string, std::string> headers_map;
 
-  auto opt = router_ptr->OptRouteRequest(method, path, data);
+  auto opt = router_ptr->RouteRequestWithMapHeaders(method, path, data);
   if (opt) {
     auto &[pseudo_headers, body_ref] = *opt;
     headers_map = pseudo_headers;
     body = body_ref;
     headers_map["alt-svc"] = "h3=\":4567\"; ma=86400";
   } else {
-    auto [headers, body_ref] = router_ptr->RouteRequest(method, path, data);
+    auto [headers, body_ref] =
+        router_ptr->RouteRequestWithStringHeaders(method, path, data);
     body = body_ref;
     headers_map = header_parser_.ConvertResponseToPseudoHeaders(
         std::string_view(headers));
@@ -1048,11 +1051,11 @@ int Http2RequestHandler::AnswerRequest(
   std::string &method = tcp_decoded_headers_map_[frame_stream][":method"];
   std::string &data = tcp_data_map_[frame_stream];
 
-  std::cout << "Sending query\n";
-  auto database_ptr = database_handler_.lock()->HandleQuery(
-      tcp_decoded_headers_map_[frame_stream][":method"],
-      tcp_decoded_headers_map_[frame_stream][":path"],
-      tcp_data_map_[frame_stream]);
+  // std::cout << "Sending query\n";
+  // auto database_ptr = database_handler_.lock()->HandleQuery(
+  //     tcp_decoded_headers_map_[frame_stream][":method"],
+  //     tcp_decoded_headers_map_[frame_stream][":path"],
+  //     tcp_data_map_[frame_stream]);
 
   // Handle static content
   if (path.size() > static_path_size && path.starts_with(static_path)) {

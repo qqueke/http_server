@@ -7,6 +7,8 @@
 #include <mutex>
 #include <optional>
 
+#include "customers_table.h"
+
 std::weak_ptr<Database> Database::instance_;
 
 std::mutex Database::instance_mut_;

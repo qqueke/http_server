@@ -1,21 +1,12 @@
 #ifndef INCLUDE_TRANSACTION_MANAGER_H_
 #define INCLUDE_TRANSACTION_MANAGER_H_
 
-#include <cstdint>
 #include <memory>
-#include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "database_tables.h"
-
-// enum Status : uint8_t {
-//   SUCCESS = 0,
-//   FAILURE = 1,
-//   NO_TRANSACTION = 2,
-//   KEY_NOT_FOUND = 3,
-//   ALREADY_EXISTS = 4
-// };
 
 class TransactionManager {
  public:
@@ -25,9 +16,11 @@ class TransactionManager {
       : tables_collection_(tables_collection) {}
 
   void BeginTransaction();
+
   int ProcessTransaction(const std::string &table_name, TableOp op,
                          const std::string &data);
   void Commit();
+
   void Rollback();
 
  private:

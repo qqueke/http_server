@@ -166,14 +166,15 @@ int Http3RequestHandler::HandleRouterRequest(
 
   std::unordered_map<std::string, std::string> res_headers_map;
 
-  auto opt = router_ptr->OptRouteRequest(method, path, data);
+  auto opt = router_ptr->RouteRequestWithMapHeaders(method, path, data);
   if (opt) {
     auto &[pseudo_headers, body_ref] = *opt;
     res_headers_map = pseudo_headers;
     body = body_ref;
     res_headers_map["alt-svc"] = "h3=\":4567\"; ma=86400";
   } else {
-    auto [headers, body_ref] = router_ptr->RouteRequest(method, path, data);
+    auto [headers, body_ref] =
+        router_ptr->RouteRequestWithStringHeaders(method, path, data);
     body = body_ref;
     res_headers_map = header_parser_.ConvertResponseToPseudoHeaders(
         std::string_view(headers));
@@ -249,8 +250,8 @@ int Http3RequestHandler::AnswerRequest(
                                transport_ptr);
   } else if (path.size() > db_path_size && path.starts_with(db_path)) {
     std::cout << "Sending query\n";
-    auto database_ptr =
-        database_handler_.lock()->HandleQuery(method, path, data);
+    auto database_ptr = database_handler_.lock()->HandleQueryWithStringHeaders(
+        method, path, data);
 
     std::string body = "Uen\n";
     std::unordered_map<std::string, std::string> res_headers_map;

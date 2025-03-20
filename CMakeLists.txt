@@ -69,6 +69,7 @@ set(SOURCES
     ${SRC_DIR}/database_client.cc
     ${SRC_DIR}/database_handler.cc
     ${SRC_DIR}/query_builder.cc
+    ${SRC_DIR}/customers_table_validator.cc
 )
 
 add_executable(server ${SOURCES})
@@ -98,7 +99,7 @@ target_link_libraries(server
 
 set(DB_SERVER_SOURCES
     ${SRC_DIR}/database_server.cc
-    ${SRC_DIR}/database_tables.cc
+    ${SRC_DIR}/customers_table.cc
     ${SRC_DIR}/transaction_manager.cc
     ${SRC_DIR}/database.cc
 )
@@ -111,7 +112,37 @@ target_link_libraries(db_server protolib)
 # Generate a list of files that match the last argument and store to TEST_SOURCES
 file(GLOB TEST_SOURCES "${TEST_DIR}/*.cc")
 
-add_executable(tests ${TEST_SOURCES} ${SOURCES})
+set (ALL_TEST_SOURCES
+    ${SRC_DIR}/customers_table.cc
+    ${SRC_DIR}/transaction_manager.cc
+    ${SRC_DIR}/server.cc
+    ${SRC_DIR}/router.cc
+    ${SRC_DIR}/routes.cc
+    ${SRC_DIR}/log.cc
+    ${SRC_DIR}/codec.cc
+    ${SRC_DIR}/http2_frame_builder.cc
+    ${SRC_DIR}/http3_frame_builder.cc
+    ${SRC_DIR}/http2_request_handler.cc
+    ${SRC_DIR}/header_parser.cc
+    ${SRC_DIR}/header_validator.cc
+    ${SRC_DIR}/static_content_handler.cc
+    ${SRC_DIR}/http3_request_handler.cc
+    ${SRC_DIR}/transport.cc
+    ${SRC_DIR}/tls_manager.cc
+    ${SRC_DIR}/client.cc
+    ${SRC_DIR}/utils.cc
+    ${SRC_DIR}/tcp_server.cc
+    ${SRC_DIR}/tcp_client.cc
+    ${SRC_DIR}/quic_server.cc
+    ${SRC_DIR}/quic_client.cc
+    ${SRC_DIR}/database_client.cc
+    ${SRC_DIR}/database_handler.cc
+    ${SRC_DIR}/query_builder.cc
+    ${SRC_DIR}/database.cc
+    ${SRC_DIR}/customers_table_validator.cc
+)
+
+add_executable(tests ${TEST_SOURCES} ${ALL_TEST_SOURCES})
 
 target_link_libraries(tests
     protolib

@@ -273,7 +273,7 @@ void TcpServer::HandleHTTP1Request(SSL *ssl) {
           std::cout << headers << "\n" << body << std::endl;
 #endif
 
-          auto [res_headers, res_body] = router_.lock()->RouteRequest(
+          auto [res_headers, res_body] = router_.lock()->RouteRequestWithStringHeaders(
               headers_map[":method"], headers_map[":path"], body);
 
           std::string res = res_headers + res_body;
@@ -320,7 +320,7 @@ void TcpServer::HandleHTTP1Request(SSL *ssl) {
           std::cout << "HTTP1 Request:\n";
           std::cout << headers << "\n" << body << std::endl;
 #endif
-          auto [res_headers, res_body] = router_.lock()->RouteRequest(
+          auto [res_headers, res_body] = router_.lock()->RouteRequestWithStringHeaders(
               headers_map[":method"], headers_map[":path"]);
           std::string res = res_headers + res_body;
           transport_->Send(static_cast<void *>(ssl),
@@ -346,7 +346,7 @@ void TcpServer::HandleHTTP1Request(SSL *ssl) {
           std::cout << "HTTP1 Request:\n";
           std::cout << headers << "\n" << body << std::endl;
 #endif
-          auto [res_headers, res_body] = router_.lock()->RouteRequest(
+          auto [res_headers, res_body] = router_.lock()->RouteRequestWithStringHeaders(
               headers_map[":method"], headers_map[":path"], body);
 
           std::string res = res_headers + res_body;

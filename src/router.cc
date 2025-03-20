@@ -43,7 +43,7 @@ void Router::AddOptRoute(const std::string &method, const std::string &path,
 
 std::optional<
     std::pair<std::unordered_map<std::string, std::string>, std::string>>
-Router::OptRouteRequest(const std::string &method, const std::string &path,
+Router::RouteRequestWithMapHeaders(const std::string &method, const std::string &path,
                         const std::string &data) {
   std::pair<std::string, std::string> route_key = std::make_pair(method, path);
 
@@ -60,7 +60,7 @@ Router::OptRouteRequest(const std::string &method, const std::string &path,
   return std::nullopt;
 }
 
-std::pair<std::string, std::string> Router::RouteRequest(
+std::pair<std::string, std::string> Router::RouteRequestWithStringHeaders(
     const std::string &method, const std::string &path,
     const std::string &data) {
   std::pair<std::string, std::string> route_key = std::make_pair(method, path);

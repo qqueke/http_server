@@ -98,7 +98,7 @@ class Router {
    * @param data The optional request data (e.g., POST body, query parameters).
    * @return A pair consisting of the response headers and body.
    */
-  std::pair<std::string, std::string> RouteRequest(
+  std::pair<std::string, std::string> RouteRequestWithStringHeaders(
       const std::string &method, const std::string &path,
       const std::string &data = "");
 
@@ -115,8 +115,8 @@ class Router {
    */
   std::optional<
       std::pair<std::unordered_map<std::string, std::string>, std::string>>
-  OptRouteRequest(const std::string &method, const std::string &path,
-                  const std::string &data = "");
+  RouteRequestWithMapHeaders(const std::string &method, const std::string &path,
+                             const std::string &data = "");
 
   std::unique_ptr<Routes> routes_;
 

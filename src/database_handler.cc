@@ -5,24 +5,42 @@
 #include <grpc/grpc.h>
 
 #include <memory>
+#include <optional>
 
 #include "../build/proto/database_service.pb.h"
 #include "../include/database_client.h"
+#include "customers_table_validator.h"
 
 DatabaseHandler::DatabaseHandler() {
   db_client_ = std::make_unique<DatabaseClient>(grpc::CreateChannel(
       "localhost:9999", grpc::InsecureChannelCredentials()));
+  query_validator_["customers"] = std::make_unique<CustomersTableValidator>();
 }
 
 DatabaseHandler::~DatabaseHandler() { std::cout << "Destructing\n"; }
 
 std::pair<std::unordered_map<std::string, std::string>, std::string>
-DatabaseHandler::OptHandleQuery(const std::string &method,
-                                const std::string &path,
-                                const std::string &data) {
-  std::string operation = query_builder_->GetOperationType(method);
-
+DatabaseHandler::HandleQueryWithMapHeaders(const std::string &method,
+                                           const std::string &path,
+                                           const std::string &data) {
   std::unordered_map<std::string, std::string> headers_map;
+  std::string body;
+
+  if (query_validator_.find(path) == query_validator_.end()) {
+    std::cout << "Table not found: " << path << '\n';
+    headers_map[":status"] = "404";
+    body = "Table not found\n";
+    return {headers_map, body};
+  }
+
+  std::string operation = query_builder_->GetOperationType(method);
+  auto validate = query_validator_[path]->ValidateQuery(operation, data);
+  if (validate != std::nullopt) {
+    std::cout << "Request failed validation: " << validate.value() << '\n';
+    headers_map[":status"] = "400";
+    body = validate.value() + "\n";
+    return {headers_map, body};
+  }
 
   // Not very verbose. Ideally the database would formulate a string in case of
   // error
@@ -33,22 +51,25 @@ DatabaseHandler::OptHandleQuery(const std::string &method,
       break;
     case Code::NOT_FOUND:
       headers_map[":status"] = "404";
+      body = data + " not found\n";
       break;
     case Code::ALREADY_EXISTS:
       headers_map[":status"] = "409";
+      body = data + " already exists\n";
       break;
     default:
       headers_map[":status"] = "500";
+      body = "Internal Error\n";
       break;
   }
 
-  // Something that given query and error code constructs headers and body
-  return {headers_map, ""};
+  return {headers_map, body};
 }
 
-std::pair<std::string, std::string> DatabaseHandler::HandleQuery(
-    const std::string &method, const std::string &path,
-    const std::string &data) {
+std::pair<std::string, std::string>
+DatabaseHandler::HandleQueryWithStringHeaders(const std::string &method,
+                                              const std::string &path,
+                                              const std::string &data) {
   std::string operation = query_builder_->GetOperationType(method);
 
   int ret = db_client_->Send(operation, path, data);

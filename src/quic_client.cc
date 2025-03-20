@@ -393,7 +393,8 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
             std::make_unique<Http3RequestHandler>(
                 client->transport_, client->frame_builder_, client->codec_);
 
-        request_handler->ProcessFrames(Stream, client->quic_buffer_map_[Stream]);
+        request_handler->ProcessFrames(Stream,
+                                       client->quic_buffer_map_[Stream]);
       }
 
       client->quic_buffer_map_.erase(Stream);
@@ -451,7 +452,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
   if (Event->Type == QUIC_CONNECTION_EVENT_CONNECTED) {
     const char *SslKeyLogFile = getenv(SslKeyLogEnvVar);
     if (SslKeyLogFile != NULL) {
-      WriteSslKeyLogFile(SslKeyLogFile, &client->secrets_);
+      // WriteSslKeyLogFile(SslKeyLogFile, &client->secrets_);
     }
   }
 

@@ -118,78 +118,9 @@ class TcpTransport : public ITransportManager {
    * @return Returns 0 on success, or a non-zero value on failure.
    */
 
-  int Send(void *connection, const void *data, size_t size, std::mutex &mut) {
-    SSL *ssl = static_cast<SSL *>(connection);
+  int Send(void *connection, const void *data, size_t size, std::mutex &mut);
 
-    uint32_t retry_count = 0;
-    size_t totalBytesSent = 0;
-    int sentBytes = 0;
-    while (totalBytesSent < size) {
-      {
-        std::lock_guard<std::mutex> lock(mut);
-        sentBytes =
-            SSL_write(ssl, static_cast<const uint8_t *>(data) + totalBytesSent,
-                      static_cast<int>(size - totalBytesSent));
-      }
-
-      if (sentBytes > 0) {
-        totalBytesSent += sentBytes;
-      } else {
-        int error = SSL_get_error(ssl, sentBytes);
-        if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
-          if (retry_count < _retry_count_) {
-            ++retry_count;
-            std::this_thread::sleep_for(
-                std::chrono::milliseconds(_sendDelayMS_));
-            continue;
-          } else {
-            LogError("Max retries reached while trying to send data");
-            return ERROR;
-          }
-        } else {
-          LogError(GetSSLErrorMessage(error));
-          return ERROR;
-        }
-      }
-    }
-
-    return 0;
-  }
-
-  int Send(void *connection, const void *data, size_t size) {
-    SSL *ssl = static_cast<SSL *>(connection);
-
-    uint32_t retry_count = 0;
-    size_t totalBytesSent = 0;
-
-    while (totalBytesSent < size) {
-      int sentBytes =
-          SSL_write(ssl, static_cast<const uint8_t *>(data) + totalBytesSent,
-                    static_cast<int>(size - totalBytesSent));
-
-      if (sentBytes > 0) {
-        totalBytesSent += sentBytes;
-      } else {
-        int error = SSL_get_error(ssl, sentBytes);
-        if (error == SSL_ERROR_WANT_WRITE || error == SSL_ERROR_WANT_READ) {
-          if (retry_count < _retry_count_) {
-            ++retry_count;
-            std::this_thread::sleep_for(
-                std::chrono::milliseconds(_sendDelayMS_));
-            continue;
-          } else {
-            LogError("Max retries reached while trying to send data");
-            return ERROR;
-          }
-        } else {
-          LogError(GetSSLErrorMessage(error));
-          return ERROR;
-        }
-      }
-    }
-
-    return 0;
-  }
+  int Send(void *connection, const void *data, size_t size);
 
   /**
    * @brief Sends data over a TCP connection with additional mutex locking.
