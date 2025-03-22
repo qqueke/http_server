@@ -77,30 +77,118 @@ void SetPeriodicFlush();
 
 std::optional<std::string> SetLogFiles(const std::string &error_file_path);
 
+/**
+ * @class Logger
+ * @brief A singleton class for logging system requests and messages.
+ *
+ * The `Logger` class is responsible for logging various messages in the system.
+ * It supports batching log entries and flushing them to a file. It ensures that
+ * logs are written to a file efficiently by storing them in a buffer and only
+ * flushing them when necessary.
+ */
 class Logger {
  public:
+  /**
+   * @brief Gets the singleton instance of the Logger.
+   *
+   * This method provides access to the global Logger instance. If the instance
+   * does not exist, it is created with the given file path and maximum batch
+   * size for the logs.
+   *
+   * @param file_path The path to the log file. If empty, no file will be used.
+   * @param max_batch_size The maximum number of logs to store in the buffer
+   * before flushing.
+   * @return A reference to the Logger instance.
+   */
   static Logger &GetInstance(const std::string &file_path = "",
                              uint32_t max_batch_size = 1);
 
+  /**
+   * @brief Deleted copy constructor to prevent copying of the Logger instance.
+   */
   Logger(const Logger &) = delete;
 
+  /**
+   * @brief Deleted copy assignment operator to prevent assigning a new Logger
+   * instance.
+   */
   Logger &operator=(const Logger &) = delete;
 
+  /**
+   * @brief Enqueues a request log into the logger buffer.
+   *
+   * This method adds a log entry related to a request to the internal log
+   * buffer. The log entry will be flushed once the batch size is reached.
+   *
+   * @param request The request message to log.
+   */
   void EnqueueRequestLog(const std::string &request);
 
+  /**
+   * @brief Enqueues a custom log message into the logger buffer.
+   *
+   * This method adds a custom log entry to the internal log buffer, including
+   * the file name and line number where the log was generated.
+   *
+   * @param log The custom log message.
+   * @param file The file name from which the log was generated (defaults to the
+   * current file).
+   * @param line The line number in the file from which the log was generated
+   * (defaults to the current line).
+   */
   void EnqueueLog(const std::string &log, const char *file = __FILE__,
                   int line = __LINE__);
+
+  /**
+   * @brief Flushes all logs in the buffer to the log file.
+   *
+   * This method writes all accumulated logs in the buffer to the log file and
+   * clears the buffer.
+   */
   void FlushLogs();
 
  private:
+  /**
+   * @brief Private constructor for initializing the Logger instance.
+   *
+   * The constructor initializes the log file path and max batch size for the
+   * logger.
+   *
+   * @param file_path The path to the log file.
+   * @param max_batch_size The maximum number of logs to store in the buffer
+   * before flushing.
+   */
   explicit Logger(const std::string &file_path, uint32_t max_batch_size = 1);
 
+  /**
+   * @brief Destructor for cleaning up the Logger instance.
+   *
+   * The destructor ensures that all logs are flushed to the file before the
+   * logger is destroyed.
+   */
   ~Logger();
 
+  /**
+   * @brief The maximum number of logs to store before flushing them to the
+   * file.
+   */
   uint32_t max_batch_size_;
+
+  /**
+   * @brief The buffer where log messages are temporarily stored before being
+   * flushed.
+   */
   std::vector<std::string> buffer_;
+
+  /**
+   * @brief Mutex for thread-safe access to the log buffer.
+   */
   std::mutex mut_;
 
+  /**
+   * @brief The file stream where logs are written.
+   */
   std::ofstream file_;
 };
+
 #endif  // INCLUDE_LOG_H_

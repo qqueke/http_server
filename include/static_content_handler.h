@@ -70,9 +70,31 @@ class StaticContentHandler {
   std::string BuildHeadersForFileTransfer(std::string &file_path,
                                           uint64_t file_size);
 
+  /**
+   * @brief Compresses file.
+   *
+   * This method generates the appropriate headers for a file transfer,
+   * including the content type and content length, based on the file path and
+   * file size.
+   *
+   * @param in_file The path to the file to be compressed.
+   * @param out_file The path to the compressed file.
+   * @param type The compression type to use.
+   * @return The size of the compressed file.
+   */
   static uint64_t CompressFileTmp(const std::string &in_file,
                                   const char *out_file, CompressionType type);
 
+  /**
+   * @brief Attempts to find supported compression type and forward it to
+   * CompressFileTmp.
+   *
+   * @param file_path The path to the file to be compressed.
+   * @param encoding The encoding type.
+   * @param type The compression type to use.
+   * @param compressed_path The path of the compressed file to use.
+   * @return The size of the compressed file.
+   */
   static uint64_t TryCompressing(const std::string &file_path,
                                  std::string_view encoding,
                                  std::array<char, 128> &compressed_path);

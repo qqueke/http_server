@@ -85,6 +85,17 @@ class Router {
   void AddStringHeaderRoute(const std::string &method, const std::string &path,
                             const ROUTE_HANDLER &handler);
 
+  /**
+   * @brief Adds a route to the router.
+   *
+   * This method registers a route with a specified HTTP method, path, and a
+   * handler function that will be executed when a request with the
+   * corresponding method and path is received.
+   *
+   * @param method The HTTP method (e.g., "GET", "POST").
+   * @param path The path for the route (e.g., "/home").
+   * @param handler The handler function that should be called for the route
+   */
   void AddMapHeaderRoute(const std::string &method, const std::string &path,
                          const OPT_ROUTE_HANDLER &handler);
   /**
@@ -111,13 +122,16 @@ class Router {
    * @param method The HTTP method of the incoming request (e.g., "GET").
    * @param path The path of the incoming request (e.g., "/home").
    * @param data The optional request data (e.g., POST body, query parameters).
-   * @return A pair consisting of the response headers and body.
+   * @return A pair consisting of the response headers map and body.
    */
   std::optional<
       std::pair<std::unordered_map<std::string, std::string>, std::string>>
   RouteRequestWithMapHeaders(const std::string &method, const std::string &path,
                              const std::string &data = "");
 
+  /**
+   * @brief A unique pointer to the routes.
+   */
   std::unique_ptr<Routes> routes_;
 
  private:

@@ -111,15 +111,27 @@ class TcpTransport : public ITransportManager {
   /**
    * @brief Sends data over a TCP connection.
    *
-   * This method sends a std::string over the given TCP connection.
+   * This method sends a data buffer over the given TCP connection.
    *
    * @param connection A pointer to the SSL connection object.
-   * @param bytes A text string to be sent.
+   * @param data A data buffer.
+   * @param size The size of the data buffer to send.
    * @return Returns 0 on success, or a non-zero value on failure.
    */
 
   int Send(void *connection, const void *data, size_t size, std::mutex &mut);
 
+  /**
+   * @brief Sends data over a TCP connection.
+   *
+   * This method sends a data buffer over the given TCP connection, in a
+   * thread-safe way.
+   *
+   * @param connection A pointer to the SSL connection object.
+   * @param data A data buffer.
+   * @param size The size of the data buffer to send.
+   * @return Returns 0 on success, or a non-zero value on failure.
+   */
   int Send(void *connection, const void *data, size_t size);
 
   /**
