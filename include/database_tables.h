@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 #ifndef INCLUDE_DATABASE_TABLES_H_
 #define INCLUDE_DATABASE_TABLES_H_
 

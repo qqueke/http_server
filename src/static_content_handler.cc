@@ -23,7 +23,7 @@ uint64_t StaticContentHandler::CompressFileTmp(const std::string &in_file,
                                                CompressionType type) {
   std::ifstream in_file_stream(in_file, std::ios::binary);
   if (!in_file_stream) {
-    LogError("Failed to open input file: " + in_file);
+    LOG("Failed to open input file: " + in_file);
     return 0;
   }
 
@@ -33,7 +33,7 @@ uint64_t StaticContentHandler::CompressFileTmp(const std::string &in_file,
 
   std::ofstream outFileStream(out_file, std::ios::binary);
   if (!outFileStream) {
-    LogError("Failed to open output file: " + std::string(out_file));
+    LOG("Failed to open output file: " + std::string(out_file));
     return 0;
   }
 
@@ -53,7 +53,7 @@ uint64_t StaticContentHandler::CompressFileTmp(const std::string &in_file,
 
   if (deflateInit2(&z_stream, Z_BEST_COMPRESSION, Z_DEFLATED, window_bits, 8,
                    Z_DEFAULT_STRATEGY) != Z_OK) {
-    LogError("Compression initialization failed\n");
+    LOG("Compression initialization failed\n");
     return 0;
   }
   std::vector<char> in_buffer(CHUNK_SIZE);
@@ -78,7 +78,7 @@ uint64_t StaticContentHandler::CompressFileTmp(const std::string &in_file,
       err = deflate(&z_stream, in_file_stream.eof() ? Z_FINISH : Z_NO_FLUSH);
 
       if (err == Z_STREAM_ERROR) {
-        LogError("Compression failed: stream error");
+        LOG("Compression failed: stream error");
         deflateEnd(&z_stream);
         return 0;
       }

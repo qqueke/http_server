@@ -82,11 +82,11 @@ class Router {
    * @param path The path for the route (e.g., "/home").
    * @param handler The handler function that should be called for the route.
    */
-  void AddRoute(const std::string &method, const std::string &path,
-                const ROUTE_HANDLER &handler);
+  void AddStringHeaderRoute(const std::string &method, const std::string &path,
+                            const ROUTE_HANDLER &handler);
 
-  void AddOptRoute(const std::string &method, const std::string &path,
-                   const OPT_ROUTE_HANDLER &handler);
+  void AddMapHeaderRoute(const std::string &method, const std::string &path,
+                         const OPT_ROUTE_HANDLER &handler);
   /**
    * @brief Routes a request to the appropriate handler.
    *
@@ -130,7 +130,7 @@ class Router {
    */
   std::unordered_map<std::pair<std::string, std::string>, ROUTE_HANDLER,
                      pair_hash>
-      routes_map_;
+      string_headers_routes_map_;
 
   /**
    * @brief A map of routes, where each key is a pair of method and path, and
@@ -141,7 +141,7 @@ class Router {
    */
   std::unordered_map<std::pair<std::string, std::string>, OPT_ROUTE_HANDLER,
                      pair_hash>
-      opt_routes_map_;
+      map_headers_routes_map_;
 
   /**
    * @brief A static method that handles bad requests.

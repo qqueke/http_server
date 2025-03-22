@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 #include "../include/database.h"
 
 #include <cstdlib>
@@ -6,8 +9,9 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 
-#include "customers_table.h"
+#include "../include/customers_table.h"
 
 std::weak_ptr<Database> Database::instance_;
 

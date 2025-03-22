@@ -128,7 +128,7 @@ int QuicClient::LoadConfiguration(int argc, char *argv[]) {
                       NULL, &config_))) {
     std::ostringstream oss;
     oss << "ConfigurationOpen failed, 0x" << std::hex << status;
-    LogError(oss.str());
+    LOG(oss.str());
 
     return FALSE;
   }
@@ -140,7 +140,7 @@ int QuicClient::LoadConfiguration(int argc, char *argv[]) {
     std::ostringstream oss;
     oss << "ConfigurationLoadCredential failed, 0x" << std::hex << status
         << std::dec;
-    LogError(oss.str());
+    LOG(oss.str());
 
     return FALSE;
   }
@@ -297,7 +297,7 @@ void QuicClient::QuicSend(_In_ HQUIC Connection, void *Context) {
         uint32_t len = static_cast<uint32_t>(sizeof(stream_id));
         if (QUIC_FAILED(ms_quic_->GetParam(Stream, QUIC_PARAM_STREAM_ID, &len,
                                            &stream_id))) {
-          LogError("Failed to acquire stream id");
+          LOG("Failed to acquire stream id");
         }
 
         client->codec_->Encode(&Stream, headers_map, encoded_headers);
@@ -384,7 +384,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 #endif
       if (client->quic_buffer_map_.find(Stream) ==
           client->quic_buffer_map_.end()) {
-        LogError("No buffer found for Stream");
+        LOG("No buffer found for Stream");
         break;
       }
 

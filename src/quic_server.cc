@@ -75,7 +75,7 @@ QuicServer::QuicServer(
 
   // Load the server configuration based on the command line.
   if (!LoadConfiguration(argc, argv)) {
-    LogError("Server failed to load configuration.");
+    LOG("Server failed to load configuration.");
     if (listener_ != nullptr) {
       ms_quic_->ListenerClose(listener_);
     }
@@ -86,8 +86,8 @@ QuicServer::QuicServer(
   if (QUIC_FAILED(status_ = ms_quic_->ListenerOpen(
                       registration_, ListenerCallback,
                       reinterpret_cast<void *>(this), &listener_))) {
-    LogError(std::format("ListenerStart failed, 0x{:x}!", status_));
-    LogError("Server failed to load configuration.");
+    LOG(std::format("ListenerStart failed, 0x{:x}!", status_));
+    LOG("Server failed to load configuration.");
     if (listener_ != nullptr) {
       ms_quic_->ListenerClose(listener_);
     }
@@ -103,9 +103,9 @@ void QuicServer::Run() {
     // printf("ListenerStart failed, 0x%x!\n", Status);
     std::ostringstream oss;
     oss << "ListenerStart failed, 0x" << std::hex << status_ << "!";
-    LogError(oss.str());
+    LOG(oss.str());
 
-    LogError("Server failed to load configuration.");
+    LOG("Server failed to load configuration.");
     if (listener_ != nullptr) {
       ms_quic_->ListenerClose(listener_);
     }
@@ -188,7 +188,7 @@ int QuicServer::LoadConfiguration(_In_ int argc,
                       nullptr, &config_))) {
     std::ostringstream oss;
     oss << "ConfigurationOpen failed, 0x" << std::hex << status;
-    LogError(oss.str());
+    LOG(oss.str());
 
     return FALSE;
   }
@@ -199,7 +199,7 @@ int QuicServer::LoadConfiguration(_In_ int argc,
                       config_, &Config.CredConfig))) {
     std::ostringstream oss;
     oss << "ConfigurationLoadCredential failed, 0x" << std::hex << status;
-    LogError(oss.str());
+    LOG(oss.str());
     return FALSE;
   }
 
@@ -274,7 +274,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
           server->quic_buffer_map_.end()) {
         std::ostringstream oss;
         oss << " No BufferMap found for Stream: " << Stream << "!";
-        LogError(oss.str());
+        LOG(oss.str());
         break;
       }
 

@@ -12,12 +12,12 @@
 #ifndef INCLUDE_CODEC_H_
 #define INCLUDE_CODEC_H_
 
+#include <msquic.h>
+
 #include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-#include "msquic.h"
 
 /**
  * @interface ICodec

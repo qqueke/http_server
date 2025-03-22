@@ -226,7 +226,7 @@ uint32_t DecodeHexBuffer(_In_z_ const char *HexBuffer,
 //   if (File == NULL) {
 //     std::ostringstream oss;
 //     oss << "Failed to open sslkeylogfile" << FileName;
-//     LogError(oss.str());
+//     LOG(oss.str());
 //     return;
 //   }
 //   if (fseek(File, 0, SEEK_END) == 0 && ftell(File) == 0) {

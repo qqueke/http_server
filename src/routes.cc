@@ -19,7 +19,7 @@
 
 Routes::Routes() {}
 
-Routes::~Routes() {};
+Routes::~Routes() {}
 
 std::pair<std::string, std::string> Routes::HelloHandler(
     const std::string &data) {

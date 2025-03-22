@@ -3,7 +3,7 @@
 
 #include "../include/query_builder.h"
 
-#include <array>
+#include <string>
 
 /*
  * GET -> Search

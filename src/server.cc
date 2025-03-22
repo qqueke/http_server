@@ -41,9 +41,21 @@ HttpServer::~HttpServer() {
   std::cout << "Server shutdown gracefully" << std::endl;
 }
 
-void HttpServer::AddRoute(const std::string &method, const std::string &path,
-                          const ROUTE_HANDLER &handler) {
-  router_->AddRoute(method, path, handler);
+// void HttpServer::AddRoute(const std::string &method, const std::string &path,
+//                           const ROUTE_HANDLER &handler) {
+//   router_->AddStringHeaderRoute(method, path, handler);
+// }
+
+void HttpServer::AddMapHeaderRoute(const std::string &method,
+                                   const std::string &path,
+                                   const OPT_ROUTE_HANDLER &handler) {
+  router_->AddMapHeaderRoute(method, path, handler);
+}
+
+void HttpServer::AddStringHeaderRoute(const std::string &method,
+                                      const std::string &path,
+                                      const ROUTE_HANDLER &handler) {
+  router_->AddStringHeaderRoute(method, path, handler);
 }
 
 void HttpServer::Run() {
@@ -58,6 +70,7 @@ HttpServer::HttpServer(int argc, char *argv[]) {
   static_content_handler_ = std::make_shared<StaticContentHandler>();
   tcp_server_ = std::make_unique<TcpServer>(router_, static_content_handler_,
                                             database_handler_);
+  // Remove argc and argv????
   quic_server_ = std::make_unique<QuicServer>(router_, static_content_handler_,
                                               database_handler_, argc, argv);
 }

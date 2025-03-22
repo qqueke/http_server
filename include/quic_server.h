@@ -23,11 +23,11 @@
 #include <vector>
 
 #include "../include/codec.h"
+#include "../include/database_handler.h"
 #include "../include/http3_frame_builder.h"
 #include "../include/router.h"
 #include "../include/static_content_handler.h"
 #include "../include/transport.h"
-#include "database_handler.h"
 
 /**
  * @class QuicServer

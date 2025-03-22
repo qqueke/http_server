@@ -90,7 +90,7 @@ std::vector<uint8_t> Http2FrameBuilder::BuildDataFrame(
 std::vector<uint8_t> Http2FrameBuilder::BuildDataFrameFromFile(
     int fd, uint64_t file_size, uint32_t stream_id) {
   if (file_size > MAX_PAYLOAD_FRAME_SIZE) {
-    LogError("File is too big. Call BuildDataFramesFromFile instead");
+    LOG("File is too big. Call BuildDataFramesFromFile instead");
     return {};
   }
 
@@ -103,7 +103,7 @@ std::vector<uint8_t> Http2FrameBuilder::BuildDataFrameFromFile(
         read(fd, bytes.data() + total_bytes_read, MAX_PAYLOAD_FRAME_SIZE);
 
     if (read_bytes < 0) {
-      LogError("Reading from file descriptor");
+      LOG("Reading from file descriptor");
       return {};
     }
     if (read_bytes == 0) {
@@ -131,7 +131,7 @@ std::vector<std::vector<uint8_t>> Http2FrameBuilder::BuildDataFramesFromFile(
     read_bytes = read(fd, bytes.data(), MAX_PAYLOAD_FRAME_SIZE);
 
     if (read_bytes < 0) {
-      LogError("Reading from file descriptor");
+      LOG("Reading from file descriptor");
       return {};
     }
     if (read_bytes == 0) {

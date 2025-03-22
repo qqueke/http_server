@@ -1,8 +1,12 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 #include "../include/customers_table.h"
 
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <string>
 #include <string_view>
 
 int CustomersTable::Add(const std::string &data) {

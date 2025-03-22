@@ -1,6 +1,10 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 #include "../include/customers_table_validator.h"
 
 #include <optional>
+#include <string>
 
 std::optional<std::string> CustomersTableValidator::ValidateQuery(
     const std::string &operation, const std::string &data) {

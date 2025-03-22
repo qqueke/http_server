@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 #ifndef INCLUDE_TRANSACTION_MANAGER_H_
 #define INCLUDE_TRANSACTION_MANAGER_H_
 
@@ -6,7 +9,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "database_tables.h"
+#include "../include/database_tables.h"
 
 class TransactionManager {
  public:

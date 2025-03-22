@@ -127,7 +127,7 @@ std::vector<std::vector<uint8_t>> Http3FrameBuilder::BuildDataFramesFromFile(
     read_bytes = read(fd, bytes.data(), MAX_PAYLOAD_FRAME_SIZE);
 
     if (read_bytes < 0) {
-      LogError("Reading from file descriptor");
+      LOG("Reading from file descriptor");
       return {};
     }
     if (read_bytes == 0) {

@@ -59,7 +59,7 @@ TcpServer::TcpServer(
 
   int s = getaddrinfo(nullptr, port.c_str(), &hints, &socket_addr_);
   if (s != 0) {
-    LogError("getaddrinfo: " + std::string(gai_strerror(s)));
+    LOG("getaddrinfo: " + std::string(gai_strerror(s)));
     exit(EXIT_FAILURE);
   }
 
@@ -80,7 +80,7 @@ TcpServer::TcpServer(
   freeaddrinfo(socket_addr_);
 
   if (addr == nullptr) {
-    LogError("Could not bind to any address");
+    LOG("Could not bind to any address");
     exit(EXIT_FAILURE);
   }
 
@@ -89,21 +89,21 @@ TcpServer::TcpServer(
 
   if (setsockopt(socket_, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) ==
       ERROR) {
-    LogError("Failed to set socket recv timeout");
+    LOG("Failed to set socket recv timeout");
   }
   if (setsockopt(socket_, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) ==
       ERROR) {
-    LogError("Failed to set socket send timeout");
+    LOG("Failed to set socket send timeout");
   }
 
   int buffSize = 4 * 256 * 1024;
   if (setsockopt(socket_, SOL_SOCKET, SO_RCVBUF, &buffSize, sizeof(buffSize)) ==
       ERROR) {
-    LogError("Failed to set socket recv timeout");
+    LOG("Failed to set socket recv timeout");
   }
   if (setsockopt(socket_, SOL_SOCKET, SO_SNDBUF, &buffSize, sizeof(buffSize)) ==
       ERROR) {
-    LogError("Failed to set socket send timeout");
+    LOG("Failed to set socket send timeout");
   }
 
   codec_ = std::make_shared<HpackCodec>();
@@ -124,7 +124,7 @@ void TcpServer::Run() { AcceptConnections(); }
 
 void TcpServer::AcceptConnections() {
   if (listen(socket_, MAX_PENDING_CONNECTIONS) == ERROR) {
-    LogError(threadSafeStrerror(errno));
+    LOG(threadSafeStrerror(errno));
     return;
   }
 
@@ -140,7 +140,7 @@ void TcpServer::AcceptConnections() {
     if (polling == 0) {
       continue;
     } else if (polling == ERROR) {
-      LogError("Poll error on main thread");
+      LOG("Poll error on main thread");
       continue;
     }
 
@@ -150,7 +150,7 @@ void TcpServer::AcceptConnections() {
     int client_socket =
         accept(socket_, reinterpret_cast<sockaddr *>(&peerAddr), &peerAddrLen);
     if (client_socket == ERROR) {
-      LogError(threadSafeStrerror(errno));
+      LOG(threadSafeStrerror(errno));
       continue;
     }
 
@@ -173,22 +173,22 @@ void TcpServer::AcceptConnections() {
 
     if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout,
                    sizeof timeout) == ERROR) {
-      LogError(threadSafeStrerror(errno));
+      LOG(threadSafeStrerror(errno));
     }
 
     if (setsockopt(client_socket, SOL_SOCKET, SO_SNDTIMEO, &timeout,
                    sizeof timeout) == ERROR) {
-      LogError(threadSafeStrerror(errno));
+      LOG(threadSafeStrerror(errno));
     }
 
     if (setsockopt(socket_, SOL_SOCKET, SO_RCVBUF, &buffSize,
                    sizeof(buffSize)) == ERROR) {
-      LogError(threadSafeStrerror(errno));
+      LOG(threadSafeStrerror(errno));
     }
 
     if (setsockopt(socket_, SOL_SOCKET, SO_SNDBUF, &buffSize,
                    sizeof(buffSize)) == ERROR) {
-      LogError(threadSafeStrerror(errno));
+      LOG(threadSafeStrerror(errno));
     }
 
     std::thread([this, client_socket]() {
@@ -220,7 +220,7 @@ void TcpServer::HandleRequest(int client_socket) {
   } else if (protocol == "http/1.1") {
     HandleHTTP1Request(ssl);
   } else {
-    LogError("Unsupported protocol or ALPN negotiation failed");
+    LOG("Unsupported protocol or ALPN negotiation failed");
   }
 
   tls_manager_->DeleteSSL(ssl);
@@ -273,8 +273,9 @@ void TcpServer::HandleHTTP1Request(SSL *ssl) {
           std::cout << headers << "\n" << body << std::endl;
 #endif
 
-          auto [res_headers, res_body] = router_.lock()->RouteRequestWithStringHeaders(
-              headers_map[":method"], headers_map[":path"], body);
+          auto [res_headers, res_body] =
+              router_.lock()->RouteRequestWithStringHeaders(
+                  headers_map[":method"], headers_map[":path"], body);
 
           std::string res = res_headers + res_body;
 
@@ -320,8 +321,9 @@ void TcpServer::HandleHTTP1Request(SSL *ssl) {
           std::cout << "HTTP1 Request:\n";
           std::cout << headers << "\n" << body << std::endl;
 #endif
-          auto [res_headers, res_body] = router_.lock()->RouteRequestWithStringHeaders(
-              headers_map[":method"], headers_map[":path"]);
+          auto [res_headers, res_body] =
+              router_.lock()->RouteRequestWithStringHeaders(
+                  headers_map[":method"], headers_map[":path"]);
           std::string res = res_headers + res_body;
           transport_->Send(static_cast<void *>(ssl),
                            static_cast<void *>(res.data()), res.size());
@@ -346,8 +348,9 @@ void TcpServer::HandleHTTP1Request(SSL *ssl) {
           std::cout << "HTTP1 Request:\n";
           std::cout << headers << "\n" << body << std::endl;
 #endif
-          auto [res_headers, res_body] = router_.lock()->RouteRequestWithStringHeaders(
-              headers_map[":method"], headers_map[":path"], body);
+          auto [res_headers, res_body] =
+              router_.lock()->RouteRequestWithStringHeaders(
+                  headers_map[":method"], headers_map[":path"], body);
 
           std::string res = res_headers + res_body;
 
@@ -418,7 +421,7 @@ void TcpServer::HandleHTTP2Request(SSL *ssl) {
 
       if (memcmp(HTTP2_PrefaceBytes.data(), buffer.data(), PREFACE_LENGTH) !=
           0) {
-        LogError("Invalid HTTP/2 preface, closing connection.");
+        LOG("Invalid HTTP/2 preface, closing connection.");
         break;
       }
 
@@ -474,6 +477,7 @@ void TcpServer::HandleHTTP2Request(SSL *ssl) {
         break;
       }
 
+      // logger_->EnqueueLog("Processed frame");
       // Move the offset to the next frame
       read_offset = (read_offset + payload_size) % buffer.size();
 
@@ -488,6 +492,7 @@ void TcpServer::HandleHTTP2Request(SSL *ssl) {
     }
   }
 
+  // LOG( "Processed frame");
   // Timer should end  here and log it to the file
   // auto endTime = std::chrono::high_resolution_clock::now();
 
@@ -497,9 +502,8 @@ void TcpServer::HandleHTTP2Request(SSL *ssl) {
 
   // std::ostringstream logStream;
   // logStream << "Protocol: HTTP2 "
-  //           << "Method: " << method << " Path: " << path
   //           << " Status: " << status << " Elapsed time: " << elapsed.count()
   //           << " s";
-  //
-  // LogRequest(logStream.str());
+
+  LOG_REQUEST("HTTP2 Request handled");
 }

@@ -12,7 +12,12 @@
 
 #ifndef INCLUDE_LOG_H_
 #define INCLUDE_LOG_H_
+#include <cstdint>
+#include <fstream>
+#include <mutex>
+#include <optional>
 #include <string>
+#include <vector>
 
 /**
  * @brief Macro for logging an error.
@@ -23,6 +28,10 @@
  * @param ans The error message to log.
  */
 #define LogError(ans) logError((ans), __FILE__, __LINE__)
+
+#define LOG(log) Logger::GetInstance().EnqueueLog(log, __FILE__, __LINE__)
+
+#define LOG_REQUEST(log) Logger::GetInstance().EnqueueRequestLog(log)
 
 /**
  * @brief Macro for logging a request.
@@ -56,7 +65,7 @@ void logRequest(const std::string &formatedRequest);
  * This function ensures that all buffered logs are written to disk before
  * shutting down.
  */
-void shutdownFlush();
+void ShutdownFlush();
 
 /**
  * @brief Periodically flushes the logs to ensure they are written to disk.
@@ -64,6 +73,34 @@ void shutdownFlush();
  * This function is designed to be called periodically to ensure logs are
  * flushed at regular intervals.
  */
-void periodicFlush();
+void SetPeriodicFlush();
 
+std::optional<std::string> SetLogFiles(const std::string &error_file_path);
+
+class Logger {
+ public:
+  static Logger &GetInstance(const std::string &file_path = "",
+                             uint32_t max_batch_size = 1);
+
+  Logger(const Logger &) = delete;
+
+  Logger &operator=(const Logger &) = delete;
+
+  void EnqueueRequestLog(const std::string &request);
+
+  void EnqueueLog(const std::string &log, const char *file = __FILE__,
+                  int line = __LINE__);
+  void FlushLogs();
+
+ private:
+  explicit Logger(const std::string &file_path, uint32_t max_batch_size = 1);
+
+  ~Logger();
+
+  uint32_t max_batch_size_;
+  std::vector<std::string> buffer_;
+  std::mutex mut_;
+
+  std::ofstream file_;
+};
 #endif  // INCLUDE_LOG_H_

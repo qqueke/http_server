@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 #ifndef INCLUDE_CUSTOMERS_TABLE_H_
 #define INCLUDE_CUSTOMERS_TABLE_H_
 
@@ -8,7 +11,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "database_tables.h"
+#include "../include/database_tables.h"
 
 struct Customer {
   std::string username;

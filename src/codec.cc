@@ -139,7 +139,7 @@ void QpackCodec::Encode(
   auto len = static_cast<uint32_t>(sizeof(stream_id));
   if (QUIC_FAILED(ms_quic_->GetParam(*stream, QUIC_PARAM_STREAM_ID, &len,
                                      &stream_id))) {
-    LogError("Failed to acquire stream id");
+    LOG("Failed to acquire stream id");
   }
 
   ret = lsqpack_enc_start_header(&enc, stream_id, 0);
@@ -272,7 +272,7 @@ void QpackCodec::Decode(
   auto len = static_cast<uint32_t>(sizeof(stream_id));
   if (QUIC_FAILED(ms_quic_->GetParam(*stream, QUIC_PARAM_STREAM_ID, &len,
                                      &stream_id))) {
-    LogError("Failed to acquire stream id");
+    LOG("Failed to acquire stream id");
   }
 
   struct lsqpack_dec_hset_if hset_if;

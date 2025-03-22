@@ -4,12 +4,16 @@
 
 #include <grpc/grpc.h>
 
+#include <iostream>
 #include <memory>
 #include <optional>
+#include <string>
+#include <unordered_map>
+#include <utility>
 
 #include "../build/proto/database_service.pb.h"
+#include "../include/customers_table_validator.h"
 #include "../include/database_client.h"
-#include "customers_table_validator.h"
 
 DatabaseHandler::DatabaseHandler() {
   db_client_ = std::make_unique<DatabaseClient>(grpc::CreateChannel(

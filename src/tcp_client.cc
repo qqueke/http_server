@@ -46,7 +46,7 @@ TcpClient::TcpClient(
   int s = getaddrinfo(target_addr.c_str(), target_port.c_str(), &hints,
                       &socket_addr_);
   if (s != 0) {
-    LogError("getaddrinfo: " + std::string(gai_strerror(s)));
+    LOG("getaddrinfo: " + std::string(gai_strerror(s)));
     exit(EXIT_FAILURE);
   }
 
@@ -76,20 +76,20 @@ void TcpClient::Run() {
 
     if (setsockopt(socket_, SOL_SOCKET, SO_SNDTIMEO, &timeout,
                    sizeof(timeout)) == ERROR) {
-      LogError("Failed to set socket recv timeout");
+      LOG("Failed to set socket recv timeout");
     }
     if (setsockopt(socket_, SOL_SOCKET, SO_RCVTIMEO, &timeout,
                    sizeof(timeout)) == ERROR) {
-      LogError("Failed to set socket send timeout");
+      LOG("Failed to set socket send timeout");
     }
 
     if (setsockopt(socket_, SOL_SOCKET, SO_RCVBUF, &buffSize,
                    sizeof(buffSize)) == ERROR) {
-      LogError("Failed to set socket recv timeout");
+      LOG("Failed to set socket recv timeout");
     }
     if (setsockopt(socket_, SOL_SOCKET, SO_SNDBUF, &buffSize,
                    sizeof(buffSize)) == ERROR) {
-      LogError("Failed to set socket send timeout");
+      LOG("Failed to set socket send timeout");
     }
 
     if (connect(socket_, addr->ai_addr, addr->ai_addrlen) == 0) {
@@ -100,7 +100,7 @@ void TcpClient::Run() {
   }
 
   if (addr == nullptr) {
-    LogError("Could not connect to any address");
+    LOG("Could not connect to any address");
     return;
   }
 
@@ -120,7 +120,7 @@ void TcpClient::Run() {
   } else if (protocol == "http/1.1") {
     SendHttp1Request(ssl);
   } else {
-    LogError("Unsupported protocol or ALPN negotiation failed");
+    LOG("Unsupported protocol or ALPN negotiation failed");
   }
 
   tls_manager_->DeleteSSL(ssl);
@@ -212,7 +212,7 @@ void TcpClient::RecvHttp1Response(SSL *ssl, std::mutex &conn_mutex) {
         }
 
         // Body is already available
-        if (static_cast<long int>(n_readable_bytes) ==
+        if (static_cast<int32_t>(n_readable_bytes) ==
             std::stol(headers_map["content-length"])) {
           uint32_t end_read_offset =
               (read_offset + n_readable_bytes) % buffer.size();
@@ -256,7 +256,7 @@ void TcpClient::RecvHttp2Response(SSL *ssl, std::mutex &conn_mutex) {
 
   std::unique_ptr<Http2RequestHandler> request_handler =
       std::make_unique<Http2RequestHandler>(buffer, transport_, frame_builder_,
-                                          codec_);
+                                            codec_);
 
   bool go_away = false;
   uint32_t read_offset = 0;
@@ -308,9 +308,9 @@ void TcpClient::RecvHttp2Response(SSL *ssl, std::mutex &conn_mutex) {
 
       read_offset = (read_offset + FRAME_HEADER_LENGTH) % buffer.size();
 
-      if (request_handler->ProcessFrame_TS(nullptr, frame_type, frame_stream,
-                                         read_offset, payload_size, frame_flags,
-                                         ssl, conn_mutex) == ERROR) {
+      if (request_handler->ProcessFrame_TS(
+              nullptr, frame_type, frame_stream, read_offset, payload_size,
+              frame_flags, ssl, conn_mutex) == ERROR) {
         go_away = true;
         break;
       }

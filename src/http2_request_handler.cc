@@ -169,7 +169,7 @@ int Http2RequestHandler::ProcessFrame(void *context, uint8_t frame_type,
       return HandleWindowUpdateFrame(context, frame_stream, read_offset,
                                      payload_size, frame_flags, ssl);
     default:
-      LogError("Unknown frame type");
+      LOG("Unknown frame type");
       return ERROR;
   }
 }
@@ -230,7 +230,7 @@ int Http2RequestHandler::HandleStaticContent(
 
   int fd = open(path.c_str(), O_RDONLY);
   if (fd == -1) {
-    LogError("Opening file: " + path);
+    LOG("Opening file: " + path);
     return ERROR;
   }
 
@@ -919,7 +919,7 @@ int Http2RequestHandler::ProcessFrame_TS(void *context, uint8_t frame_type,
       return HandleWindowUpdateFrame(context, frame_stream, read_offset,
                                      payload_size, frame_flags, ssl, mut);
     default:
-      LogError("Unknown frame type");
+      LOG("Unknown frame type");
       return ERROR;
   }
 }
@@ -969,7 +969,7 @@ int Http2RequestHandler::HandleStaticContent(
 
   int fd = open(path.c_str(), O_RDONLY);
   if (fd == -1) {
-    LogError("Opening file: " + path);
+    LOG("Opening file: " + path);
     return ERROR;
   }
 

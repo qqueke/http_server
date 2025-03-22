@@ -38,6 +38,7 @@ int main(int argc, char *argv[]) {
   if (GetFlag(argc, argv, "help") || GetFlag(argc, argv, "?")) {
     PrintUsage();
   } else if (GetFlag(argc, argv, "client")) {
+    Logger::GetInstance("client.log");
     std::unique_ptr<HttpClient> client =
         std::make_unique<HttpClient>(argc, argv);
 
@@ -54,25 +55,31 @@ int main(int argc, char *argv[]) {
     std::cout << "Elapsed time: " << elapsed.count() << " s\n";
 
   } else if (GetFlag(argc, argv, "server")) {
+    Logger::GetInstance("server.log");
     signal(SIGPIPE, SIG_IGN);
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
 
     {
+      // LOG("LOGGING LIKE A VILLAIN");
+      // LOG_REQUEST("REQUEST LOGGING LIKE A CHIMP");
+
       std::shared_ptr<HttpServer> server =
           std::make_shared<HttpServer>(argc, argv);
 
-      server->AddRoute("GET", "/hello", server->router_->routes_->HelloHandler);
-      server->AddRoute("POST", "/echo", server->router_->routes_->EchoHandler);
+      server->AddStringHeaderRoute("GET", "/hello",
+                                   server->router_->routes_->HelloHandler);
+      server->AddStringHeaderRoute("POST", "/echo",
+                                   server->router_->routes_->EchoHandler);
 
-      std::thread([]() { periodicFlush(); }).detach();
+      std::thread([]() { SetPeriodicFlush(); }).detach();
       std::cout << "Server started, press Ctrl+C to stop.\n";
 
       server->Run();
     }
     // shouldShutdown = true;
     std::cout << "Calling the shutdown flush" << std::endl;
-    std::thread t([]() { shutdownFlush(); });
+    std::thread t([]() { ShutdownFlush(); });
     t.join();
 
   } else {

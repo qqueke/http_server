@@ -102,6 +102,7 @@ set(DB_SERVER_SOURCES
     ${SRC_DIR}/customers_table.cc
     ${SRC_DIR}/transaction_manager.cc
     ${SRC_DIR}/database.cc
+    ${SRC_DIR}/log.cc
 )
 
 add_executable(db_server ${DB_SERVER_SOURCES})

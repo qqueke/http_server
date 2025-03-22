@@ -16,7 +16,7 @@ void RequestHeaderValidator::ValidatePseudoHeaders(
 
   for (const auto &header : kRequiredHeaders) {
     if (pseudo_headers.find(std::string(header)) == pseudo_headers.end()) {
-      // LogError("Failed to validate pseudo-headers (missing header field)");
+      // LOG("Failed to validate pseudo-headers (missing header field)");
       pseudo_headers[":method"] = "BR";
       pseudo_headers[":path"] = "";
       return;
@@ -34,7 +34,7 @@ void ResponseHeaderValidator::ValidatePseudoHeaders(
 
   for (const auto &header : kRequiredHeaders) {
     if (pseudo_headers.find(std::string(header)) == pseudo_headers.end()) {
-      // LogError("Failed to validate pseudo-headers (missing header field)");
+      // LOG("Failed to validate pseudo-headers (missing header field)");
       pseudo_headers[":status"] = "500";
       return;
     }

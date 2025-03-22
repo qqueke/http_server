@@ -11,8 +11,8 @@
 #include <string>
 #include <unordered_map>
 
-#include "database_tables.h"
-#include "transaction_manager.h"
+#include "../include/database_tables.h"
+#include "../include/transaction_manager.h"
 
 class Database {
  public:

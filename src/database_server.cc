@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 #include <grpc/grpc.h>
 #include <grpcpp/completion_queue.h>
 #include <grpcpp/security/server_credentials.h>
@@ -6,14 +9,17 @@
 #include <grpcpp/support/status.h>
 
 #include <chrono>
+#include <iostream>
 #include <memory>
 #include <optional>
+#include <string>
 #include <thread>
 
 #include "../build/proto/database_service.grpc.pb.h"
 #include "../build/proto/database_service.pb.h"
 #include "../include/database.h"
 #include "../include/database_tables.h"
+#include "../include/log.h"
 
 class DatabaseImpl : public DatabaseService::Service {
  public:
@@ -63,6 +69,7 @@ class DatabaseImpl : public DatabaseService::Service {
 };
 
 int main() {
+  Logger::GetInstance("db_server.log");
   std::string target_str = "0.0.0.0:9999";
 
   std::shared_ptr<Database> db;

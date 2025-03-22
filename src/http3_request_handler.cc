@@ -20,7 +20,7 @@ static uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
                            const std::vector<uint8_t>::iterator &end) {
   // Check if there's enough data for at least the first byte
   if (iter + 1 >= end) {
-    LogError("Buffer overflow in ReadVarint");
+    LOG("Buffer overflow in ReadVarint");
     return ERROR;
   }
 
@@ -33,7 +33,7 @@ static uint64_t ReadVarint(std::vector<uint8_t>::iterator &iter,
 
   // Check if we have enough data for the full varint
   if (iter + length - 1 >= end) {
-    LogError("Error: Not enough data in buffer for full varint\n");
+    LOG("Error: Not enough data in buffer for full varint\n");
     return ERROR;
   }
 
@@ -142,7 +142,7 @@ int Http3RequestHandler::HandleStaticContent(
   std::cout << "Attempting to send file: " << headers_map[":path"] << "\n";
   int fd = open(headers_map[":path"].c_str(), O_RDONLY);
   if (fd == -1) {
-    LogError("Opening file: " + headers_map[":path"]);
+    LOG("Opening file: " + headers_map[":path"]);
     return ERROR;
   }
 
@@ -307,7 +307,7 @@ int Http3RequestHandler::ProcessFrames(HQUIC &stream,
     // Ensure the payload doesn't exceed the bounds of the buffer
     // if (static_cast<uint64_t>(std::distance(iter, stream_buffer.end())) <
     //     payload_size) {
-    //   LogError("Payload exceeds buffer bounds");
+    //   LOG("Payload exceeds buffer bounds");
     //   break;
     // }
 

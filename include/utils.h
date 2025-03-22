@@ -1,4 +1,5 @@
 // Copyright 2024 Joao Brotas
+//
 // Some portions of this file may be subject to third-party copyrights.
 
 /**
@@ -24,6 +25,7 @@
 #include <cstdlib>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 // Define macros for program constants and flags
 #define _CRT_SECURE_NO_WARNINGS \

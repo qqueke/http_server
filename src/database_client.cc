@@ -1,3 +1,6 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 #include "../include/database_client.h"
 
 #include <grpc/grpc.h>

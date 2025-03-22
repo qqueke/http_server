@@ -1,11 +1,14 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 #include "../include/transaction_manager.h"
 
 #include <iostream>
 #include <mutex>
 #include <string>
 
+#include "../include/database_tables.h"
 #include "../include/log.h"
-#include "database_tables.h"
 
 void TransactionManager::BeginTransaction() {
   std::lock_guard<std::mutex> lock(tx_mut_);

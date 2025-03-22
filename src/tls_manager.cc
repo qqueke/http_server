@@ -103,20 +103,20 @@ int TlsManager::LoadCertificates(const std::string &cert_path,
   int ret =
       SSL_CTX_use_certificate_file(_ctx_, cert_path.c_str(), SSL_FILETYPE_PEM);
   if (ret <= 0) {
-    LogError("Failed to load server certificate");
+    LOG("Failed to load server certificate");
     return ERROR;
   }
 
   ret = SSL_CTX_use_PrivateKey_file(_ctx_, key_path.c_str(), SSL_FILETYPE_PEM);
   if (ret <= 0) {
-    LogError("Failed to load server private key");
+    LOG("Failed to load server private key");
     return ERROR;
   }
 
   ret = SSL_CTX_check_private_key(_ctx_);
 
   if (ret != 1) {
-    LogError("Private key does not match the certificate!");
+    LOG("Private key does not match the certificate!");
     return ERROR;
   }
 
@@ -126,12 +126,12 @@ int TlsManager::LoadCertificates(const std::string &cert_path,
 SSL *TlsManager::CreateSSL(int socket) {
   SSL *ssl = SSL_new(_ctx_);
   if (ssl == nullptr) {
-    LogError("Failed to create SSL object");
+    LOG("Failed to create SSL object");
     return nullptr;
   }
   int ret = SSL_set_fd(ssl, socket);
   if (ret == 0) {
-    LogError("Failed to set SSL fd");
+    LOG("Failed to set SSL fd");
     return nullptr;
   }
 
@@ -168,7 +168,7 @@ int TlsManager::Handshake(SSL *ssl, int socket) {
       ++retry_count;
       continue;
     } else {
-      LogError(GetSSLErrorMessage(error));
+      LOG(GetSSLErrorMessage(error));
       DeleteSSL(ssl);
       return ERROR;
     }

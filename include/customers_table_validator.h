@@ -1,10 +1,13 @@
+// Copyright 2024 Joao Brotas
+// Some portions of this file may be subject to third-party copyrights.
+
 #ifndef INCLUDE_CUSTOMERS_TABLE_VALIDATOR_H_
 #define INCLUDE_CUSTOMERS_TABLE_VALIDATOR_H_
 
 #include <optional>
 #include <string>
 
-#include "query_validator.h"
+#include "../include/query_validator.h"
 
 class CustomersTableValidator : public ITableQueryValidator {
  public:

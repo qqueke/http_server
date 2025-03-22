@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 #include "../include/utils.h"
@@ -14,46 +15,52 @@
 // Default initializer adds default routes
 Router::Router() {
   routes_ = std::make_unique<Routes>();
-  AddRoute("BR", "", HandleBadRequest);
-  AddOptRoute("BR", "", OptHandleBadRequest);
+  AddStringHeaderRoute("BR", "", HandleBadRequest);
+  AddMapHeaderRoute("BR", "", OptHandleBadRequest);
 }
 
 Router::~Router() = default;
 
-void Router::AddRoute(const std::string &method, const std::string &path,
-                      const ROUTE_HANDLER &handler) {
+void Router::AddStringHeaderRoute(const std::string &method,
+                                  const std::string &path,
+                                  const ROUTE_HANDLER &handler) {
   auto key = std::make_pair(method, path);
-  if (routes_map_.find(key) != routes_map_.end()) {
+  if (string_headers_routes_map_.find(key) !=
+      string_headers_routes_map_.end()) {
     return;
   }
 
-  routes_map_[key] = handler;
+  string_headers_routes_map_[key] = handler;
 }
 
-void Router::AddOptRoute(const std::string &method, const std::string &path,
-                         const OPT_ROUTE_HANDLER &handler) {
+void Router::AddMapHeaderRoute(const std::string &method,
+                               const std::string &path,
+                               const OPT_ROUTE_HANDLER &handler) {
   auto key = std::make_pair(method, path);
-  if (opt_routes_map_.find(key) != opt_routes_map_.end()) {
+  if (map_headers_routes_map_.find(key) != map_headers_routes_map_.end()) {
     return;
   }
 
   std::cout << "Added opt route: " << method << " " << path << std::endl;
-  opt_routes_map_[key] = handler;
+  map_headers_routes_map_[key] = handler;
 }
 
 std::optional<
     std::pair<std::unordered_map<std::string, std::string>, std::string>>
-Router::RouteRequestWithMapHeaders(const std::string &method, const std::string &path,
-                        const std::string &data) {
+Router::RouteRequestWithMapHeaders(const std::string &method,
+                                   const std::string &path,
+                                   const std::string &data) {
   std::pair<std::string, std::string> route_key = std::make_pair(method, path);
 
   // Check if route exists in optimized routes for pseudo headers
-  if (opt_routes_map_.find(route_key) != opt_routes_map_.end()) {
-    return opt_routes_map_[route_key](data);
+  if (map_headers_routes_map_.find(route_key) !=
+      map_headers_routes_map_.end()) {
+    return map_headers_routes_map_[route_key](data);
   }
 
   // Check if route exists at all
-  if (routes_map_.find(route_key) == routes_map_.end()) {
+  if (string_headers_routes_map_.find(route_key) ==
+      string_headers_routes_map_.end()) {
     return OptHandleBadRequest(data);
   }
 
@@ -65,8 +72,9 @@ std::pair<std::string, std::string> Router::RouteRequestWithStringHeaders(
     const std::string &data) {
   std::pair<std::string, std::string> route_key = std::make_pair(method, path);
 
-  if (routes_map_.find(route_key) != routes_map_.end()) {
-    return routes_map_[route_key](data);
+  if (string_headers_routes_map_.find(route_key) !=
+      string_headers_routes_map_.end()) {
+    return string_headers_routes_map_[route_key](data);
   }
 
   return HandleBadRequest();

@@ -74,9 +74,11 @@ class HttpServer {
    * @param path The path for the route (e.g., /api/resource).
    * @param handler The handler function that processes requests for this route.
    */
-  void AddRoute(const std::string &method, const std::string &path,
-                const ROUTE_HANDLER &handler);
+  void AddStringHeaderRoute(const std::string &method, const std::string &path,
+                            const ROUTE_HANDLER &handler);
 
+  void AddMapHeaderRoute(const std::string &method, const std::string &path,
+                         const OPT_ROUTE_HANDLER &handler);
   /**
    * @brief Starts the HttpServer to handle incoming connections and requests.
    *

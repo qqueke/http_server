@@ -43,7 +43,7 @@ int TcpTransport::SendBatch(void *connection,
 int TcpTransport::SendFile(void *connection, int fd) {
   // struct stat file_stats{};
   // if (fstat(fd, &file_stats) == -1) {
-  //   LogError("Could not read file stats");
+  //   LOG("Could not read file stats");
   //   return ERROR;
   // }
   //
@@ -71,11 +71,11 @@ int TcpTransport::SendFile(void *connection, int fd) {
   //               std::chrono::milliseconds(_sendDelayMS_));
   //           continue;
   //         } else {
-  //           LogError("Max retries reached while trying to send data");
+  //           LOG("Max retries reached while trying to send data");
   //           return ERROR;
   //         }
   //       } else {
-  //         LogError(GetSSLErrorMessage(error));
+  //         LOG(GetSSLErrorMessage(error));
   //         return ERROR;
   //       }
   //     }
@@ -103,11 +103,11 @@ int TcpTransport::SendFile(void *connection, int fd) {
   //               std::chrono::milliseconds(_sendDelayMS_));
   //           continue;
   //         } else {
-  //           LogError("Max retries reached while trying to send data");
+  //           LOG("Max retries reached while trying to send data");
   //           return ERROR;
   //         }
   //       } else {
-  //         LogError(GetSSLErrorMessage(error));
+  //         LOG(GetSSLErrorMessage(error));
   //         return ERROR;
   //       }
   //     }
@@ -137,11 +137,11 @@ int TcpTransport::Send(void *connection, const std::vector<uint8_t> &bytes) {
           std::this_thread::sleep_for(std::chrono::milliseconds(_sendDelayMS_));
           continue;
         } else {
-          LogError("Max retries reached while trying to send data");
+          LOG("Max retries reached while trying to send data");
           return ERROR;
         }
       } else {
-        LogError(GetSSLErrorMessage(error));
+        LOG(GetSSLErrorMessage(error));
         return ERROR;
       }
     }
@@ -171,11 +171,11 @@ int TcpTransport::Send(void *connection, const void *data, size_t size) {
           std::this_thread::sleep_for(std::chrono::milliseconds(_sendDelayMS_));
           continue;
         } else {
-          LogError("Max retries reached while trying to send data");
+          LOG("Max retries reached while trying to send data");
           return ERROR;
         }
       } else {
-        LogError(GetSSLErrorMessage(error));
+        LOG(GetSSLErrorMessage(error));
         return ERROR;
       }
     }
@@ -208,11 +208,11 @@ int TcpTransport::Send(void *connection, const void *data, size_t size,
           std::this_thread::sleep_for(std::chrono::milliseconds(_sendDelayMS_));
           continue;
         } else {
-          LogError("Max retries reached while trying to send data");
+          LOG("Max retries reached while trying to send data");
           return ERROR;
         }
       } else {
-        LogError(GetSSLErrorMessage(error));
+        LOG(GetSSLErrorMessage(error));
         return ERROR;
       }
     }
@@ -233,7 +233,7 @@ int TcpTransport::Recv(void *connection, std::vector<uint8_t> &buffer,
                  static_cast<int>(buffer.capacity() - write_offset));
 
     if (n_bytes_recv == 0) {
-      // LogError("Client closed the connection");
+      // LOG("Client closed the connection");
       return ERROR;
     } else if (n_bytes_recv < 0) {
       int error = SSL_get_error(ssl, n_bytes_recv);
@@ -244,11 +244,11 @@ int TcpTransport::Recv(void *connection, std::vector<uint8_t> &buffer,
           std::this_thread::sleep_for(std::chrono::milliseconds(_recvDelayMS_));
           continue;
         } else {
-          LogError("Max retries reached while trying to receive data");
+          LOG("Max retries reached while trying to receive data");
           return ERROR;
         }
       } else {
-        LogError(GetSSLErrorMessage(error));
+        LOG(GetSSLErrorMessage(error));
         return ERROR;
       }
     }
@@ -295,11 +295,11 @@ int TcpTransport::Send(void *connection, const std::vector<uint8_t> &bytes,
           std::this_thread::sleep_for(std::chrono::milliseconds(_sendDelayMS_));
           continue;
         } else {
-          LogError("Max retries reached while trying to send data");
+          LOG("Max retries reached while trying to send data");
           return ERROR;
         }
       } else {
-        LogError(GetSSLErrorMessage(error));
+        LOG(GetSSLErrorMessage(error));
         return ERROR;
       }
     }
@@ -323,7 +323,7 @@ int TcpTransport::Recv(void *connection, std::vector<uint8_t> &buffer,
                    static_cast<int>(buffer.capacity() - write_offset));
     }
     if (n_bytes_recv == 0) {
-      // LogError("Client closed the connection");
+      // LOG("Client closed the connection");
       return ERROR;
     } else if (n_bytes_recv < 0) {
       int error = SSL_get_error(ssl, n_bytes_recv);
@@ -334,11 +334,11 @@ int TcpTransport::Recv(void *connection, std::vector<uint8_t> &buffer,
           std::this_thread::sleep_for(std::chrono::milliseconds(_recvDelayMS_));
           continue;
         } else {
-          LogError("Max retries reached while trying to receive data");
+          LOG("Max retries reached while trying to receive data");
           return ERROR;
         }
       } else {
-        LogError(GetSSLErrorMessage(error));
+        LOG(GetSSLErrorMessage(error));
         return ERROR;
       }
     }
@@ -382,7 +382,7 @@ int QuicTransport::Send(void *connection, const std::vector<uint8_t> &bytes) {
       reinterpret_cast<uint8_t *>(malloc(sizeof(QUIC_BUFFER) + bytes.size()));
 
   if (sendBufferRaw == NULL) {
-    LogError("SendBuffer allocation failed");
+    LOG("SendBuffer allocation failed");
     status = QUIC_STATUS_OUT_OF_MEMORY;
     if (QUIC_FAILED(status)) {
       ms_quic_->StreamShutdown(stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
@@ -401,7 +401,7 @@ int QuicTransport::Send(void *connection, const std::vector<uint8_t> &bytes) {
                                            QUIC_SEND_FLAG_NONE, sendBuffer))) {
     std::ostringstream oss;
     oss << "StreamSend failed, 0x" << std::hex << status;
-    LogError(oss.str());
+    LOG(oss.str());
 
     free(sendBufferRaw);
     if (QUIC_FAILED(status)) {
@@ -425,7 +425,7 @@ int QuicTransport::Send(void *connection, const std::vector<uint8_t> &bytes,
       reinterpret_cast<uint8_t *>(malloc(sizeof(QUIC_BUFFER) + bytes.size()));
 
   if (sendBufferRaw == NULL) {
-    LogError("SendBuffer allocation failed");
+    LOG("SendBuffer allocation failed");
     status = QUIC_STATUS_OUT_OF_MEMORY;
     if (QUIC_FAILED(status)) {
       ms_quic_->StreamShutdown(stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
@@ -443,7 +443,7 @@ int QuicTransport::Send(void *connection, const std::vector<uint8_t> &bytes,
                                                 sendBuffer))) {
     std::ostringstream oss;
     oss << "StreamSend failed, 0x" << std::hex << status;
-    LogError(oss.str());
+    LOG(oss.str());
 
     free(sendBufferRaw);
     if (QUIC_FAILED(status)) {

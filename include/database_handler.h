@@ -4,11 +4,14 @@
 #define INCLUDE_DATABASE_HANDLER_H_
 
 #include <memory>
+#include <string>
 #include <unordered_map>
+#include <utility>
 
 #include "../include/database_client.h"
 #include "../include/query_builder.h"
-#include "query_validator.h"
+#include "../include/query_validator.h"
+
 class DatabaseHandler {
  public:
   /**

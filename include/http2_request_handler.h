@@ -307,6 +307,7 @@ class Http2RequestHandler : IHttp2RequestHandler {
   static std::weak_ptr<Http2FrameBuilder> frame_builder_;
   static std::weak_ptr<HpackCodec> codec_;
   static HeaderParser header_parser_;
+  static std::shared_ptr<Logger> logger_;
 
   // Instance variables for managing frame data and state.
   const std::vector<uint8_t> &read_buf;
