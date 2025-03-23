@@ -10,6 +10,15 @@
 #include "../include/database_tables.h"
 #include "../include/log.h"
 
+TransactionManager::TransactionManager(
+    std::unordered_map<std::string, std::shared_ptr<ITable>> &tables_collection)
+    : tables_collection_(tables_collection), in_transaction_(false) {}
+
+TransactionManager::UndoLogEntry::UndoLogEntry(const std::string &table_name,
+                                               TableOp op,
+                                               const std::string &data)
+    : table_name(table_name), op(op), data(data) {}
+
 void TransactionManager::BeginTransaction() {
   std::lock_guard<std::mutex> lock(tx_mut_);
   // std::cout << "Begining transaction...\n";

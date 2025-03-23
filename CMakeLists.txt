@@ -27,6 +27,16 @@ include_directories(${LS_QPACK_DIR})
 include_directories(${LS_HPACK_DIR})
 include_directories(${MSQUIC_DIR}/src/inc)
 
+
+add_subdirectory(${LIB_DIR}/ls-qpack)
+
+set(TEMP_BUILD_TYPE ${CMAKE_BUILD_TYPE})
+set(CMAKE_BUILD_TYPE Release)
+add_subdirectory(${LIB_DIR}/ls-hpack)
+set(CMAKE_BUILD_TYPE ${TEMP_BUILD_TYPE})
+
+add_subdirectory(${LIB_DIR}/msquic)
+
 link_directories(${LS_QPACK_BUILD} ${LS_HPACK_BUILD} ${MSQUIC_BUILD}/bin/Release)
 
 find_package(Protobuf CONFIG REQUIRED)
