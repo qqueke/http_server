@@ -20,12 +20,19 @@ Before you begin, make sure you have the following dependencies installed:
 
 - **OpenSSL**: For SSL/TLS support.
 
-  - **Linux**: `sudo apt-get install openssl libssl-dev`
+  - **Linux**:
+    - Ubuntu/Debian: `sudo apt-get install openssl libssl-dev`
+    - RHEL 8: `sudo dnf install openssl-devel`
   - **macOS**: `brew install openssl`
 
 - **CMake**: For building external libraries.
 
-  - **Linux**: `sudo apt-get install cmake`
+  - **Linux**:
+    - Ubuntu/Debian: `sudo apt-get install cmake`
+    - RHEL 8: Download the x86_64 Linux installation script from [cmake.org](https://cmake.org/download/) and run:
+      ```bash
+      sudo sh cmake.sh --prefix=/usr/local/ --exclude-subdir
+      ```
   - **macOS**: `brew install cmake`
 
 - **Make**: For building the project.
@@ -34,29 +41,69 @@ Before you begin, make sure you have the following dependencies installed:
   - **macOS**: `brew install make`
 
 - **Git**: To clone the repository.
+
   - **Linux**: `sudo apt-get install git`
   - **macOS**: `brew install git`
 
-This project depends on four external libraries:
+- **LTTng**: To build msquic lib (Linux Only).
+
+  ```bash
+  # Add the PPA repository for stable LTTng version
+  sudo apt-add-repository ppa:lttng/stable-2.13
+
+  # Update package lists
+  sudo apt-get update
+
+  # Install required packages
+  sudo apt-get install build-essential liblttng-ust-dev lttng-tools
+  ```
+
+### Additional Dependencies for RHEL 8
+
+On RHEL 8, you will need to install the following additional dependencies:
+
+```bash
+sudo dnf install libatomic
+```
+
+This project depends on three external libraries (submodules):
 
 - **ls-qpack** (a library for HTTP/3 compression)
 - **ls-hpack** (a library for HTTP/2 compression)
 - **msquic** (Microsoft's QUIC implementation)
-- **grpc** (Google RPC implementation)
+
+Lastly grpc and protobuf are required to be installed and you might have to change the CMakeLists.txt prefix path with your grpc and protobuf directories.
 
 ## Build
 
-### 1. Clone the repository
+### 1. Clone the repository with submodules
+
+To clone the repository along with its submodules, use the following command:
 
 ```bash
-git clone https://github.com/yourusername/http_server.git
+git clone --recurse-submodules https://github.com/qqueke/http_server.git
 cd http_server
+```
+
+If you forgot to clone with `recurse--submodules` option, you can initialize and update the submodules by running:
+
+```bash
+git submodule update --init --recursive
 ```
 
 ### 2. Build the dependencies
 
+Create build directory, navigate into it.
+
 ```bash
-make dependencies
+mkdir -p build && cd build/
+```
+
+Build the project with:
+
+```bash
+cmake ..
+make
 ```
 
 ### 3. Generate SSL Certificates
@@ -64,7 +111,7 @@ make dependencies
 You need to generate SSL certificates for the server. Use OpenSSL to generate the certificate and private key:
 
 ```bash
-mkdir certificates
+mkdir -p certificates
 
 # Generate the private key
 openssl genpkey -algorithm RSA -out certificates/server.key -aes256
@@ -107,7 +154,6 @@ Host: qqueke
 User-Agent: custom-client/1.0
 Accept: */*
 
-Body: It's me Mario
 
 GET /goodbye HTTP/1.1
 Host: qqueke
@@ -116,8 +162,6 @@ Accept: */*
 
 Body: Goodbye, World!
 ```
-
-**Note**: Client is used to perform HTTP3 requests for now. It will support HTTP1 and HTTP2 requests in the future.
 
 ## Arguments Summary
 

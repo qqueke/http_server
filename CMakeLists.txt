@@ -39,10 +39,16 @@ add_subdirectory(${LIB_DIR}/msquic)
 
 link_directories(${LS_QPACK_BUILD} ${LS_HPACK_BUILD} ${MSQUIC_BUILD}/bin/Release)
 
+
+# You might want to add local installation paths here
+# set(CMAKE_PREFIX_PATH "/path/to/protobuf;/path/to/grpc;${CMAKE_PREFIX_PATH}")
+
 find_package(Protobuf CONFIG REQUIRED)
+
 find_package(gRPC CONFIG REQUIRED)
 
 add_library(protolib proto/database_service.proto)
+
 target_link_libraries(protolib gRPC::grpc++)
 
 target_include_directories(protolib PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
